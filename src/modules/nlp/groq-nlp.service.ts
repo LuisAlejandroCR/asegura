@@ -73,6 +73,8 @@ petType solo aplica si productCategory es "mascotas". Reglas:
       const hasCat = lower.includes('gato') || lower.includes('michi') || lower.includes('felino');
       const hasDog = lower.includes('perro') || lower.includes('canino');
       if (hasCat && hasDog) intent.petType = 'mixto';
+      else if (hasCat) intent.petType = 'gato';
+      else if (hasDog) intent.petType = 'perro';
     }
     return intent;
   }
