@@ -52,7 +52,7 @@ export class AgentService {
     text: string,
     intent: InsuranceIntent,
   ): Promise<{ text?: string; nextState?: ConversationState; context?: ConversationContext }> {
-    if (intent.abandonIntent && currentState !== ConversationState.GREETING) {
+    if (intent.abandonIntent && currentState !== ConversationState.GREETING && currentState !== ConversationState.QUOTE_PRESENTED) {
       return {
         text: STATE_RESPONSES[ConversationState.ABANDONED](context),
         nextState: ConversationState.ABANDONED,
@@ -133,9 +133,12 @@ export class AgentService {
             nextState: ConversationState.DATA_CAPTURE,
           };
         }
-        if (text.includes('otro') || text.includes('otra') || text.includes('diferente') || text.includes('más')) {
+        if (text === 'no' || text.includes('otro') || text.includes('otra') || text.includes('diferente') || text.includes('más')) {
           const allScores = this.quoting.score(context as AffiliateSignals);
-          const nextProduct = allScores.find((s) => s.productId !== context.quoteProductId);
+          const remaining = context.quoteProductId
+            ? allScores.filter((s) => s.productId !== context.quoteProductId)
+            : allScores;
+          const nextProduct = remaining[0];
           if (nextProduct) {
             const altProduct = PRODUCTS.find((p) => p.id === nextProduct.productId);
             if (altProduct) {
