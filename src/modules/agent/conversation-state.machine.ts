@@ -24,57 +24,81 @@ function translate(ctx: ConversationContext): ConversationContext {
 
 export const STATE_RESPONSES: ResponsesMap = {
   [ConversationState.GREETING]: () =>
-    '¡Hola! Soy Asegura 🛡️ Tu asistente de seguros Colsubsidio.\nCuéntame, ¿en qué te puedo ayudar?',
+    '¡Hola! Soy Asegura 🛡️ — tu asesor de seguros Colsubsidio, disponible 24/7.\n\n' +
+    'En menos de 3 minutos te ayudo a encontrar el seguro que realmente necesitas, según tu situación de vida. Sin formularios. Sin asesores. Sin esperas.\n\n' +
+    '¿En qué te puedo ayudar hoy?',
 
   [ConversationState.AUTHORIZATION]: () =>
-    'Antes de continuar, necesito tu autorización para tratar tus datos personales según la Ley 1581 de 2012.\n\n¿Autorizas el tratamiento de tus datos? Escríbeme "sí" para continuar.',
+    'Antes de continuar, necesito tu autorización para consultar tu perfil de afiliado y enviarte cotizaciones personalizadas, según la Ley 1581 de 2012.\n\n' +
+    'Consulta nuestros [Términos y condiciones](https://colsubsidio.com/transparencia-acceso-informacion/tratamiento-datos-personales).\n\n' +
+    '¿Autorizas el tratamiento de tus datos? Escríbeme *"sí"* para continuar.',
 
   [ConversationState.DISCOVERY]: (ctx) => {
     const c = translate(ctx);
     if (!c.coverage || c.coverage.length === 0) {
-      return 'Cuéntame, ¿qué te preocupa o qué quieres proteger?';
+      return (
+        'Para encontrarte el seguro ideal necesito entender tu situación:\n\n' +
+        '¿Tienes familia o personas que dependen de ti? ¿Qué es lo que más te preocupa proteger — tu salud, tu ingreso, tu hogar, tus mascotas?\n\n' +
+        'Cuéntame con tus palabras — sin tecnicismos.'
+      );
     }
     if (!c.beneficiaries || c.beneficiaries <= 0) {
-      return '¿Cuántas personas son en tu familia?';
+      return '¿Cuántas personas son en tu familia o grupo familiar?';
     }
-    return '¿Qué edades tienen?';
+    return '¿En qué rango de edades están? (esto me ayuda a ajustar la cobertura)';
   },
 
   [ConversationState.QUOTING]: () =>
-    'Déjame buscar la mejor opción para ti...',
+    '🔍 Analizando tu perfil para encontrar la mejor opción...',
 
   [ConversationState.QUOTE_PRESENTED]: (ctx) => {
     const c = translate(ctx);
-    const budget = c.budget ? `$${c.budget.toLocaleString()}` : 'precio competitivo';
+    const budget = c.budget ? `$${c.budget.toLocaleString()}` : 'precio accesible';
     const category = c.productCategory ?? 'seguros';
-    return `📋 *Tu cotización personalizada*\n\n🛡️ Seguro de ${category}\n💰 Desde ${budget}/mes\n\n¿Te interesa o prefieres que busquemos otra opción?`;
+    return (
+      `📋 *Tu cotización personalizada*\n\n` +
+      `🛡️ Seguro de ${category}\n` +
+      `💰 Desde ${budget}/mes\n\n` +
+      `¿Te interesa o prefieres que busquemos otra opción?`
+    );
   },
 
   [ConversationState.DATA_CAPTURE]: (ctx) => {
     const c = translate(ctx);
-    if (!c.cedula) return 'Para emitir la póliza necesito tu número de cédula (sin puntos ni espacios).';
+    if (!c.cedula) return 'Para emitir la póliza necesito tu número de cédula (solo dígitos, sin puntos ni espacios).';
     if (!c.nombre) return '¿Cuál es tu nombre completo?';
-    if (!c.email) return '¿Cuál es tu correo electrónico?';
-    return `📱 *Resumen de tu compra:*\n\n🛡️ ${c.productCategory ?? 'Seguro'}\n👤 ${c.nombre} - CC ${c.cedula}\n\n¿Todo correcto? Escríbeme "sí" para continuar al pago.`;
+    if (!c.email) return '¿Cuál es tu correo electrónico? Ahí recibirás la póliza.';
+    return (
+      `📱 *Resumen de tu compra:*\n\n` +
+      `🛡️ ${c.productCategory ?? 'Seguro'} Colsubsidio\n` +
+      `👤 ${c.nombre} — CC ${c.cedula}\n` +
+      `📧 ${c.email}\n\n` +
+      `¿Todo correcto? Escríbeme *"sí"* para continuar al pago.`
+    );
   },
 
-  [ConversationState.PAYMENT]: (ctx) => {
-    return '¿Quieres proceder con el pago? Escríbeme "sí" para generar el link.';
-  },
+  [ConversationState.PAYMENT]: () =>
+    '🔐 El pago es 100% seguro a través de Wompi — plataforma oficial de Bancolombia.\n\nAcepta tarjeta débito/crédito, Nequi y PSE.\n\n¿Listo para generar tu link de pago?',
 
   [ConversationState.POLICY_ISSUED]: (ctx) => {
     const c = translate(ctx);
     const celoLine = c.celoscanUrl
-      ? `\n\n🔗 Verificación blockchain: [Ver en Celoscan](${c.celoscanUrl})\nTu póliza quedó registrada de forma permanente en Celo Mainnet.`
+      ? `\n\n🔗 *Verificación blockchain:* [Ver en Celoscan](${c.celoscanUrl})\nTu póliza quedó registrada permanentemente en Celo Mainnet — es tuya para siempre.`
       : '';
-    return `✅ ¡Tu seguro está activo!\n\nTu póliza ya fue emitida. En un momento recibirás el PDF adjunto.${celoLine}`;
+    return (
+      `✅ *¡Quedaste asegurado!*\n\n` +
+      `Tu seguro está activo desde hoy. Recibirás el PDF con todos los detalles adjunto a este chat.` +
+      `${celoLine}\n\n` +
+      `Si tienes dudas sobre coberturas o quieres proteger algo más, aquí estoy 24/7.`
+    );
   },
 
   [ConversationState.COMPLETED]: () =>
-    '✅ ¡Todo listo! Quedaste asegurado.\n\nSi necesitas algo más, solo escríbeme.',
+    '✅ ¡Todo listo! Tu seguro Colsubsidio está activo.\n\n' +
+    'Si necesitas algo más — una duda sobre coberturas, comparar otro plan, o proteger algo nuevo — escríbeme cuando quieras. Aquí estoy.',
 
   [ConversationState.ABANDONED]: () =>
-    'Entendido. Si cambias de opinión, aquí estoy 24/7.',
+    'Entendido. Cuando quieras retomar, aquí estoy — 24/7, sin esperas.',
 
   [ConversationState.REJECTED]: () =>
     'Entendido. Sin tu autorización no podemos continuar. Si cambias de opinión, escríbeme cuando quieras.',
