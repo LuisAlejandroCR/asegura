@@ -57,12 +57,11 @@ async function bootstrap() {
   const agent = app.get(AgentService);
   const telegram = app.get(TelegramAdapter);
 
-  telegram.instance.on('message', async (ctx) => {
-    await agent.handleMessage(ctx);
-  });
+  if (telegram.instance) {
+    telegram.instance.on('message', async (ctx) => {
+      await agent.handleMessage(ctx);
+    });
 
-  const telegramToken = config.get<string>('TELEGRAM_BOT_TOKEN');
-  if (telegramToken) {
     const host = config.get<string>('HOST', '');
     if (host) {
       const secret = config.getOrThrow<string>('TELEGRAM_WEBHOOK_SECRET');

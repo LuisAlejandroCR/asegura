@@ -1,6 +1,7 @@
-// env.validation.ts: strict startup validation — app won't start if required vars are missing
+// env.validation.ts: strict startup validation — app won't boot if required env vars are missing
 import { plainToInstance } from 'class-transformer';
-import { IsEnum, IsNumber, IsOptional, IsString, validateSync } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, validateSync } from 'class-validator';
+import { Logger } from '@nestjs/common';
 
 enum Environment {
   Development = 'development',
@@ -9,8 +10,8 @@ enum Environment {
 }
 
 class EnvironmentVariables {
-  // Sprint 0: core
   @IsEnum(Environment)
+  @IsNotEmpty()
   NODE_ENV: Environment;
 
   @IsNumber()
@@ -18,18 +19,21 @@ class EnvironmentVariables {
   PORT: number = 3000;
 
   @IsString()
+  @IsNotEmpty()
   CORS_ORIGIN: string;
 
   @IsString()
+  @IsNotEmpty()
   SUPABASE_URL: string;
 
   @IsString()
+  @IsNotEmpty()
   SUPABASE_ANON_KEY: string;
 
   @IsString()
+  @IsNotEmpty()
   SUPABASE_SERVICE_ROLE_KEY: string;
 
-  // Sprint 1: LLM + Telegram
   @IsString()
   @IsOptional()
   LLM_PROVIDER: string;
@@ -54,7 +58,6 @@ class EnvironmentVariables {
   @IsOptional()
   TELEGRAM_WEBHOOK_SECRET: string;
 
-  // Sprint 5: Wompi
   @IsString()
   @IsOptional()
   WOMPI_ENVIRONMENT: string;
@@ -75,7 +78,6 @@ class EnvironmentVariables {
   @IsOptional()
   WOMPI_INTEGRITY_KEY: string;
 
-  // Sprint 6: Celo
   @IsString()
   @IsOptional()
   CELO_RPC_URL: string;
@@ -88,7 +90,6 @@ class EnvironmentVariables {
   @IsOptional()
   POLICY_LEDGER_ADDRESS: string;
 
-  // Sprint 2+
   @IsString()
   @IsOptional()
   JWT_SECRET: string;
@@ -104,7 +105,8 @@ export function validate(config: Record<string, unknown>) {
   });
   const errors = validateSync(validated, { skipMissingProperties: false });
   if (errors.length > 0) {
-    throw new Error(`Config validation failed:\n${errors.toString()}`);
+    Logger.error(`Config validation failed:\n${errors.toString()}`);
+    process.exit(1);
   }
   return validated;
 }

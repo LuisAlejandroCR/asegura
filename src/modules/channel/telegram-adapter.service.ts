@@ -1,19 +1,35 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Bot, Context, InputFile, webhookCallback } from 'grammy';
 import { IChannelAdapter, NormalizedMessage } from './types';
 
 @Injectable()
-export class TelegramAdapter implements IChannelAdapter {
+export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap {
   private readonly logger = new Logger(TelegramAdapter.name);
-  private readonly bot: Bot;
+  private bot: Bot | null = null;
+  private enabled = false;
 
   constructor(private readonly config: ConfigService) {
-    const token = config.getOrThrow<string>('TELEGRAM_BOT_TOKEN');
-    this.bot = new Bot(token);
+    const token = config.get<string>('TELEGRAM_BOT_TOKEN');
+    if (token) {
+      this.bot = new Bot(token);
+      this.enabled = true;
+    } else {
+      this.logger.warn('TELEGRAM_BOT_TOKEN not set — Telegram disabled');
+    }
   }
 
-  get instance(): Bot {
+  onApplicationBootstrap() {
+    if (this.enabled && this.bot && this.config.get<string>('TELEGRAM_WEBHOOK_SECRET')) {
+      const host = this.config.get<string>('HOST', '');
+      if (host) {
+        const secret = this.config.getOrThrow<string>('TELEGRAM_WEBHOOK_SECRET');
+        this.logger.log(`Telegram ready`); // webhook set in main.ts
+      }
+    }
+  }
+
+  get instance(): Bot | null {
     return this.bot;
   }
 
@@ -31,19 +47,22 @@ export class TelegramAdapter implements IChannelAdapter {
   }
 
   async sendText(userId: string, text: string): Promise<void> {
+    if (!this.bot) return;
     await this.bot.api.sendMessage(Number(userId), text);
   }
 
   async sendDocument(userId: string, file: Buffer, filename: string): Promise<void> {
+    if (!this.bot) return;
     await this.bot.api.sendDocument(Number(userId), new InputFile(file, filename));
   }
 
   async setWebhook(url: string, secret: string): Promise<void> {
+    if (!this.bot) return;
     await this.bot.api.setWebhook(url, { secret_token: secret });
     this.logger.log(`Webhook set to ${url}`);
   }
 
   webhookCallback(): (req: any, res: any, next?: any) => any {
-    return webhookCallback(this.bot, 'express');
+    return this.bot ? webhookCallback(this.bot, 'express') : (_req: any, _res: any) => {};
   }
 }
