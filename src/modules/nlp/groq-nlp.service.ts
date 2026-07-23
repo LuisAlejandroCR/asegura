@@ -46,7 +46,8 @@ Solo responde con JSON válido, sin markdown:
   "petResolution": null,
   "petName": null,
   "petAge": null,
-  "petBreed": null
+  "petBreed": null,
+  "pets": []
 }
 petType solo aplica si productCategory es "mascotas". Reglas:
 - Solo menciona gatos ("gato", "michi", "felino") → "gato"
@@ -70,7 +71,16 @@ petName, petAge, petBreed: cuando el usuario está describiendo UNA mascota espe
 respuesta a "¿nombre, edad y raza?" (ej: "se llama Max, tiene 3 años, es un labrador"):
 - petName: el nombre propio de la mascota (ej: "Max"). null si no lo menciona.
 - petAge: la edad tal como la dice, incluyendo la unidad (ej: "3 años", "8 meses"). null si no la menciona.
-- petBreed: la raza (ej: "labrador", "criollo", "siamés"). null si no la menciona o dice que no sabe/es mestizo sin especificar.`,
+- petBreed: la raza (ej: "labrador", "criollo", "siamés"). null si no la menciona o dice que no sabe/es mestizo sin especificar.
+
+pets: cuando el usuario describe UNA O VARIAS mascotas en el mismo mensaje en respuesta a
+"¿nombre, edad y raza?" (ej: "Rocky tiene 5 años y es labrador, y Luna tiene 3 años y es
+siamesa" → dos mascotas en un mensaje), retorna un array con un objeto {name, age, breed}
+POR CADA mascota mencionada, en el orden en que las describe. Si describe una sola, el
+array tiene un elemento. Si no describe ninguna mascota en este mensaje, retorna [].
+Usa null dentro de cada objeto para el dato que no mencione (mismas reglas que petName/
+petAge/petBreed arriba). No repitas la misma información también en los campos petName/
+petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden quedar null.`,
             },
             { role: 'user', content: text },
           ],
@@ -179,6 +189,10 @@ respuesta a "¿nombre, edad y raza?" (ej: "se llama Max, tiene 3 años, es un la
       // Breed recognition needs real NLP (no fixed breed dictionary here) — left null in
       // the fallback path; the primary Groq path extracts it directly from context.
       petBreed: null,
+      // Fallback only ever reliably extracts one pet per message (no multi-pet regex
+      // splitting) — mirrors petName/petAge/petBreed as a single-element array so callers
+      // can rely on `pets` uniformly regardless of whether Groq or the fallback ran.
+      pets: this.extractPetName(text) ? [{ name: this.extractPetName(text), age: this.extractPetAge(lower), breed: null }] : [],
     };
   }
 

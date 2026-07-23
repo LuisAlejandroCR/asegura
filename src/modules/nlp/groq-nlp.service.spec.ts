@@ -133,6 +133,15 @@ describe('GroqNlpService.fallbackIntent — pet name/age/breed extraction', () =
   it('returns null petAge when no age is mentioned', () => {
     expect(fallback(service, 'se llama Max').petAge).toBeNull();
   });
+
+  it('populates pets as a one-element array mirroring petName/petAge when a pet is named', () => {
+    const result = fallback(service, 'se llama Max, tiene 3 años, es un labrador');
+    expect(result.pets).toEqual([{ name: 'Max', age: '3 años', breed: null }]);
+  });
+
+  it('populates pets as an empty array when no pet is named', () => {
+    expect(fallback(service, 'tiene 3 años').pets).toEqual([]);
+  });
 });
 
 // ── Fuzz / property-based tests ───────────────────────────────────────────────

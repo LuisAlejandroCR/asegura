@@ -350,6 +350,56 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
     expect(sentText).toContain('2 de 2');
   });
 
+  it('regression — accepts multiple pets described in a single message, per user request', async () => {
+    // User feedback: "the pet data should be ask in one audio or text and split as needed
+    // into the flow" — when Groq extracts several pets from one message, absorb all of
+    // them at once instead of forcing one message per pet.
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { productCategory: 'mascotas', petCount: 2 },
+      intent: makeIntent({
+        productCategory: 'mascotas',
+        pets: [
+          { name: 'Rocky', age: '5 años', breed: 'labrador' },
+          { name: 'Luna', age: '3 años', breed: 'siamés' },
+        ],
+      }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Rocky tiene 5 años y es labrador, y Luna tiene 3 años y es siamesa'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({
+        pets: [
+          { name: 'Rocky', age: '5 años', breed: 'labrador' },
+          { name: 'Luna', age: '3 años', breed: 'siamés' },
+        ],
+      }),
+    );
+    // All pets collected in one turn — proceeds straight to cédula
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('dígitos');
+  });
+
+  it('absorbs as many pets as fit when the message describes more than petCount', async () => {
+    const { service, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { productCategory: 'mascotas', petCount: 1 },
+      intent: makeIntent({
+        productCategory: 'mascotas',
+        pets: [
+          { name: 'Rocky', age: '5 años', breed: 'labrador' },
+          { name: 'Luna', age: '3 años', breed: 'siamés' },
+        ],
+      }),
+    });
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ pets: [{ name: 'Rocky', age: '5 años', breed: 'labrador' }] }),
+    );
+  });
+
   it('proceeds to cédula once all pets are collected', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DATA_CAPTURE,
@@ -605,6 +655,26 @@ describe('AgentService — QUOTE_PRESENTED cross-sell for personal coverage', ()
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain(humanProduct.name);
+  });
+
+  it('regression — cross-sell takes priority even when isAffirmative is true (real live-test bug)', async () => {
+    // Real bug: "Quiero ser mascotas, muéstrame ese de salud de accidentes para mí."
+    // contains "quiero" (an isAffirmative trigger word) with no question mark, so
+    // isAffirmative won a race against cross-sell detection and sent the user straight
+    // to DATA_CAPTURE for the PET quote — completely ignoring the "para mí" request.
+    const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: petProduct.id, productCategory: 'mascotas', petCount: 3 },
+      intent: makeIntent({ isAffirmative: true, isNegative: false, wantsAlternative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Quiero, muéstrame ese de salud de accidentes para mí.'));
+    await service.handleMessage({});
+    expect(conversations.saveState).not.toHaveBeenCalledWith(
+      expect.anything(), ConversationState.DATA_CAPTURE, expect.anything(),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/vida|accidentes|asistencia/);
   });
 });
 

@@ -254,6 +254,24 @@ export class AgentService {
   // ── Quotation ────────────────────────────────────────────────────────────────
 
   private handleQuotation(context: ConversationContext, text: string, intent: InsuranceIntent): ProcessResult {
+    const currentProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
+
+    // Cross-sell check runs BEFORE isAffirmative: a message naming personal/human
+    // coverage ("...muéstrame ese de salud de accidentes para mí") can still contain a
+    // loose affirmative word like "quiero" with no question mark — isAffirmative would
+    // otherwise win the race and send the user straight to DATA_CAPTURE for the pet
+    // quote, silently ignoring the cross-sell request (real live-test bug).
+    if (currentProduct?.category === 'mascotas' && this.mentionsPersonalCoverage(text)) {
+      return {
+        text: (
+          '¡Claro! Además de tus mascotas, puedo cotizarte algo para ti — vida, accidentes o asistencia médica.\n\n' +
+          '¿Cuál te interesa, o cuéntame qué es lo que más te preocupa proteger?'
+        ),
+        nextState: ConversationState.DISCOVERY,
+        context: { ...context, productCategory: undefined, coverage: undefined, petType: undefined, petCount: undefined, shownProductIds: [] },
+      };
+    }
+
     if (intent.isAffirmative) {
       return {
         text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](context),
@@ -281,23 +299,6 @@ export class AgentService {
         text: 'No tengo más opciones en esta categoría. ¿Quieres que busquemos en otra?',
         nextState: ConversationState.DISCOVERY,
         context: { ...context, productCategory: undefined, coverage: undefined, shownProductIds: [] },
-      };
-    }
-
-    const currentProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
-
-    // Cross-sell: the pet quote's own text promises "para ti también tenemos seguros de
-    // salud y accidentes" — honor that when the user actually asks. Redirects to a fresh
-    // DISCOVERY search for the human's own coverage while keeping the pet quote intact
-    // (a separate purchase cycle issues a separate policy/PDF for the human's product).
-    if (currentProduct?.category === 'mascotas' && this.mentionsPersonalCoverage(text)) {
-      return {
-        text: (
-          '¡Claro! Además de tus mascotas, puedo cotizarte algo para ti — vida, accidentes o asistencia médica.\n\n' +
-          '¿Cuál te interesa, o cuéntame qué es lo que más te preocupa proteger?'
-        ),
-        nextState: ConversationState.DISCOVERY,
-        context: { ...context, productCategory: undefined, coverage: undefined, petType: undefined, petCount: undefined, shownProductIds: [] },
       };
     }
 
@@ -336,17 +337,28 @@ export class AgentService {
   ): Promise<ProcessResult> {
     const newContext: ConversationContext = { ...context };
 
-    // Step 0 — collect per-pet details (name, age, breed) before the human's own data
+    // Step 0 — collect per-pet details (name, age, breed) before the human's own data.
+    // Accepts either one pet per message (petName/petAge/petBreed) or several at once
+    // (pets[]) — the user can describe all their pets in one turn if they want to.
     if (context.productCategory === 'mascotas') {
       const totalPets = context.petCount ?? 1;
       const pets = context.pets ?? [];
       if (pets.length < totalPets) {
-        if (intent.petName) {
-          const updatedPets = [...pets, {
-            name: intent.petName,
-            age: intent.petAge ?? 'no especificada',
-            breed: intent.petBreed ?? 'no especificada',
-          }];
+        const extracted = (intent.pets && intent.pets.length > 0)
+          ? intent.pets
+          : (intent.petName ? [{ name: intent.petName, age: intent.petAge ?? null, breed: intent.petBreed ?? null }] : []);
+
+        if (extracted.length > 0) {
+          const updatedPets = [...pets];
+          for (const p of extracted) {
+            if (updatedPets.length >= totalPets) break;
+            if (!p.name) continue;
+            updatedPets.push({
+              name: p.name,
+              age: p.age ?? 'no especificada',
+              breed: p.breed ?? 'no especificada',
+            });
+          }
           if (updatedPets.length < totalPets) {
             return {
               text: `Perfecto. Ahora cuéntame de tu mascota ${updatedPets.length + 1} de ${totalPets}: ¿nombre, edad y raza?`,
@@ -365,7 +377,7 @@ export class AgentService {
         } else {
           const petNum = pets.length + 1;
           const prefix = pets.length === 0
-            ? 'Para emitir la póliza necesito los datos de cada mascota. '
+            ? 'Para emitir la póliza necesito los datos de cada mascota (puedes contarme de todas a la vez o una por una). '
             : 'No logré entender eso. ';
           return {
             text: `${prefix}Mascota ${petNum} de ${totalPets}: ¿nombre, edad y raza?`,
