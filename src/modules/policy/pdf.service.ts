@@ -17,6 +17,12 @@ interface PolicyPdfData {
   // Real Celoscan tx URL, known only after payment + on-chain registration.
   // Before that, the QR falls back to the deterministic referenceURI.
   celoscanUrl?: string;
+  // Number of pets covered — mascotas products are priced per pet (monthlyPremium is
+  // the per-unit price); when set and > 1, the premium box shows the multiplied total.
+  petCount?: number | null;
+  // Per-pet identity (name, age, breed) — shown as a table when present, matching how
+  // real pet-insurance certificates name each covered animal individually.
+  pets?: { name: string; age: string; breed: string }[];
 }
 
 // Colsubsidio brand palette (Pantone 109 C / 2196 C / Cool Gray 11 C)
@@ -90,6 +96,7 @@ export class PdfService {
     this.drawHeader(doc, pageWidth);
     this.drawTitle(doc, data);
     this.drawInfoColumns(doc, data, contentWidth);
+    this.drawPetsTable(doc, data, contentWidth);
     this.drawCoverages(doc, data, contentWidth);
     this.drawAuditBox(doc, contentWidth, auditUrl, qrBuffer);
     this.drawFooter(doc, contentWidth);
@@ -155,19 +162,39 @@ export class PdfService {
     }
 
     // Right column — premium box
-    const boxHeight = 95;
+    const { primary, total } = this.buildPremiumLines(data.monthlyPremium, data.petCount);
+    const boxHeight = total ? 112 : 95;
     doc.roundedRect(rightX, startY, rightWidth, boxHeight, 6).fill(BRAND.blue);
     doc.fillColor(BRAND.white).fontSize(9).font('Helvetica-Bold')
       .text('PRIMA MENSUAL', rightX + 12, startY + 12, { width: rightWidth - 24 });
-    doc.fontSize(20)
-      .text(`$${data.monthlyPremium.toLocaleString('es-CO')}`, rightX + 12, startY + 28, { width: rightWidth - 24 });
-    doc.fontSize(8).font('Helvetica')
-      .text('COP / mes', rightX + 12, startY + 52, { width: rightWidth - 24 });
-    doc.fontSize(8)
-      .text(`N.° Póliza: ${data.policyId.toUpperCase()}`, rightX + 12, startY + 70, { width: rightWidth - 24 });
+    doc.fontSize(total ? 15 : 20)
+      .text(primary, rightX + 12, startY + 28, { width: rightWidth - 24 });
+
+    let y = startY + (total ? 48 : 52);
+    if (total) {
+      doc.fontSize(9).font('Helvetica-Bold').text(total, rightX + 12, y, { width: rightWidth - 24 });
+      y += 18;
+    }
+    doc.fontSize(8).font('Helvetica').text('COP / mes', rightX + 12, y, { width: rightWidth - 24 });
+    y += 14;
+    doc.fontSize(8).text(`N.° Póliza: ${data.policyId.toUpperCase()}`, rightX + 12, y, { width: rightWidth - 24 });
 
     doc.fillColor(BRAND.black);
     doc.y = Math.max(lineY, startY + boxHeight) + 20;
+  }
+
+  // Mirrors formatQuote()'s chat pricing display so the PDF and the chat quote always
+  // agree: monthlyPremium is the per-unit (per-pet) price; the total is derived here.
+  private buildPremiumLines(monthlyPremium: number, petCount?: number | null): { primary: string; total: string | null } {
+    const amount = `$${monthlyPremium.toLocaleString('es-CO')}`;
+    if (petCount && petCount > 1) {
+      const totalAmount = monthlyPremium * petCount;
+      return {
+        primary: `${amount} por mascota`,
+        total: `Total para ${petCount} mascotas: $${totalAmount.toLocaleString('es-CO')}`,
+      };
+    }
+    return { primary: amount, total: null };
   }
 
   // ── Coverages box ──────────────────────────────────────────────────────────────

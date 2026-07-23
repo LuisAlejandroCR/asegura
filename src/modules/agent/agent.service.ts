@@ -10,6 +10,7 @@ import { PolicyService } from '../policy/policy.service';
 import { WompiService } from '../payments/wompi.service';
 import { AffiliateSignals, InsuranceProduct } from '../quoting/types';
 import { PRODUCTS } from '../quoting/products.data';
+import { computeTotalPremium } from '../quoting/pricing';
 
 interface ProcessResult {
   text?: string;
@@ -283,10 +284,26 @@ export class AgentService {
       };
     }
 
+    const currentProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
+
+    // Cross-sell: the pet quote's own text promises "para ti también tenemos seguros de
+    // salud y accidentes" — honor that when the user actually asks. Redirects to a fresh
+    // DISCOVERY search for the human's own coverage while keeping the pet quote intact
+    // (a separate purchase cycle issues a separate policy/PDF for the human's product).
+    if (currentProduct?.category === 'mascotas' && this.mentionsPersonalCoverage(text)) {
+      return {
+        text: (
+          '¡Claro! Además de tus mascotas, puedo cotizarte algo para ti — vida, accidentes o asistencia médica.\n\n' +
+          '¿Cuál te interesa, o cuéntame qué es lo que más te preocupa proteger?'
+        ),
+        nextState: ConversationState.DISCOVERY,
+        context: { ...context, productCategory: undefined, coverage: undefined, petType: undefined, petCount: undefined, shownProductIds: [] },
+      };
+    }
+
     // Neutral/unclear message (e.g. a follow-up question) — re-show the actual quoted
     // product instead of the generic STATE_RESPONSES placeholder, which has no real
     // product name or price and reads as a broken response.
-    const currentProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
     if (currentProduct) {
       return {
         text: this.formatQuote(
@@ -300,6 +317,14 @@ export class AgentService {
     return { text: STATE_RESPONSES[ConversationState.QUOTE_PRESENTED](context) };
   }
 
+  private mentionsPersonalCoverage(text: string): boolean {
+    // "también"/"tambien" alone is too generic here — could just mean "I also have a
+    // dog" mid-pet-conversation. Anchor on phrases that specifically mean "for me".
+    const personalPhrases = ['para mí', 'para mi', 'y yo'];
+    const humanCategories = ['vida', 'accidentes', 'accidente', 'salud', 'hogar'];
+    return personalPhrases.some((p) => text.includes(p)) || humanCategories.some((c) => text.includes(c));
+  }
+
   // ── Data capture ─────────────────────────────────────────────────────────────
 
   private async handleDataCapture(
@@ -310,6 +335,45 @@ export class AgentService {
     rawText: string = text,
   ): Promise<ProcessResult> {
     const newContext: ConversationContext = { ...context };
+
+    // Step 0 — collect per-pet details (name, age, breed) before the human's own data
+    if (context.productCategory === 'mascotas') {
+      const totalPets = context.petCount ?? 1;
+      const pets = context.pets ?? [];
+      if (pets.length < totalPets) {
+        if (intent.petName) {
+          const updatedPets = [...pets, {
+            name: intent.petName,
+            age: intent.petAge ?? 'no especificada',
+            breed: intent.petBreed ?? 'no especificada',
+          }];
+          if (updatedPets.length < totalPets) {
+            return {
+              text: `Perfecto. Ahora cuéntame de tu mascota ${updatedPets.length + 1} de ${totalPets}: ¿nombre, edad y raza?`,
+              context: { ...context, pets: updatedPets },
+            };
+          }
+          // All pets collected — ask for cédula on the NEXT turn. Falling through to
+          // Step 1 in this same call would validate the pet-description text (not a
+          // cédula) against the cédula regex and fail, silently discarding these pets
+          // since that error branch doesn't return an updated context.
+          const petsCompleteContext = { ...context, pets: updatedPets };
+          return {
+            text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](petsCompleteContext),
+            context: petsCompleteContext,
+          };
+        } else {
+          const petNum = pets.length + 1;
+          const prefix = pets.length === 0
+            ? 'Para emitir la póliza necesito los datos de cada mascota. '
+            : 'No logré entender eso. ';
+          return {
+            text: `${prefix}Mascota ${petNum} de ${totalPets}: ¿nombre, edad y raza?`,
+            context,
+          };
+        }
+      }
+    }
 
     // Step 1 — collect cédula
     if (!context.cedula) {
@@ -341,25 +405,54 @@ export class AgentService {
       };
     }
 
-    // Step 4 — confirmation ("sí" → issue policy)
+    // Step 4 — confirmation ("sí" → create pending policy record, move to payment)
+    // No PDF is sent here — the only PDF the user receives is generated and sent by
+    // wompi-webhook.controller.ts once Wompi confirms the payment as APPROVED.
     if (intent.isAffirmative) {
-      const { policyId, pdfBuffer } = await this.policy.issue(convId, newContext);
+      const { policyId } = await this.policy.issue(convId, newContext);
       newContext.policyId = policyId;
 
-      const result: ProcessResult = {
+      return {
         text: STATE_RESPONSES[ConversationState.PAYMENT](newContext),
         nextState: ConversationState.PAYMENT,
         context: newContext,
       };
-
-      if (pdfBuffer) {
-        result.document = { buffer: pdfBuffer, filename: `poliza-${policyId.slice(0, 8)}.pdf` };
-      }
-
-      return result;
     }
 
-    if (intent.isNegative || text.includes('corregir')) {
+    const correctionTriggered = intent.isNegative ||
+      ['corregir', 'corrig', 'cambiar', 'cambia', 'editar', 'está mal', 'esta mal', 'equivocad'].some((k) => text.includes(k));
+
+    if (correctionTriggered) {
+      // Targeted correction: if the message names exactly one field, only reset that
+      // one — resetting all three (the old behavior) forced the user to redo cédula
+      // and correo just to fix a one-word typo in their name.
+      const mentionsCedula = text.includes('cédula') || text.includes('cedula');
+      const mentionsNombre = text.includes('nombre');
+      const mentionsCorreo = text.includes('correo') || text.includes('email');
+      const mentionedFields = [mentionsCedula, mentionsNombre, mentionsCorreo].filter(Boolean).length;
+
+      if (mentionedFields === 1 && mentionsNombre) {
+        return {
+          text: '¿Cuál es tu nombre completo?',
+          nextState: ConversationState.DATA_CAPTURE,
+          context: { ...context, nombre: undefined },
+        };
+      }
+      if (mentionedFields === 1 && mentionsCorreo) {
+        return {
+          text: '¿Cuál es tu correo electrónico? Ahí recibirás la póliza.',
+          nextState: ConversationState.DATA_CAPTURE,
+          context: { ...context, email: undefined },
+        };
+      }
+      if (mentionedFields === 1 && mentionsCedula) {
+        return {
+          text: 'Escríbeme tu cédula de nuevo (solo dígitos, sin puntos ni espacios).',
+          nextState: ConversationState.DATA_CAPTURE,
+          context: { ...context, cedula: undefined },
+        };
+      }
+
       return {
         text: '¿Qué dato quieres corregir? Escríbeme tu cédula de nuevo y empezamos.',
         nextState: ConversationState.DATA_CAPTURE,
@@ -367,8 +460,10 @@ export class AgentService {
       };
     }
 
-    // Default — re-show confirmation summary
-    return { text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](context) };
+    // Genuinely unclear message (not a confirmation, not a correction request) —
+    // acknowledge instead of silently repeating the same summary card, which reads as
+    // the agent ignoring the user.
+    return { text: `No logré entender eso. ${STATE_RESPONSES[ConversationState.DATA_CAPTURE](context)}` };
   }
 
   // ── Payment ─────────────────────────────────────────────────────────────────
@@ -403,7 +498,7 @@ export class AgentService {
 
     if (isConfirm) {
       const quoteProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
-      const amountCOP = quoteProduct?.basePremium ?? 20000;
+      const amountCOP = quoteProduct ? computeTotalPremium(quoteProduct, context.petCount) : 20000;
 
       try {
         const { checkoutUrl, paymentLinkId } = await this.wompi.createPaymentLink({
@@ -465,10 +560,10 @@ export class AgentService {
     const isPet = product.category === 'mascotas';
     const petCount = (isPet && context?.petCount && context.petCount > 0) ? context.petCount : null;
     const pricePerUnit = product.basePremium;
+    const total = computeTotalPremium(product, context?.petCount);
 
     let priceBlock: string;
     if (isPet && petCount && petCount > 1) {
-      const total = pricePerUnit * petCount;
       priceBlock =
         `💰 *$${pricePerUnit.toLocaleString('es-CO')}/mes por mascota*\n` +
         `📊 *Total para ${petCount} mascotas: $${total.toLocaleString('es-CO')}/mes*`;

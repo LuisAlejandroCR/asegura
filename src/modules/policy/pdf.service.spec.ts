@@ -42,6 +42,58 @@ describe('PdfService.generate', () => {
   });
 });
 
+// ── petCount pricing display ───────────────────────────────────────────────────
+// Real bug: the chat quote correctly showed "$14.500/mes por mascota, Total para 3
+// mascotas: $43.500/mes", but the PDF's PRIMA MENSUAL box always showed a flat single
+// price — PdfService never received petCount at all, so it had no way to know.
+
+describe('PdfService — petCount pricing display', () => {
+  const service = new PdfService();
+
+  function buildPremiumLines(monthlyPremium: number, petCount?: number | null): { primary: string; total: string | null } {
+    return (service as any).buildPremiumLines(monthlyPremium, petCount);
+  }
+
+  it('shows only the flat price when petCount is absent', () => {
+    const lines = buildPremiumLines(14500, undefined);
+    expect(lines.primary).toContain('14.500');
+    expect(lines.total).toBeNull();
+  });
+
+  it('shows only the flat price when petCount is 1', () => {
+    const lines = buildPremiumLines(14500, 1);
+    expect(lines.total).toBeNull();
+  });
+
+  it('shows "por mascota" plus the correct total when petCount > 1', () => {
+    const lines = buildPremiumLines(14500, 3);
+    expect(lines.primary).toContain('por mascota');
+    expect(lines.total).toContain('3 mascotas');
+    expect(lines.total).toContain('43.500'); // 14500 * 3
+  });
+
+  it('still generates a valid PDF end-to-end when petCount is provided', async () => {
+    const buffer = await service.generate(baseData({ petCount: 3 }));
+    expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('still generates a valid PDF end-to-end when a pets table is provided', async () => {
+    const buffer = await service.generate(baseData({
+      petCount: 2,
+      pets: [
+        { name: 'Max', age: '3 años', breed: 'labrador' },
+        { name: 'Luna', age: '2 años', breed: 'siamés' },
+      ],
+    }));
+    expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('still generates a valid PDF when pets is an empty array', async () => {
+    const buffer = await service.generate(baseData({ pets: [] }));
+    expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
+  });
+});
+
 // ── resolveAuditUrl — QR target logic ─────────────────────────────────────────
 // The Celo on-chain transaction isn't known until after payment, but the PDF is
 // generated before payment. The QR must always encode a working audit URL: the

@@ -62,7 +62,7 @@ function buildService(overrides: {
     bestQuote: jest.fn().mockReturnValue(null),
   };
   const policy = {
-    issue: jest.fn().mockResolvedValue({ policyId: 'pol-1', pdfBuffer: null }),
+    issue: jest.fn().mockResolvedValue({ policyId: 'pol-1' }),
     updateStatus: jest.fn().mockResolvedValue(undefined),
   };
   const wompi = {
@@ -259,11 +259,174 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
       expect.objectContaining({ cedula: undefined, nombre: undefined, email: undefined }),
     );
   });
+
+  it('regression — correcting just the name only resets nombre, not cedula/email too', async () => {
+    // Real live-test bug: "Corrigé mi nombre, es Juan Pérez" forced the user to redo
+    // cédula AND correo just to fix a one-word name typo — a needlessly clunky UX.
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan Pere', email: 'juan@test.com' },
+      intent: makeIntent({ isNegative: false, isAffirmative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Corrigé mi nombre, es Juan Pérez'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ cedula: '12345678', nombre: undefined, email: 'juan@test.com' }),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('nombre completo');
+  });
+
+  it('correcting just the email only resets email', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan Pérez', email: 'wrong@test.com' },
+      intent: makeIntent({ isNegative: false, isAffirmative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('cambia mi correo, está mal'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ cedula: '12345678', nombre: 'Juan Pérez', email: undefined }),
+    );
+  });
+
+  it('regression — a genuinely unclear message at confirmation gets an acknowledgment, not a silent repeat', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com' },
+      intent: makeIntent({ isNegative: false, isAffirmative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('mmh no sé qué decir'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toMatch(/no logré entender|no entendí/i);
+  });
+
+  it('regression — "sí" at confirmation never attaches a PDF (only the post-payment webhook may)', async () => {
+    // Real bug: the user received a "policy PDF" the moment they confirmed DATA_CAPTURE,
+    // before ever paying. The only PDF now comes from wompi-webhook.controller.ts.
+    const { service, telegram } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com' },
+      intent: makeIntent({ isAffirmative: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    expect(telegram.sendDocument).not.toHaveBeenCalled();
+  });
+});
+
+// ── DATA_CAPTURE — per-pet detail collection (name, age, breed) ──────────────
+
+describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
+  it('asks for the first pet\'s details before asking for cédula', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { productCategory: 'mascotas', petCount: 2 },
+      intent: makeIntent({ productCategory: 'mascotas' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('listo'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('1 de 2');
+    expect(sentText).not.toContain('dígitos'); // must not ask for cédula yet
+  });
+
+  it('saves the first pet and asks for the second when petCount=2', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { productCategory: 'mascotas', petCount: 2 },
+      intent: makeIntent({ productCategory: 'mascotas', petName: 'Max', petAge: '3 años', petBreed: 'labrador' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('se llama Max, tiene 3 años, es un labrador'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ pets: [{ name: 'Max', age: '3 años', breed: 'labrador' }] }),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('2 de 2');
+  });
+
+  it('proceeds to cédula once all pets are collected', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { productCategory: 'mascotas', petCount: 1, pets: [] },
+      intent: makeIntent({ productCategory: 'mascotas', petName: 'Rocky', petAge: '5 años', petBreed: 'criollo' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('se llama Rocky, tiene 5 años, es criollo'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('dígitos'); // now asks for cédula
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ pets: [{ name: 'Rocky', age: '5 años', breed: 'criollo' }] }),
+    );
+  });
+
+  it('defaults age/breed to "no especificada" when the user only gives a name', async () => {
+    const { service, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { productCategory: 'mascotas', petCount: 1 },
+      intent: makeIntent({ productCategory: 'mascotas', petName: 'Luna', petAge: null, petBreed: null }),
+    });
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ pets: [{ name: 'Luna', age: 'no especificada', breed: 'no especificada' }] }),
+    );
+  });
+
+  it('re-asks without advancing when no pet name is extracted from the message', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { productCategory: 'mascotas', petCount: 1, pets: [] },
+      intent: makeIntent({ productCategory: 'mascotas', petName: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('mmh no sé'));
+    await service.handleMessage({});
+    // pets stays empty — no pet was actually captured, just re-prompted
+    expect(conversations.saveState).not.toHaveBeenCalledWith(
+      expect.anything(), expect.anything(), expect.objectContaining({ pets: expect.arrayContaining([expect.anything()]) }),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('1 de 1');
+  });
+
+  it('does not trigger the pet-detail loop for non-mascotas products', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { productCategory: 'vida' },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('12345678'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('mascota');
+  });
 });
 
 // ── PAYMENT — webhook is the source of truth, chat "sí" no longer confirms ────
 
 describe('AgentService — PAYMENT webhook-driven confirmation', () => {
+  it('regression — charges the correct multiplied total for multi-pet households, not the flat single-pet price', async () => {
+    // Real bug: the chat quote correctly showed "$14.500/mes por mascota, Total para 3
+    // mascotas: $43.500/mes", but the actual Wompi charge used the flat basePremium —
+    // under-charging by 2/3 for a 3-pet household.
+    const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!; // basePremium 14500
+    const { service, telegram, wompi } = buildService({
+      state: ConversationState.PAYMENT,
+      context: { policyId: 'pol-1', quoteProductId: petProduct.id, productCategory: 'mascotas', petCount: 3 },
+      intent: makeIntent({ isAffirmative: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    expect(wompi.createPaymentLink).toHaveBeenCalledWith(
+      expect.objectContaining({ amountCOP: 43500 }),
+    );
+  });
+
   it('creating a payment link persists wompi_link_id on the policy record', async () => {
     // The webhook can only find our policy via payment_link_id (Wompi has no
     // "reference" create-parameter) — it must be persisted the moment the link exists.
@@ -398,11 +561,50 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
       context: { quoteProductId: petProduct.id, productCategory: 'mascotas', petCount: 3 },
       intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false }),
     });
-    telegram.normalize.mockResolvedValue(makeMessage('¿Cuál hay para mí?'));
+    telegram.normalize.mockResolvedValue(makeMessage('¿Ese es el único plan?'));
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain(petProduct.name);
     expect(sentText).not.toContain('precio accesible');
+  });
+});
+
+// ── QUOTE_PRESENTED — cross-sell for the human owner ──────────────────────────
+
+describe('AgentService — QUOTE_PRESENTED cross-sell for personal coverage', () => {
+  it('regression — asking about coverage "para mí" during a pet quote offers to shop for the human, not a repeat of the pet quote', async () => {
+    // Real live-test bug: "Me interesan mascotas y para mí ¿qué hay?" and "¿Me interesa
+    // ese de mascotas? ¿Para mí qué hay?" both got no real answer — the pet quote's own
+    // text promises "Para ti también tenemos seguros... cuéntame si los quieres ver" but
+    // no code path ever followed up on that promise.
+    const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: petProduct.id, productCategory: 'mascotas', petType: 'gato', petCount: 1 },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Me interesan mascotas y para mí ¿qué hay?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain(petProduct.name);
+    expect(sentText.toLowerCase()).toMatch(/vida|accidentes|asistencia/);
+    // Redirects to DISCOVERY to shop for the human's own product, keeping the pet quote intact
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DISCOVERY, expect.objectContaining({ quoteProductId: petProduct.id }),
+    );
+  });
+
+  it('does not trigger cross-sell when the current quote is not a pet product', async () => {
+    const humanProduct = PRODUCTS.find(p => p.category === 'vida')!;
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: humanProduct.id, productCategory: 'vida' },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('y para mí ¿qué más hay?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(humanProduct.name);
   });
 });
 

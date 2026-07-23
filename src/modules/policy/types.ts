@@ -6,6 +6,7 @@ interface Policy {
   nombre: string;
   email: string | null;
   monthly_premium: number;
+  pet_count: number | null;
   status: string;
   wompi_link_id: string | null;
   celo_tx_hash: string | null;

@@ -1,14 +1,15 @@
-// policy.service.ts: creates policy records and emits PDF
+// policy.service.ts: creates policy records; the final PDF is only generated after
+// payment is confirmed (see generateFinalPdf, called from wompi-webhook.controller.ts)
 import { Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.service';
 import { PdfService } from './pdf.service';
 import { PRODUCTS } from '../quoting/products.data';
+import { computeTotalPremium } from '../quoting/pricing';
 import { ConversationContext } from '../agent/types';
 import { Policy } from './types';
 
 export interface IssuedPolicy {
   policyId: string;
-  pdfBuffer: Buffer | null;
 }
 
 @Injectable()
@@ -22,6 +23,7 @@ export class PolicyService {
 
   async issue(conversationId: string, context: ConversationContext): Promise<IssuedPolicy> {
     const product = PRODUCTS.find((p) => p.id === context.quoteProductId);
+    const monthlyPremium = product ? computeTotalPremium(product, context.petCount) : 0;
 
     const { data, error } = await this.supabase.db
       .from('policies')
@@ -31,7 +33,8 @@ export class PolicyService {
         cedula: context.cedula!,
         nombre: context.nombre!,
         email: context.email ?? null,
-        monthly_premium: product?.basePremium ?? 0,
+        monthly_premium: monthlyPremium,
+        pet_count: context.petCount ?? null,
         status: 'pending_payment',
       })
       .select('id')
@@ -39,31 +42,11 @@ export class PolicyService {
 
     if (error) {
       this.logger.error(`Failed to create policy: ${error.message}`);
-      return { policyId: 'error', pdfBuffer: null };
+      return { policyId: 'error' };
     }
 
     const policyId: string = (data as { id: string }).id;
-
-    let pdfBuffer: Buffer | null = null;
-    if (product) {
-      try {
-        pdfBuffer = await this.pdf.generate({
-          policyId,
-          productName: product.name,
-          insurer: product.insurer,
-          coverages: product.coverages,
-          nombre: context.nombre!,
-          cedula: context.cedula!,
-          email: context.email,
-          monthlyPremium: product.basePremium,
-          issuedAt: new Date(),
-        });
-      } catch (err) {
-        this.logger.error(`PDF generation failed: ${String(err)}`);
-      }
-    }
-
-    return { policyId, pdfBuffer };
+    return { policyId };
   }
 
   async updateStatus(policyId: string, status: string, extras?: Record<string, unknown>): Promise<void> {
@@ -123,6 +106,7 @@ export class PolicyService {
         monthlyPremium: product.basePremium,
         issuedAt: new Date(policy.created_at),
         celoscanUrl,
+        petCount: policy.pet_count,
       });
     } catch (err) {
       this.logger.error(`Final PDF generation failed: ${String(err)}`);
