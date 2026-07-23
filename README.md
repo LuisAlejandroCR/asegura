@@ -39,12 +39,14 @@ Recomienda el producto más adecuado con razón explícita
     ↓
 Usuario confirma y paga (link Wompi, dentro del chat)
     ↓
-PDF de póliza adjunto al chat (con QR de auditoría blockchain)
+Wompi confirma el pago automáticamente vía webhook — verificado, no autoreportado
     ↓
-Registro inmutable en Celo Mainnet + link Celoscan
+Registro inmutable en Celo Mainnet
+    ↓
+PDF de póliza + link Celoscan enviados al chat (con QR de auditoría blockchain)
 ```
 
-Sin formularios. Sin menús. Sin salir del chat.
+Sin formularios. Sin menús. Sin salir del chat. La confirmación de pago la valida Wompi directamente — nadie puede activar una póliza sin haber pagado realmente.
 
 ---
 
@@ -63,6 +65,8 @@ Sin formularios. Sin menús. Sin salir del chat.
 | Asistencia veterinaria | GEA | $14.500 |
 | Medicina prepagada gatos | VetPlus | $81.800 |
 | Medicina prepagada perros | VetPlus | $96.600 |
+
+Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el precio unitario y el total mensual real, no un valor genérico. Antes de emitir la póliza, el agente pide nombre, edad y raza de cada mascota — la póliza final las nombra individualmente, como un certificado real.
 
 ---
 
