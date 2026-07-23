@@ -1,0 +1,39 @@
+# Documentación interna / roadmap (no público)
+descubrimientos/
+
+# Knowledge base interna (no público)
+asegura-knowledge-base/
+AGENTS.md
+docs/
+.claude/
+
+# Dependencias
+node_modules/
+
+# Variables de entorno
+.env
+.env.local
+.env.*.local
+
+# Build
+dist/
+build/
+.next/
+.turbo/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing
+coverage/
