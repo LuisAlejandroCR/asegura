@@ -29,8 +29,7 @@ export const STATE_RESPONSES: ResponsesMap = {
     '¿En qué te puedo ayudar hoy?',
 
   [ConversationState.AUTHORIZATION]: () =>
-    'Antes de continuar, necesito tu autorización para consultar tu perfil de afiliado y enviarte cotizaciones personalizadas, según la Ley 1581 de 2012.\n\n' +
-    'Consulta nuestros [Términos y condiciones](https://colsubsidio.com/transparencia-acceso-informacion/tratamiento-datos-personales).\n\n' +
+    'Antes de continuar, necesito tu autorización para consultar tu perfil de afiliado y enviarte cotizaciones personalizadas, según la *Ley 1581 de 2012* (Política de tratamiento de datos personales de Colsubsidio).\n\n' +
     '¿Autorizas el tratamiento de tus datos? Escríbeme *"sí"* para continuar.',
 
   [ConversationState.DISCOVERY]: (ctx) => {

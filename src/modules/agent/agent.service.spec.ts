@@ -76,6 +76,45 @@ function buildService(overrides: {
   return { service, nlp, telegram, conversations, quoting, policy, wompi, blockchain };
 }
 
+// ── GREETING state ───────────────────────────────────────────────────────────
+
+describe('AgentService — GREETING', () => {
+  it('sends greeting message followed by authorization request as two separate messages', async () => {
+    const { service, telegram, conversations } = buildService({ state: ConversationState.GREETING });
+    telegram.normalize.mockResolvedValue(makeMessage('hola'));
+    await service.handleMessage({});
+    // Must send exactly 2 messages: greeting then authorization
+    expect(telegram.sendText).toHaveBeenCalledTimes(2);
+    const firstCall = telegram.sendText.mock.calls[0][1] as string;
+    const secondCall = telegram.sendText.mock.calls[1][1] as string;
+    expect(firstCall).toContain('Asegura');
+    expect(secondCall).toContain('Ley 1581');
+    // State must advance to AUTHORIZATION
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.AUTHORIZATION, expect.anything(),
+    );
+  });
+
+  it('regression — GREETING never skips the greeting message (¡Hola!)', async () => {
+    const { service, telegram } = buildService({ state: ConversationState.GREETING });
+    telegram.normalize.mockResolvedValue(makeMessage('/start'));
+    await service.handleMessage({});
+    const calls = telegram.sendText.mock.calls.map((c: any[]) => c[1] as string);
+    const hasGreeting = calls.some((t) => t.includes('Asegura') && (t.includes('Hola') || t.includes('hola') || t.includes('asesor')));
+    expect(hasGreeting).toBe(true);
+  });
+
+  it('authorization message contains no external URLs', async () => {
+    const { service, telegram } = buildService({ state: ConversationState.GREETING });
+    telegram.normalize.mockResolvedValue(makeMessage('/start'));
+    await service.handleMessage({});
+    const calls = telegram.sendText.mock.calls.map((c: any[]) => c[1] as string);
+    const authMsg = calls.find((t) => t.includes('Ley 1581'));
+    expect(authMsg).toBeDefined();
+    expect(authMsg).not.toMatch(/https?:\/\//);
+  });
+});
+
 // ── AUTHORIZATION state ───────────────────────────────────────────────────────
 
 describe('AgentService — AUTHORIZATION', () => {

@@ -14,6 +14,7 @@ import { PRODUCTS } from '../quoting/products.data';
 
 interface ProcessResult {
   text?: string;
+  texts?: string[];  // send multiple sequential messages (e.g. greeting + authorization)
   nextState?: ConversationState;
   context?: ConversationContext;
   document?: { buffer: Buffer; filename: string };
@@ -60,7 +61,11 @@ export class AgentService {
       await this.telegram.sendDocument(msg.userId, result.document.buffer, result.document.filename);
     }
 
-    if (result.text) {
+    if (result.texts?.length) {
+      for (const t of result.texts) {
+        await this.telegram.sendText(msg.userId, t);
+      }
+    } else if (result.text) {
       await this.telegram.sendText(msg.userId, result.text);
     }
   }
@@ -87,7 +92,10 @@ export class AgentService {
     switch (currentState) {
       case ConversationState.GREETING:
         return {
-          text: STATE_RESPONSES[ConversationState.AUTHORIZATION](context),
+          texts: [
+            STATE_RESPONSES[ConversationState.GREETING](context),
+            STATE_RESPONSES[ConversationState.AUTHORIZATION](context),
+          ],
           nextState: ConversationState.AUTHORIZATION,
         };
 
