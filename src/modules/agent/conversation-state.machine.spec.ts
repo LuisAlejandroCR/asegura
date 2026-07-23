@@ -42,6 +42,19 @@ describe('STATE_RESPONSES — DATA_CAPTURE progressive flow', () => {
     const response = STATE_RESPONSES[ConversationState.DATA_CAPTURE](ctx);
     expect(response).not.toContain('cédula');
   });
+
+  it('regression — confirmation summary shows the real quoted product name, not the raw category slug', () => {
+    // Bug: summary showed "🛡️ mascotas Colsubsidio" (raw productCategory value) instead of
+    // the actual product name ("Asistencia veterinaria Colsubsidio") — reads as a broken
+    // placeholder rather than a professional purchase summary.
+    const ctx: ConversationContext = {
+      cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@email.com',
+      productCategory: 'mascotas', quoteProductId: 'asistencia-veterinaria',
+    };
+    const response = STATE_RESPONSES[ConversationState.DATA_CAPTURE](ctx);
+    expect(response).toContain('Asistencia veterinaria');
+    expect(response).not.toContain('mascotas Colsubsidio');
+  });
 });
 
 describe('STATE_RESPONSES — POLICY_ISSUED Celoscan link', () => {

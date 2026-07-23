@@ -1,4 +1,5 @@
 import { ConversationState, ConversationContext } from './types';
+import { PRODUCTS } from '../quoting/products.data';
 
 type TransitionMap = Partial<Record<ConversationState, ConversationState[]>>;
 
@@ -68,9 +69,10 @@ export const STATE_RESPONSES: ResponsesMap = {
     if (!c.cedula) return 'Para emitir la póliza necesito tu número de cédula (solo dígitos, sin puntos ni espacios).';
     if (!c.nombre) return '¿Cuál es tu nombre completo?';
     if (!c.email) return '¿Cuál es tu correo electrónico? Ahí recibirás la póliza.';
+    const product = PRODUCTS.find((p) => p.id === c.quoteProductId);
     return (
       `📱 *Resumen de tu compra:*\n\n` +
-      `🛡️ ${c.productCategory ?? 'Seguro'} Colsubsidio\n` +
+      `🛡️ ${product?.name ?? c.productCategory ?? 'Seguro'} Colsubsidio\n` +
       `👤 ${c.nombre} — CC ${c.cedula}\n` +
       `📧 ${c.email}\n\n` +
       `¿Todo correcto? Escríbeme *"sí"* para continuar al pago.`

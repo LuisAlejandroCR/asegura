@@ -119,6 +119,14 @@ petResolution: cuando el usuario responde a la pregunta "¿para el gato o los pe
       }
     }
 
+    // Guardrail: a message containing a question mark is asking something, not confirming.
+    // Substring keyword matching (e.g. "me interesan" contains "me interesa") can make the LLM
+    // or fallback classify a genuine follow-up question as isAffirmative=true, fast-forwarding
+    // straight to purchase confirmation when the user hadn't actually confirmed anything.
+    if (intent.isAffirmative && (text.includes('?') || text.includes('¿'))) {
+      intent.isAffirmative = false;
+    }
+
     return intent;
   }
 
@@ -152,7 +160,8 @@ petResolution: cuando el usuario responde a la pregunta "¿para el gato o los pe
       urgency: lower.includes('urgente') || lower.includes('ya') ? 'immediate' : 'exploring',
       abandonIntent: lower.includes('no') || lower.includes('después') || lower.includes('luego'),
       priceObjection: lower.includes('caro') || lower.includes('precio'),
-      isAffirmative: this.isAffirmativeText(lower),
+      // A question mark means the user is asking, not confirming — see postProcess for context.
+      isAffirmative: this.isAffirmativeText(lower) && !lower.includes('?') && !lower.includes('¿'),
       isNegative: this.isNegativeText(lower),
       wantsAlternative: this.wantsAlternativeText(lower),
       petResolution: this.extractPetResolution(lower),

@@ -300,3 +300,43 @@ describe('GroqNlpService.postProcess — petType inference when productCategory 
     expect(postProcess(service, intent, 'mi gato y mi perro').petType).toBeNull();
   });
 });
+
+// ── isAffirmative question-mark guardrail (regression) ────────────────────────
+// Real bug: "Me interesan mascotas y para mí ¿qué hay?" was classified isAffirmative=true
+// (substring match: "me interesan" contains "me interesa") and fast-forwarded straight to
+// DATA_CAPTURE / purchase confirmation, even though the user was asking a follow-up
+// question, not confirming. A message containing a question mark is asking, not confirming.
+
+describe('GroqNlpService.postProcess — isAffirmative question-mark guardrail', () => {
+  const service = makeService();
+
+  function affirmativeIntent(): InsuranceIntent {
+    return { productCategory: 'mascotas', petType: null, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: true, isNegative: false, wantsAlternative: false, petResolution: null };
+  }
+
+  it('regression — overrides isAffirmative to false when the message contains a question mark', () => {
+    const result = postProcess(service, affirmativeIntent(), 'Me interesan mascotas y para mí ¿qué hay?');
+    expect(result.isAffirmative).toBe(false);
+  });
+
+  it('overrides isAffirmative to false for a plain "?" question mark too', () => {
+    const result = postProcess(service, affirmativeIntent(), 'me interesa, pero cuanto cuesta?');
+    expect(result.isAffirmative).toBe(false);
+  });
+
+  it('does not override isAffirmative when there is no question mark', () => {
+    expect(postProcess(service, affirmativeIntent(), 'sí, me interesa').isAffirmative).toBe(true);
+  });
+});
+
+describe('GroqNlpService.fallbackIntent — isAffirmative question-mark guardrail', () => {
+  const service = makeService();
+
+  it('regression — does not mark isAffirmative true for a question containing "me interesa"', () => {
+    expect(fallback(service, 'Me interesan mascotas y para mí ¿qué hay?').isAffirmative).toBe(false);
+  });
+
+  it('still marks isAffirmative true for plain confirmations without a question mark', () => {
+    expect(fallback(service, 'sí, me interesa').isAffirmative).toBe(true);
+  });
+});

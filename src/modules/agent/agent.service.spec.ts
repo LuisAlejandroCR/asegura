@@ -320,6 +320,24 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
       'conv-1', ConversationState.DATA_CAPTURE, expect.anything(),
     );
   });
+
+  it('regression — neutral question re-shows the real quoted product, not a generic placeholder', async () => {
+    // Bug: a neutral/unclear message (not affirmative/negative/alternative) in QUOTE_PRESENTED
+    // fell through to the generic STATE_RESPONSES[QUOTE_PRESENTED] placeholder
+    // ("🛡️ Seguro de mascotas / 💰 Desde precio accesible/mes") instead of re-showing the
+    // actual quoted product with its real name and price.
+    const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: petProduct.id, productCategory: 'mascotas', petCount: 3 },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿Cuál hay para mí?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(petProduct.name);
+    expect(sentText).not.toContain('precio accesible');
+  });
 });
 
 // ── DISCOVERY — mixed pets clarification ──────────────────────────────────────

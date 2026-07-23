@@ -1,6 +1,6 @@
 // pdf.service.ts: generates a policy PDF using pdfkit
 import { Injectable } from '@nestjs/common';
-import PDFDocument from 'pdfkit';
+import * as PDFDocument from 'pdfkit';
 
 interface PolicyPdfData {
   policyId: string;

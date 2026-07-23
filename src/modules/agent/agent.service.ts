@@ -285,6 +285,20 @@ export class AgentService {
       };
     }
 
+    // Neutral/unclear message (e.g. a follow-up question) — re-show the actual quoted
+    // product instead of the generic STATE_RESPONSES placeholder, which has no real
+    // product name or price and reads as a broken response.
+    const currentProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
+    if (currentProduct) {
+      return {
+        text: this.formatQuote(
+          currentProduct,
+          { reasons: [], monthlyPremium: currentProduct.basePremium },
+          context,
+        ),
+      };
+    }
+
     return { text: STATE_RESPONSES[ConversationState.QUOTE_PRESENTED](context) };
   }
 
