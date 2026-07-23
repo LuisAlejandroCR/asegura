@@ -261,3 +261,42 @@ describe('GroqNlpService.postProcess — productCategory inference from petType'
     expect(postProcess(service, intent, 'mi gato').productCategory).toBe('vida');
   });
 });
+
+// ── petType inference when Groq returns productCategory=null (regression) ─────
+// Real bug: "Tengo un gato, dos perros y yo solo." — Groq returned productCategory=null
+// AND petType=null. The old petType-from-keywords block only ran when
+// productCategory === 'mascotas', so petType stayed null forever even though the text
+// clearly names both pets — the mixto clarification question never fired, and the
+// conversation looped on the generic DISCOVERY question indefinitely.
+
+describe('GroqNlpService.postProcess — petType inference when productCategory is null', () => {
+  const service = makeService();
+
+  function noCategory(petType: InsuranceIntent['petType'] = null): InsuranceIntent {
+    return { productCategory: null, petType, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null };
+  }
+
+  it('regression — infers petType mixto from keywords when Groq returns productCategory=null', () => {
+    const result = postProcess(service, noCategory(), 'Tengo un gato, dos perros y yo solo.');
+    expect(result.petType).toBe('mixto');
+  });
+
+  it('regression — both petType AND productCategory are set together for the same message', () => {
+    const result = postProcess(service, noCategory(), 'Tengo un gato, dos perros y yo solo.');
+    expect(result.petType).toBe('mixto');
+    expect(result.productCategory).toBe('mascotas');
+  });
+
+  it('infers petType gato from keywords when Groq returns productCategory=null', () => {
+    expect(postProcess(service, noCategory(), 'mi gata tiene 10 años').petType).toBe('gato');
+  });
+
+  it('infers petType perro from keywords when Groq returns productCategory=null', () => {
+    expect(postProcess(service, noCategory(), 'mi perro').petType).toBe('perro');
+  });
+
+  it('does NOT infer petType from keywords when Groq set an unrelated category explicitly', () => {
+    const intent: InsuranceIntent = { ...noCategory(), productCategory: 'vida' };
+    expect(postProcess(service, intent, 'mi gato y mi perro').petType).toBeNull();
+  });
+});

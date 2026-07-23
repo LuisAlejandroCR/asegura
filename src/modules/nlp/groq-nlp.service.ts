@@ -85,33 +85,36 @@ petResolution: cuando el usuario responde a la pregunta "¿para el gato o los pe
   }
 
   private postProcess(intent: InsuranceIntent, text: string): InsuranceIntent {
-    if (intent.productCategory === 'mascotas') {
-      const lower = text.toLowerCase();
-      const hasCat = lower.includes('gato') || lower.includes('michi') || lower.includes('felino');
-      const hasDog = lower.includes('perro') || lower.includes('canino');
+    const lower = text.toLowerCase();
+    const hasCat = lower.includes('gato') || lower.includes('gata') || lower.includes('michi') || lower.includes('felino');
+    const hasDog = lower.includes('perro') || lower.includes('perra') || lower.includes('canino');
+
+    // petType from keywords: runs when Groq already classified this as mascotas, OR when
+    // Groq returned productCategory=null (ambiguous) and the text itself names a pet.
+    // Regression: previously gated strictly on productCategory === 'mascotas', so a message
+    // like "Tengo un gato, dos perros y yo solo." with Groq returning productCategory=null
+    // left petType stuck at null — the mixto clarification never fired and the conversation
+    // looped on the generic DISCOVERY question. Skip entirely when Groq set an unrelated,
+    // explicit category (e.g. 'vida') — a passing mention of pets shouldn't hijack that.
+    if (intent.productCategory === 'mascotas' || intent.productCategory == null) {
       if (hasCat && hasDog) intent.petType = 'mixto';
       else if (hasCat) intent.petType = 'gato';
       else if (hasDog) intent.petType = 'perro';
       else if (intent.petType === 'mixto') intent.petType = null;
     }
-
-    // Guardrail: keywords override LLM for petResolution
-    const lower = text.toLowerCase();
-    const hasCat = lower.includes('gato') || lower.includes('michi') || lower.includes('felino') || lower.includes('gatita') || lower.includes('minino');
-    const hasDog = lower.includes('perro') || lower.includes('canino') || lower.includes('lomito') || lower.includes('peludo') || lower.includes('perrita');
+    const hasCatExt = hasCat || lower.includes('gatita') || lower.includes('minino');
+    const hasDogExt = hasDog || lower.includes('lomito') || lower.includes('peludo') || lower.includes('perrita');
     const hasAll = lower.includes('todos') || lower.includes('ambos') || lower.includes('los dos') || lower.includes('las dos') || lower.includes('para todos');
 
-    if (hasCat && !hasDog) intent.petResolution = 'gato';
-    else if (hasDog && !hasCat) intent.petResolution = 'perro';
+    if (hasCatExt && !hasDogExt) intent.petResolution = 'gato';
+    else if (hasDogExt && !hasCatExt) intent.petResolution = 'perro';
     else if (hasAll) intent.petResolution = 'all';
     // else: keep LLM's petResolution (could be null or a contextual guess like "perro" for "lomito")
 
     // Guardrail: infer productCategory when LLM returned null but petType or keywords are present.
     // LLMs often miss productCategory for short or context-dependent pet messages.
     if (!intent.productCategory) {
-      if (intent.petType) {
-        intent.productCategory = 'mascotas';
-      } else if (['gato', 'gata', 'michi', 'felino', 'perro', 'perra', 'canino', 'mascota'].some(k => lower.includes(k))) {
+      if (intent.petType || hasCat || hasDog || lower.includes('mascota')) {
         intent.productCategory = 'mascotas';
       }
     }
