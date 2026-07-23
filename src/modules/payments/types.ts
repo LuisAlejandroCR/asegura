@@ -29,7 +29,10 @@ interface WompiWebhookEvent {
   timestamp: number;
   signature: {
     checksum: string;
-    properties: string;
+    // Dotted field paths (e.g. "transaction.id") whose VALUES get concatenated to build
+    // the checksum. Wompi's docs warn this set/order can vary per event — never hardcode
+    // a fixed field list; always read this array to know what to concatenate.
+    properties: string[];
   };
 }
 

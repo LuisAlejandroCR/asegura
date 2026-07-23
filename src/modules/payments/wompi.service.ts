@@ -77,18 +77,29 @@ export class WompiService {
     return { checkoutUrl, paymentLinkId };
   }
 
+  // Wompi's own docs (docs.wompi.co/docs/colombia/eventos/) warn that the field set/order
+  // in signature.properties "pueden variar en el tiempo y en cada evento" — a previous
+  // version hardcoded transaction.id + transaction.status + transaction.amount_in_cents,
+  // which would have silently rejected every real webhook whose properties differed.
   validateWebhookSignature(event: WompiWebhookEvent): boolean {
     if (!this.eventsSecret) return false;
 
-    const { transaction } = event.data;
-    const properties = `${transaction.id}${transaction.status}${transaction.amount_in_cents}`;
+    const properties = event.signature?.properties;
+    if (!properties?.length) return false;
+
+    const concatenated = properties.map((path) => this.resolveProperty(event.data, path)).join('');
     const timestamp = event.timestamp;
 
     const expectedChecksum = createHash('sha256')
-      .update(`${properties}${timestamp}${this.eventsSecret}`)
+      .update(`${concatenated}${timestamp}${this.eventsSecret}`)
       .digest('hex');
 
     return expectedChecksum === event.signature?.checksum;
+  }
+
+  private resolveProperty(data: unknown, dottedPath: string): string {
+    const value = dottedPath.split('.').reduce((acc: any, key) => acc?.[key], data);
+    return value === undefined || value === null ? '' : String(value);
   }
 
   extractTransactionData(event: WompiWebhookEvent): WompiTransactionResult {

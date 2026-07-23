@@ -12,33 +12,47 @@ function makeConfig(overrides: Record<string, string> = {}) {
   return { get: jest.fn((key: string) => values[key] ?? undefined) } as any;
 }
 
+// Resolves a dotted path (e.g. "transaction.id") against the event's `data` object —
+// mirrors Wompi's real webhook signature algorithm (docs.wompi.co/docs/colombia/eventos/),
+// which explicitly states the `properties` set and order "pueden variar en el tiempo y en
+// cada evento" (can vary over time and per event) and must be read dynamically, never
+// hardcoded to a fixed field list.
+function resolvePath(data: unknown, path: string): string {
+  const value = path.split('.').reduce((acc: any, key) => acc?.[key], data);
+  return value === undefined || value === null ? '' : String(value);
+}
+
 function makeEvent(overrides: {
-  id?: string; status?: string; amount?: number; timestamp?: number; secret?: string; paymentLinkId?: string;
+  id?: string; status?: string; amount?: number; timestamp?: number; secret?: string;
+  paymentLinkId?: string; properties?: string[];
 } = {}): WompiWebhookEvent {
   const id = overrides.id ?? 'txn-1';
   const status = overrides.status ?? 'APPROVED';
   const amount = overrides.amount ?? 5000000;
   const timestamp = overrides.timestamp ?? 1700000000;
   const secret = overrides.secret ?? 'secret123';
+  const properties = overrides.properties ?? ['transaction.id', 'transaction.status', 'transaction.amount_in_cents'];
 
-  const properties = `${id}${status}${amount}`;
+  const data = {
+    transaction: {
+      id, status, amount_in_cents: amount,
+      reference: 'auto-generated-by-wompi',
+      payment_link_id: overrides.paymentLinkId ?? 'link-abc',
+      payment_method_type: 'CARD',
+      created_at: new Date().toISOString(),
+    },
+  };
+
+  const concatenated = properties.map((p) => resolvePath(data, p)).join('');
   const checksum = createHash('sha256')
-    .update(`${properties}${timestamp}${secret}`)
+    .update(`${concatenated}${timestamp}${secret}`)
     .digest('hex');
 
   return {
     event: 'transaction.updated',
     timestamp,
-    signature: { checksum, properties: ['transaction.id', 'transaction.status', 'transaction.amount_in_cents'] },
-    data: {
-      transaction: {
-        id, status, amount_in_cents: amount,
-        reference: 'auto-generated-by-wompi',
-        payment_link_id: overrides.paymentLinkId ?? 'link-abc',
-        payment_method_type: 'CARD',
-        created_at: new Date().toISOString(),
-      },
-    },
+    signature: { checksum, properties },
+    data,
   } as any;
 }
 
@@ -104,6 +118,49 @@ describe('WompiService — validateWebhookSignature', () => {
   it('returns false when wrong secret used to generate checksum', () => {
     const service = new WompiService(makeConfig({ WOMPI_EVENTS_SECRET: 'correct_secret' }));
     const event = makeEvent({ secret: 'wrong_secret' });
+    expect(service.validateWebhookSignature(event)).toBe(false);
+  });
+});
+
+describe('WompiService — validateWebhookSignature reads properties dynamically', () => {
+  // Real bug found during audit: the code hardcoded the concatenation order to
+  // transaction.id + transaction.status + transaction.amount_in_cents. Wompi's own docs
+  // warn this set/order "pueden variar en el tiempo y en cada evento" — if a live webhook
+  // ever sent a different order or an extra field, every signature check would silently
+  // fail and NO real payment would ever be confirmed. The event's own signature.properties
+  // must be the source of truth, not an assumption baked into the code.
+
+  it('validates correctly when properties are given in a different order', () => {
+    const service = new WompiService(makeConfig());
+    const event = makeEvent({ properties: ['transaction.status', 'transaction.id'] });
+    expect(service.validateWebhookSignature(event)).toBe(true);
+  });
+
+  it('validates correctly with a different/larger set of properties', () => {
+    const service = new WompiService(makeConfig());
+    const event = makeEvent({
+      properties: ['transaction.id', 'transaction.status', 'transaction.amount_in_cents', 'transaction.payment_method_type'],
+    });
+    expect(service.validateWebhookSignature(event)).toBe(true);
+  });
+
+  it('validates correctly with just a single property', () => {
+    const service = new WompiService(makeConfig());
+    const event = makeEvent({ properties: ['transaction.id'] });
+    expect(service.validateWebhookSignature(event)).toBe(true);
+  });
+
+  it('rejects a checksum computed with the wrong property order (tamper-evident)', () => {
+    const service = new WompiService(makeConfig());
+    const event = makeEvent({ properties: ['transaction.status', 'transaction.id'] });
+    // Attacker/bug reorders the DECLARED properties without recomputing the checksum
+    event.signature.properties = ['transaction.id', 'transaction.status'];
+    expect(service.validateWebhookSignature(event)).toBe(false);
+  });
+
+  it('returns false when signature.properties is empty (nothing to verify against)', () => {
+    const service = new WompiService(makeConfig());
+    const event = makeEvent({ properties: [] });
     expect(service.validateWebhookSignature(event)).toBe(false);
   });
 });
