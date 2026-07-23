@@ -1,3 +1,9 @@
+interface PetDetail {
+  name: string;
+  age: string;
+  breed: string;
+}
+
 interface Policy {
   id: string;
   conversation_id: string | null;
@@ -7,6 +13,7 @@ interface Policy {
   email: string | null;
   monthly_premium: number;
   pet_count: number | null;
+  pets: PetDetail[] | null;
   status: string;
   wompi_link_id: string | null;
   celo_tx_hash: string | null;
@@ -14,4 +21,4 @@ interface Policy {
   updated_at: string;
 }
 
-export { Policy };
+export { Policy, PetDetail };

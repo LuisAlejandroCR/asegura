@@ -197,6 +197,45 @@ export class PdfService {
     return { primary: amount, total: null };
   }
 
+  // ── Pets table ─────────────────────────────────────────────────────────────
+
+  private drawPetsTable(doc: InstanceType<typeof PDFDocument>, data: PolicyPdfData, contentWidth: number): void {
+    if (!data.pets?.length) return;
+
+    const startY = doc.y;
+    const x = 50;
+    const padding = 12;
+    const rowHeight = 16;
+    const headerHeight = 18;
+    const boxHeight = padding * 2 + headerHeight + data.pets.length * rowHeight;
+
+    const nameColWidth = contentWidth * 0.34;
+    const ageColWidth = contentWidth * 0.28;
+    const breedColWidth = contentWidth - nameColWidth - ageColWidth - padding * 2;
+
+    doc.roundedRect(x, startY, contentWidth, boxHeight, 6).lineWidth(1).stroke(BRAND.blue);
+    doc.fontSize(11).font('Helvetica-Bold').fillColor(BRAND.blue)
+      .text('Mascotas aseguradas', x + padding, startY + padding, { width: contentWidth - padding * 2 });
+
+    let rowY = startY + padding + headerHeight;
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(BRAND.gray);
+    doc.text('NOMBRE', x + padding, rowY, { width: nameColWidth });
+    doc.text('EDAD', x + padding + nameColWidth, rowY, { width: ageColWidth });
+    doc.text('RAZA', x + padding + nameColWidth + ageColWidth, rowY, { width: breedColWidth });
+    rowY += rowHeight;
+
+    doc.font('Helvetica').fillColor(BRAND.black);
+    for (const pet of data.pets) {
+      doc.text(pet.name, x + padding, rowY, { width: nameColWidth });
+      doc.text(pet.age, x + padding + nameColWidth, rowY, { width: ageColWidth });
+      doc.text(pet.breed, x + padding + nameColWidth + ageColWidth, rowY, { width: breedColWidth });
+      rowY += rowHeight;
+    }
+
+    doc.fillColor(BRAND.black);
+    doc.y = startY + boxHeight + 20;
+  }
+
   // ── Coverages box ──────────────────────────────────────────────────────────────
 
   private drawCoverages(doc: InstanceType<typeof PDFDocument>, data: PolicyPdfData, contentWidth: number): void {

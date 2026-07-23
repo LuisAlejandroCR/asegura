@@ -13,6 +13,11 @@ interface InsuranceIntent {
   wantsAlternative: boolean;
   petResolution: 'gato' | 'perro' | 'all' | null;
   petCount?: number | null;
+  // Extracted when the user answers "nombre, edad y raza" for the pet currently
+  // being registered (DATA_CAPTURE's per-pet detail loop).
+  petName?: string | null;
+  petAge?: string | null;
+  petBreed?: string | null;
 }
 
 interface INlpProvider {

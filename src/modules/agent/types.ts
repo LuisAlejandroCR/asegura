@@ -12,6 +12,12 @@ enum ConversationState {
   REJECTED = 'rejected',
 }
 
+interface PetDetail {
+  name: string;
+  age: string;
+  breed: string;
+}
+
 interface ConversationContext {
   autorizado?: boolean;
   productCategory?: string | null;
@@ -22,6 +28,7 @@ interface ConversationContext {
   quoteProductId?: string;
   shownProductIds?: string[];
   petCount?: number | null;
+  pets?: PetDetail[];
   cedula?: string;
   nombre?: string;
   email?: string;
@@ -40,4 +47,4 @@ interface Conversation {
   updated_at: string;
 }
 
-export { ConversationState, ConversationContext, Conversation };
+export { ConversationState, ConversationContext, Conversation, PetDetail };

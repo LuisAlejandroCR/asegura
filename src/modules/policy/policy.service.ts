@@ -35,6 +35,7 @@ export class PolicyService {
         email: context.email ?? null,
         monthly_premium: monthlyPremium,
         pet_count: context.petCount ?? null,
+        pets: context.pets ?? null,
         status: 'pending_payment',
       })
       .select('id')
@@ -107,6 +108,7 @@ export class PolicyService {
         issuedAt: new Date(policy.created_at),
         celoscanUrl,
         petCount: policy.pet_count,
+        pets: policy.pets ?? undefined,
       });
     } catch (err) {
       this.logger.error(`Final PDF generation failed: ${String(err)}`);

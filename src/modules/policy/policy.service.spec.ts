@@ -59,6 +59,23 @@ describe('PolicyService.issue', () => {
     await service.issue('conv-1', { quoteProductId: 'asistencia-veterinaria', cedula: '123456789', nombre: 'Juan Pérez' } as any);
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ pet_count: null }));
   });
+
+  it('regression — stores the per-pet name/age/breed details collected in DATA_CAPTURE', async () => {
+    const { supabase, insert } = makeInsertSupabaseMock({ data: { id: 'pol-1' } });
+    const service = new PolicyService(supabase, makePdfMock());
+    const pets = [{ name: 'Max', age: '3 años', breed: 'labrador' }];
+    await service.issue('conv-1', {
+      quoteProductId: 'asistencia-veterinaria', cedula: '123456789', nombre: 'Juan Pérez', petCount: 1, pets,
+    } as any);
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ pets }));
+  });
+
+  it('stores pets as null when none were collected', async () => {
+    const { supabase, insert } = makeInsertSupabaseMock({ data: { id: 'pol-1' } });
+    const service = new PolicyService(supabase, makePdfMock());
+    await service.issue('conv-1', { quoteProductId: 'asistencia-veterinaria', cedula: '123456789', nombre: 'Juan Pérez' } as any);
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ pets: null }));
+  });
 });
 
 describe('PolicyService.findById', () => {
@@ -119,7 +136,7 @@ describe('PolicyService.generateFinalPdf', () => {
     id: 'pol-1', conversation_id: 'conv-1', product_id: 'asistencia-veterinaria',
     cedula: '123456789', nombre: 'Juan Pérez', email: 'juan@test.com',
     monthly_premium: 14500, status: 'active',
-    wompi_link_id: 'txn-1', celo_tx_hash: '0xabc', pet_count: null,
+    wompi_link_id: 'txn-1', celo_tx_hash: '0xabc', pet_count: null, pets: null,
     created_at: '2026-07-23T00:00:00Z', updated_at: '2026-07-23T00:00:00Z',
   };
 
@@ -141,6 +158,14 @@ describe('PolicyService.generateFinalPdf', () => {
     const service = new PolicyService(makeSupabaseMock(), pdf);
     await service.generateFinalPdf({ ...policy, pet_count: 3, monthly_premium: 43500 }, 'https://celoscan.io/tx/0xabc');
     expect(pdf.generate).toHaveBeenCalledWith(expect.objectContaining({ petCount: 3 }));
+  });
+
+  it('regression — passes the stored per-pet details through to the final PDF', async () => {
+    const pdf = makePdfMock();
+    const service = new PolicyService(makeSupabaseMock(), pdf);
+    const pets = [{ name: 'Max', age: '3 años', breed: 'labrador' }];
+    await service.generateFinalPdf({ ...policy, pets }, 'https://celoscan.io/tx/0xabc');
+    expect(pdf.generate).toHaveBeenCalledWith(expect.objectContaining({ pets }));
   });
 
   it('returns null when the product_id does not match any known product', async () => {

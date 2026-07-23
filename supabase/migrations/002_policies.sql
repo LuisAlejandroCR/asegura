@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS policies (
   monthly_premium  numeric     NOT NULL DEFAULT 0,
   -- Number of pets covered (mascotas products are priced per pet); null for non-pet products
   pet_count        integer,
+  -- Per-pet identity: [{"name": "Max", "age": "3 años", "breed": "labrador"}, ...]
+  pets             jsonb,
   -- pending_payment -> paid -> active (or: declined | voided | error | abandoned)
   status           text        NOT NULL DEFAULT 'pending_payment',
   wompi_link_id    text,
@@ -20,8 +22,9 @@ CREATE TABLE IF NOT EXISTS policies (
   updated_at       timestamptz NOT NULL DEFAULT now()
 );
 
--- Safe to re-run: adds pet_count if this migration already ran before this column existed.
+-- Safe to re-run: adds these columns if this migration already ran before they existed.
 ALTER TABLE policies ADD COLUMN IF NOT EXISTS pet_count integer;
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS pets jsonb;
 
 CREATE INDEX IF NOT EXISTS policies_conversation_id_idx ON policies (conversation_id);
 
