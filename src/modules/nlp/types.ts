@@ -8,6 +8,8 @@ interface InsuranceIntent {
   abandonIntent?: boolean;
   priceObjection?: boolean;
   whyThisProduct?: string;
+  isAffirmative: boolean;
+  isNegative: boolean;
 }
 
 interface INlpProvider {

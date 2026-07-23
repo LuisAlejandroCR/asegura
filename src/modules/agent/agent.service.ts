@@ -92,17 +92,22 @@ export class AgentService {
         };
 
       case ConversationState.AUTHORIZATION:
-        if (text === 'sí' || text === 'si') {
+        if (intent.isAffirmative) {
           return {
             text: STATE_RESPONSES[ConversationState.DISCOVERY](context),
             nextState: ConversationState.DISCOVERY,
             context: { ...context, autorizado: true },
           };
         }
+        if (intent.isNegative) {
+          return {
+            text: STATE_RESPONSES[ConversationState.REJECTED](context),
+            nextState: ConversationState.REJECTED,
+            context: { ...context, autorizado: false },
+          };
+        }
         return {
-          text: STATE_RESPONSES[ConversationState.REJECTED](context),
-          nextState: ConversationState.REJECTED,
-          context: { ...context, autorizado: false },
+          text: 'Para poder ayudarte necesito tu autorización. ¿Aceptas que consulte tu perfil de afiliado y te envíe cotizaciones?',
         };
 
       case ConversationState.DISCOVERY:
@@ -110,13 +115,13 @@ export class AgentService {
 
       case ConversationState.QUOTING:
       case ConversationState.QUOTE_PRESENTED:
-        return this.handleQuotation(context, text);
+        return this.handleQuotation(context, text, intent);
 
       case ConversationState.DATA_CAPTURE:
-        return this.handleDataCapture(convId, context, text, rawText);
+        return this.handleDataCapture(convId, context, text, intent, rawText);
 
       case ConversationState.PAYMENT:
-        return this.handlePayment(convId, context, text);
+        return this.handlePayment(convId, context, text, intent);
 
       default:
         if (text.includes('hola') || text.includes('ayuda') || text.includes('inicio') || text === '/start') {
@@ -195,21 +200,15 @@ export class AgentService {
 
   // ── Quotation ────────────────────────────────────────────────────────────────
 
-  private handleQuotation(context: ConversationContext, text: string): ProcessResult {
-    if (text === 'sí' || text === 'si') {
+  private handleQuotation(context: ConversationContext, text: string, intent: InsuranceIntent): ProcessResult {
+    if (intent.isAffirmative) {
       return {
         text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](context),
         nextState: ConversationState.DATA_CAPTURE,
       };
     }
 
-    if (
-      text === 'no' ||
-      text.includes('otro') ||
-      text.includes('otra') ||
-      text.includes('diferente') ||
-      text.includes('más')
-    ) {
+    if (intent.isNegative || text.includes('otro') || text.includes('otra') || text.includes('diferente')) {
       const allScores = this.quoting.score(context as AffiliateSignals);
       const seen = context.shownProductIds ?? (context.quoteProductId ? [context.quoteProductId] : []);
       const nextProduct = allScores.find((s) => !seen.includes(s.productId));
@@ -241,6 +240,7 @@ export class AgentService {
     convId: string,
     context: ConversationContext,
     text: string,
+    intent: InsuranceIntent,
     rawText: string = text,
   ): Promise<ProcessResult> {
     const newContext: ConversationContext = { ...context };
@@ -276,7 +276,7 @@ export class AgentService {
     }
 
     // Step 4 — confirmation ("sí" → issue policy)
-    if (text === 'sí' || text === 'si') {
+    if (intent.isAffirmative) {
       const { policyId, pdfBuffer } = await this.policy.issue(convId, newContext);
       newContext.policyId = policyId;
 
@@ -293,7 +293,7 @@ export class AgentService {
       return result;
     }
 
-    if (text === 'no' || text.includes('corregir')) {
+    if (intent.isNegative || text.includes('corregir')) {
       return {
         text: '¿Qué dato quieres corregir? Escríbeme tu cédula de nuevo y empezamos.',
         nextState: ConversationState.DATA_CAPTURE,
@@ -311,8 +311,9 @@ export class AgentService {
     convId: string,
     context: ConversationContext,
     text: string,
+    intent: InsuranceIntent,
   ): Promise<ProcessResult> {
-    const isConfirm = text === 'sí' || text === 'si';
+    const isConfirm = intent.isAffirmative;
 
     if (context.checkoutUrl && isConfirm) {
       const newContext: ConversationContext = { ...context, checkoutUrl: undefined };
