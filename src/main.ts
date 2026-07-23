@@ -66,6 +66,9 @@ async function bootstrap() {
     if (host) {
       const secret = config.getOrThrow<string>('TELEGRAM_WEBHOOK_SECRET');
       await telegram.setWebhook(`${host}/webhook/telegram`, secret);
+    } else {
+      telegram.instance.start();
+      logger.log('Telegram bot started in polling mode');
     }
   }
 

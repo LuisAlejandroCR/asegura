@@ -12,7 +12,7 @@ export class GroqNlpService implements INlpProvider {
 
   constructor(private readonly config: ConfigService) {
     this.apiKey = config.get<string>('LLM_API_KEY', '');
-    this.model = config.get<string>('LLM_MODEL', 'llama3-8b-8192');
+    this.model = config.get<string>('LLM_MODEL', 'llama-3.1-8b-instant');
   }
 
   async extractIntent(text: string): Promise<InsuranceIntent> {
