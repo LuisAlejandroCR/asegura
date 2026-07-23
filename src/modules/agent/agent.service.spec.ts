@@ -104,14 +104,16 @@ describe('AgentService — GREETING', () => {
     expect(hasGreeting).toBe(true);
   });
 
-  it('authorization message contains no external URLs', async () => {
+  it('authorization message contains a clickable in-chat link (Telegram WebView, not external browser)', async () => {
     const { service, telegram } = buildService({ state: ConversationState.GREETING });
     telegram.normalize.mockResolvedValue(makeMessage('/start'));
     await service.handleMessage({});
     const calls = telegram.sendText.mock.calls.map((c: any[]) => c[1] as string);
     const authMsg = calls.find((t) => t.includes('Ley 1581'));
     expect(authMsg).toBeDefined();
-    expect(authMsg).not.toMatch(/https?:\/\//);
+    // Link must be Telegram Markdown format [text](url) — opens in WebView, user never leaves the chat
+    expect(authMsg).toMatch(/\[.*?\]\(https?:\/\/.*?\)/);
+    expect(authMsg).toContain('colsubsidio.com');
   });
 });
 

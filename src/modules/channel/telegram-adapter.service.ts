@@ -88,7 +88,7 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
 
   async sendText(userId: string, text: string): Promise<void> {
     if (!this.bot) return;
-    await this.bot.api.sendMessage(Number(userId), text);
+    await this.bot.api.sendMessage(Number(userId), text, { parse_mode: 'Markdown' });
   }
 
   async sendDocument(userId: string, file: Buffer, filename: string): Promise<void> {

@@ -29,7 +29,8 @@ export const STATE_RESPONSES: ResponsesMap = {
     '¿En qué te puedo ayudar hoy?',
 
   [ConversationState.AUTHORIZATION]: () =>
-    'Antes de continuar, necesito tu autorización para consultar tu perfil de afiliado y enviarte cotizaciones personalizadas, según la *Ley 1581 de 2012* (Política de tratamiento de datos personales de Colsubsidio).\n\n' +
+    'Antes de continuar, necesito tu autorización para consultar tu perfil de afiliado y enviarte cotizaciones personalizadas, según la *Ley 1581 de 2012*.\n\n' +
+    '📋 [Política de tratamiento de datos — Colsubsidio](https://colsubsidio.com/transparencia-acceso-informacion/tratamiento-datos-personales)\n\n' +
     '¿Autorizas el tratamiento de tus datos? Escríbeme *"sí"* para continuar.',
 
   [ConversationState.DISCOVERY]: (ctx) => {
@@ -38,7 +39,7 @@ export const STATE_RESPONSES: ResponsesMap = {
       return (
         'Para encontrarte el seguro ideal necesito entender tu situación:\n\n' +
         '¿Tienes familia o personas que dependen de ti? ¿Qué es lo que más te preocupa proteger — tu salud, tu ingreso, tu hogar, tus mascotas?\n\n' +
-        'Cuéntame con tus palabras — sin tecnicismos.'
+        'Cuéntame con tus palabras'
       );
     }
     if (!c.beneficiaries || c.beneficiaries <= 0) {
