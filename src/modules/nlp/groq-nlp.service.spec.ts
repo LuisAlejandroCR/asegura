@@ -109,6 +109,32 @@ describe('GroqNlpService.fallbackIntent — intent extraction', () => {
   });
 });
 
+// ── Per-pet detail extraction (fallback) ──────────────────────────────────────
+
+describe('GroqNlpService.fallbackIntent — pet name/age/breed extraction', () => {
+  const service = makeService();
+
+  it('extracts petName from "se llama X"', () => {
+    expect(fallback(service, 'se llama Max, tiene 3 años, es un labrador').petName).toBe('Max');
+  });
+
+  it('extracts petName from "llamada X" (feminine)', () => {
+    expect(fallback(service, 'mi gata llamada Luna tiene 2 años').petName).toBe('Luna');
+  });
+
+  it('extracts petAge from "tiene N años"', () => {
+    expect(fallback(service, 'se llama Rocky, tiene 5 años').petAge).toBe('5 años');
+  });
+
+  it('returns null petName when the message does not name a pet', () => {
+    expect(fallback(service, 'tiene 3 años').petName).toBeNull();
+  });
+
+  it('returns null petAge when no age is mentioned', () => {
+    expect(fallback(service, 'se llama Max').petAge).toBeNull();
+  });
+});
+
 // ── Fuzz / property-based tests ───────────────────────────────────────────────
 
 describe('GroqNlpService FUZZ — petType invariants', () => {
@@ -338,5 +364,24 @@ describe('GroqNlpService.fallbackIntent — isAffirmative question-mark guardrai
 
   it('still marks isAffirmative true for plain confirmations without a question mark', () => {
     expect(fallback(service, 'sí, me interesa').isAffirmative).toBe(true);
+  });
+});
+
+// ── Colombian slang affirmatives (regression) ─────────────────────────────────
+// Real live-test bug: "generalo" (Colombian slang for "generate it") was not recognized
+// as a confirmation, so the payment-link prompt repeated verbatim instead of proceeding.
+
+describe('GroqNlpService.fallbackIntent — Colombian slang affirmatives', () => {
+  const service = makeService();
+
+  it.each([
+    'genera',
+    'generalo',
+    'procede',
+    'procédele',
+    'hágale',
+    'vale',
+  ])('"%s" → isAffirmative true', (text) => {
+    expect(fallback(service, text).isAffirmative).toBe(true);
   });
 });

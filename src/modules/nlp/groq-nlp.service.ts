@@ -43,7 +43,10 @@ Solo responde con JSON válido, sin markdown:
   "isAffirmative": false,
   "isNegative": false,
   "wantsAlternative": false,
-  "petResolution": null
+  "petResolution": null,
+  "petName": null,
+  "petAge": null,
+  "petBreed": null
 }
 petType solo aplica si productCategory es "mascotas". Reglas:
 - Solo menciona gatos ("gato", "michi", "felino") → "gato"
@@ -51,7 +54,7 @@ petType solo aplica si productCategory es "mascotas". Reglas:
 - Menciona AMBOS (gato y perro en el mismo mensaje) → "mixto"
 - No especifica → null
 
-isAffirmative: true cuando el usuario expresa acuerdo, confirmación, interés positivo o deseo de continuar (ej: "sí", "claro", "me interesa", "quiero", "perfecto", "adelante", "todos", "todas", "hagámoslo", "confirmo", "listo", "dale", "me parece bien")
+isAffirmative: true cuando el usuario expresa acuerdo, confirmación, interés positivo o deseo de continuar (ej: "sí", "claro", "me interesa", "quiero", "perfecto", "adelante", "todos", "todas", "hagámoslo", "confirmo", "listo", "dale", "me parece bien", "genera", "generalo", "procede", "procédele", "hágale", "vale")
 isNegative: true cuando el usuario expresa rechazo, deseo de cambiar, o desinterés (ej: "no", "paso", "otro", "otra", "diferente", "no me interesa", "quizás después", "ninguno")
 Ambos pueden ser false si el mensaje es neutral o informativo.
 
@@ -61,7 +64,13 @@ petResolution: cuando el usuario responde a la pregunta "¿para el gato o los pe
 - "gato" si menciona gato, gatita, michi, felino, la gata, el minino
 - "perro" si menciona perro, lomito, canino, el peludo, mi perrita, mascota canina
 - "all" si dice todos, para todos, los dos, ambos, para las dos mascotas
-- null si no especifica o el mensaje no es una respuesta a esta pregunta`,
+- null si no especifica o el mensaje no es una respuesta a esta pregunta
+
+petName, petAge, petBreed: cuando el usuario está describiendo UNA mascota específica en
+respuesta a "¿nombre, edad y raza?" (ej: "se llama Max, tiene 3 años, es un labrador"):
+- petName: el nombre propio de la mascota (ej: "Max"). null si no lo menciona.
+- petAge: la edad tal como la dice, incluyendo la unidad (ej: "3 años", "8 meses"). null si no la menciona.
+- petBreed: la raza (ej: "labrador", "criollo", "siamés"). null si no la menciona o dice que no sabe/es mestizo sin especificar.`,
             },
             { role: 'user', content: text },
           ],
@@ -165,12 +174,29 @@ petResolution: cuando el usuario responde a la pregunta "¿para el gato o los pe
       isNegative: this.isNegativeText(lower),
       wantsAlternative: this.wantsAlternativeText(lower),
       petResolution: this.extractPetResolution(lower),
+      petName: this.extractPetName(text),
+      petAge: this.extractPetAge(lower),
+      // Breed recognition needs real NLP (no fixed breed dictionary here) — left null in
+      // the fallback path; the primary Groq path extracts it directly from context.
+      petBreed: null,
     };
+  }
+
+  private extractPetName(text: string): string | null {
+    const match = text.match(/(?:se llama|llamad[oa]|nombre es)\s+([A-ZÁÉÍÓÚÑ][\wñáéíóúÁÉÍÓÚ]*)/i);
+    return match ? match[1] : null;
+  }
+
+  private extractPetAge(lower: string): string | null {
+    const match = lower.match(/(\d+)\s*años?/);
+    return match ? `${match[1]} años` : null;
   }
 
   private isAffirmativeText(lower: string): boolean {
     const affirmatives = ['sí', 'si', 'claro', 'me interesa', 'quiero', 'perfecto', 'adelante',
-      'todos', 'todas', 'ambos', 'hagámoslo', 'confirmo', 'listo', 'dale', 'me parece bien'];
+      'todos', 'todas', 'ambos', 'hagámoslo', 'confirmo', 'listo', 'dale', 'me parece bien',
+      // Colombian slang confirmations (real gap: "generalo" wasn't recognized, stalling payment)
+      'genera', 'procede', 'procéde', 'hágale', 'vale'];
     return affirmatives.some((a) => lower.includes(a));
   }
 
