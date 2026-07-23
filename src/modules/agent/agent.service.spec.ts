@@ -376,6 +376,65 @@ describe('AgentService — DISCOVERY mixed pets', () => {
   });
 });
 
+// ── DISCOVERY — productCategory inference + ages loop regression ──────────────
+
+describe('AgentService — DISCOVERY productCategory inference', () => {
+  it('infers productCategory mascotas from petType gato when NLP does not extract it', async () => {
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      // petType already resolved to gato (post-mixto clarification), productCategory NOT set
+      context: { petType: 'gato', coverage: ['medicina veterinaria'], beneficiaries: 1 },
+      intent: makeIntent({ productCategory: null, petResolution: null }),
+    });
+    const gatoProduct = PRODUCTS.find(p => p.id === 'medicina-prepagada-gatos')!;
+    quoting.bestQuote.mockReturnValue({
+      product: gatoProduct,
+      score: { reasons: ['Para gatos'], matchScore: 80, monthlyPremium: gatoProduct.basePremium, priority: 'high', productId: gatoProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('10 años mi gata'));
+    await service.handleMessage({});
+    // Should advance to QUOTE_PRESENTED, not loop on ages question
+    expect(quoting.bestQuote).toHaveBeenCalled();
+    const saveCall = conversations.saveState.mock.calls[0];
+    expect(saveCall?.[1]).toBe(ConversationState.QUOTE_PRESENTED);
+  });
+
+  it('regression — ages answer does not loop back to ages question', async () => {
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      // All three discovery answers given: coverage, beneficiaries, productCategory via petType
+      context: { petType: 'gato', coverage: ['medicina veterinaria'], beneficiaries: 2 },
+      intent: makeIntent({ productCategory: null }),
+    });
+    const gatoProduct = PRODUCTS.find(p => p.id === 'medicina-prepagada-gatos')!;
+    quoting.bestQuote.mockReturnValue({
+      product: gatoProduct,
+      score: { reasons: ['Para gatos'], matchScore: 80, monthlyPremium: gatoProduct.basePremium, priority: 'high', productId: gatoProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('10 años mi gata, 7 años mi perro y 33 años'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    // Must NOT repeat the ages question
+    expect(sentText).not.toContain('rango de edades');
+    // Must present a quote
+    expect(sentText).toContain(gatoProduct.name);
+  });
+
+  it('no match found — sends redirect message instead of repeating ages', async () => {
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { petType: 'gato', coverage: ['medicina veterinaria'], beneficiaries: 1 },
+      intent: makeIntent({ productCategory: null }),
+    });
+    quoting.bestQuote.mockReturnValue(null);
+    telegram.normalize.mockResolvedValue(makeMessage('10 años'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('rango de edades');
+    expect(sentText).toContain('diferente');
+  });
+});
+
 // ── Fuzz tests ────────────────────────────────────────────────────────────────
 
 describe('AgentService FUZZ — cédula validation', () => {

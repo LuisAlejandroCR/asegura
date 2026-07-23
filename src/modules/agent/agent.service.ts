@@ -179,6 +179,11 @@ export class AgentService {
     if (!context.beneficiaries && intent.beneficiaries > 0) newContext.beneficiaries = intent.beneficiaries;
     if (!context.budget && intent.budget) newContext.budget = intent.budget;
 
+    // Infer productCategory from petType when NLP didn't extract it explicitly
+    if (!newContext.productCategory && (newContext.petType === 'gato' || newContext.petType === 'perro')) {
+      newContext.productCategory = 'mascotas';
+    }
+
     // First time detecting mixed pets — ask clarification before quoting
     if (newContext.petType === 'mixto') {
       return {
@@ -199,6 +204,11 @@ export class AgentService {
           context: newContext,
         };
       }
+      // No match for this profile — reset category/coverage and let user redirect
+      return {
+        text: 'No encontré una opción exacta para ese perfil en el catálogo actual. ¿Quieres que busquemos algo diferente — vida, accidentes, asistencia médica?',
+        context: { ...newContext, productCategory: undefined, coverage: undefined, shownProductIds: [] },
+      };
     }
 
     return {
