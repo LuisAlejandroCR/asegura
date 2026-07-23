@@ -164,6 +164,25 @@ describe('WompiService — createPaymentLink success shape', () => {
     expect(result.paymentLinkId).toBe('link-abc-123');
     expect(result.checkoutUrl).toBe('https://checkout.wompi.co/l/link-abc-123');
   });
+
+  it('regression — sends expires_at in the ISO 8601 "T" format Wompi requires, not "Y-M-D H:M:S"', async () => {
+    // Real production bug: Wompi rejected our links with 422 "expires_at: Debe ser tipo
+    // date time" — the code did .replace('T', ' '), producing "2026-07-23 20:22:56"
+    // instead of the required "2026-07-23T20:22:56" (confirmed against docs.wompi.co).
+    let capturedBody: any;
+    global.fetch = jest.fn().mockImplementation((_url: string, opts: any) => {
+      capturedBody = JSON.parse(opts.body);
+      return Promise.resolve({ ok: true, json: async () => ({ data: { id: 'link-1', name: 'Test', active: true } }) });
+    }) as any;
+
+    const service = new WompiService(makeConfig());
+    await service.createPaymentLink({
+      policyId: 'pol-1', productName: 'Test', amountCOP: 20000, expiresInMinutes: 30,
+    });
+
+    expect(capturedBody.expires_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
+    expect(capturedBody.expires_at).not.toContain(' ');
+  });
 });
 
 // ── Fuzz tests ────────────────────────────────────────────────────────────────

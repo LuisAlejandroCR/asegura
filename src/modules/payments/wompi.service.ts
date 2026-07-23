@@ -34,10 +34,12 @@ export class WompiService {
       throw new Error('Wompi not configured');
     }
 
+    // Wompi requires ISO 8601 with a "T" separator, no milliseconds, no "Z" — e.g.
+    // "2040-12-10T14:30:00" (confirmed against docs.wompi.co). A previous version
+    // replaced "T" with a space, which Wompi's API rejects with a 422.
     const expiresAt = params.expiresInMinutes
       ? new Date(Date.now() + params.expiresInMinutes * 60_000)
           .toISOString()
-          .replace('T', ' ')
           .slice(0, 19)
       : undefined;
 
