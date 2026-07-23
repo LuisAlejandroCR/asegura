@@ -39,7 +39,7 @@ Recomienda el producto más adecuado con razón explícita
     ↓
 Usuario confirma y paga (link Wompi, dentro del chat)
     ↓
-PDF de póliza adjunto al chat
+PDF de póliza adjunto al chat (con QR de auditoría blockchain)
     ↓
 Registro inmutable en Celo Mainnet + link Celoscan
 ```
@@ -115,6 +115,8 @@ Cada póliza vendida queda registrada en Celo Mainnet como evidencia pública e 
 | Costo por registro | < $0.001 USD |
 
 El código fuente del contrato es público y verificado. Cualquier persona puede auditar qué hace y leer las pólizas registradas.
+
+El PDF de cada póliza incluye un código QR que enlaza directamente al registro de auditoría — escaneable desde cualquier celular, sin necesidad de copiar direcciones ni buscar manualmente en el explorador.
 
 ---
 
