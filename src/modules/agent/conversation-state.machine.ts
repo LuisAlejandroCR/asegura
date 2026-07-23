@@ -59,9 +59,7 @@ export const STATE_RESPONSES: ResponsesMap = {
   },
 
   [ConversationState.PAYMENT]: (ctx) => {
-    const c = translate(ctx);
-    const amount = c.budget ? `$${c.budget.toLocaleString()}` : 'el valor';
-    return `Para completar tu compra, paga aquí:\n🔗 [Pagar ${amount}](link_wompi)\n\nEl link es seguro (Wompi + Bancolombia). Acepta tarjeta de crédito, débito, Nequi y PSE.\n\n⏱️ El link vence en 30 minutos.`;
+    return '¿Quieres proceder con el pago? Escríbeme "sí" para generar el link.';
   },
 
   [ConversationState.POLICY_ISSUED]: () =>

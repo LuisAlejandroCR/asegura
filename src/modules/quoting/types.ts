@@ -19,6 +19,7 @@ interface InsuranceScore {
 
 interface AffiliateSignals {
   productCategory?: string | null;
+  petType?: 'gato' | 'perro' | null;
   coverage?: string[];
   beneficiaries?: number;
   budget?: number | null;

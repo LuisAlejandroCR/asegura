@@ -32,13 +32,15 @@ export class GroqNlpService implements INlpProvider {
 Solo responde con JSON válido, sin markdown:
 {
   "productCategory": "vida" | "hogar" | "accidentes" | "asistencia" | "mascotas" | null,
+  "petType": "gato" | "perro" | null,
   "coverage": ["palabras clave de lo que quiere proteger"],
   "beneficiaries": 1,
   "urgency": "immediate" | "exploring",
   "budget": null | number,
   "abandonIntent": false,
   "priceObjection": false
-}`,
+}
+petType solo aplica si productCategory es "mascotas". Si el usuario menciona "gato", "michi", "felino" → "gato". Si menciona "perro", "canino", "mascota" sin especificar → "perro". Si no especifica → null.`,
             },
             { role: 'user', content: text },
           ],
@@ -65,15 +67,23 @@ Solo responde con JSON válido, sin markdown:
     const categories: Record<string, InsuranceIntent['productCategory']> = {
       vida: 'vida', hogar: 'hogar', casa: 'hogar',
       accidente: 'accidentes', asistencia: 'asistencia',
-      mascota: 'mascotas', perro: 'mascotas', gato: 'mascotas',
+      mascota: 'mascotas', perro: 'mascotas', gato: 'mascotas', michi: 'mascotas',
       familia: 'vida', hijo: 'vida',
     };
     let category: InsuranceIntent['productCategory'] = null;
     for (const [key, val] of Object.entries(categories)) {
       if (lower.includes(key)) { category = val; break; }
     }
+
+    let petType: InsuranceIntent['petType'] = null;
+    if (category === 'mascotas') {
+      if (lower.includes('gato') || lower.includes('michi') || lower.includes('felino')) petType = 'gato';
+      else if (lower.includes('perro') || lower.includes('canino')) petType = 'perro';
+    }
+
     return {
       productCategory: category,
+      petType,
       coverage: [],
       beneficiaries: 1,
       urgency: lower.includes('urgente') || lower.includes('ya') ? 'immediate' : 'exploring',

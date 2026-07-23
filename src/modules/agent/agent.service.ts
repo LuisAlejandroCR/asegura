@@ -111,6 +111,9 @@ export class AgentService {
       case ConversationState.DATA_CAPTURE:
         return this.handleDataCapture(convId, context, text);
 
+      case ConversationState.PAYMENT:
+        return this.handlePayment(convId, context, text);
+
       default:
         if (text.includes('hola') || text.includes('ayuda') || text.includes('inicio') || text === '/start') {
           return {
@@ -134,6 +137,7 @@ export class AgentService {
     const newContext: ConversationContext = { ...context };
 
     if (!context.productCategory && intent.productCategory) newContext.productCategory = intent.productCategory;
+    if (!context.petType && intent.petType) newContext.petType = intent.petType;
     if (!context.coverage && intent.coverage?.length) newContext.coverage = intent.coverage;
     if (!context.beneficiaries && intent.beneficiaries > 0) newContext.beneficiaries = intent.beneficiaries;
     if (!context.budget && intent.budget) newContext.budget = intent.budget;
@@ -267,6 +271,84 @@ export class AgentService {
 
     // Default — re-show confirmation summary
     return { text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](context) };
+  }
+
+  // ── Payment ─────────────────────────────────────────────────────────────────
+
+  private async handlePayment(
+    convId: string,
+    context: ConversationContext,
+    text: string,
+  ): Promise<ProcessResult> {
+    const isConfirm = text === 'sí' || text === 'si';
+
+    if (context.checkoutUrl && isConfirm) {
+      return {
+        text: STATE_RESPONSES[ConversationState.POLICY_ISSUED](context),
+        nextState: ConversationState.POLICY_ISSUED,
+        context: { ...context, checkoutUrl: undefined },
+      };
+    }
+
+    if (context.checkoutUrl && text === 'no') {
+      return {
+        text: 'Entendido. Si quieres intentar de nuevo más tarde, escríbeme cuando gustes.',
+        nextState: ConversationState.ABANDONED,
+        context,
+      };
+    }
+
+    if (context.checkoutUrl) {
+      return {
+        text: `El link de pago ya está generado: [Pagar aquí](${context.checkoutUrl})\n\nUna vez pagues, escríbeme "sí" para continuar.`,
+        context,
+      };
+    }
+
+    if (isConfirm) {
+      const quoteProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
+      const amountCOP = quoteProduct?.basePremium ?? 20000;
+
+      try {
+        const checkoutUrl = await this.wompi.createPaymentLink({
+          policyId: context.policyId ?? convId,
+          productName: quoteProduct?.name ?? 'Seguro Colsubsidio',
+          amountCOP,
+          expiresInMinutes: 30,
+        });
+
+        const amountStr = `$${amountCOP.toLocaleString('es-CO')}`;
+        const msg = (
+          `Para completar tu compra, paga aquí:\n\n` +
+          `🔗 [Pagar ${amountStr} — Link seguro Wompi](${checkoutUrl})\n\n` +
+          `El link es seguro (Wompi + Bancolombia). Acepta tarjeta de crédito, débito, Nequi y PSE.\n\n` +
+          `⏱️ El link vence en 30 minutos.\n\n` +
+          `Una vez pagues, escríbeme "sí" para que active tu póliza.`
+        );
+
+        return { text: msg, context: { ...context, checkoutUrl } };
+      } catch (error) {
+        this.logger.error(`Failed to create payment link: ${error}`);
+        return {
+          text: (
+            `El monto a pagar es *$${amountCOP.toLocaleString('es-CO')}*.\n\n` +
+            `Por ahora no puedo generar el link de pago automático. Realiza la transferencia a la cuenta indicada por tu asesor y comparte el comprobante aquí.` +
+            `\n\n¿Ya realizaste el pago? Escríbeme "sí" cuando esté listo.`
+          ),
+          context,
+        };
+      }
+    }
+
+    if (text === 'no') {
+      return {
+        text: 'Entendido. Si quieres intentar de nuevo más tarde, escríbeme cuando gustes.',
+        nextState: ConversationState.ABANDONED,
+        context,
+      };
+    }
+
+    return { text: STATE_RESPONSES[ConversationState.PAYMENT](context) };
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────

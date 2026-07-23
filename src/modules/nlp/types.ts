@@ -1,5 +1,6 @@
 interface InsuranceIntent {
   productCategory: 'vida' | 'hogar' | 'accidentes' | 'asistencia' | 'mascotas' | null;
+  petType?: 'gato' | 'perro' | null;
   coverage: string[];
   beneficiaries: number;
   urgency: 'immediate' | 'exploring';

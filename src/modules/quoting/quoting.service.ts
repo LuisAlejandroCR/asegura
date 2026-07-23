@@ -29,17 +29,24 @@ export class QuotingService {
   }
 
   private evaluateProduct(product: InsuranceProduct, signals: AffiliateSignals): InsuranceScore {
+    const zero: InsuranceScore = { productId: product.id, matchScore: 0, reasons: [], monthlyPremium: product.basePremium, priority: 'low' };
     let matchScore = 0;
     const reasons: string[] = [];
 
+    // Hard filter: wrong category
     if (signals.productCategory && product.category !== signals.productCategory) {
-      if (!this.isRelatedCategory(product.category, signals.productCategory)) {
-        return { productId: product.id, matchScore: 0, reasons: [], monthlyPremium: product.basePremium, priority: 'low' };
-      }
+      if (!this.isRelatedCategory(product.category, signals.productCategory)) return zero;
       matchScore += 20;
       reasons.push(`Categoría: ${product.category}`);
     } else if (signals.productCategory) {
       matchScore += 40;
+    }
+
+    // Hard filter: wrong pet type (gato vs perro products)
+    if (signals.petType && product.eligibility.pet && product.eligibility.pet !== 'any') {
+      if (product.eligibility.pet !== signals.petType) return zero;
+      matchScore += 20;
+      reasons.push(`Para ${signals.petType}s`);
     }
 
     if (signals.beneficiaries && product.eligibility.family) {
