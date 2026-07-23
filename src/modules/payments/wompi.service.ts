@@ -1,3 +1,4 @@
+// wompi.service.ts: Wompi payment links and webhook validation
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
@@ -6,20 +7,33 @@ import { CreatePaymentLinkParams, WompiWebhookEvent, WompiTransactionResult } fr
 @Injectable()
 export class WompiService {
   private readonly logger = new Logger(WompiService.name);
+  private readonly enabled: boolean;
   private readonly baseUrl: string;
   private readonly privateKey: string;
   private readonly eventsSecret: string;
 
   constructor(private readonly config: ConfigService) {
-    const env = this.config.getOrThrow<string>('WOMPI_ENVIRONMENT');
-    this.baseUrl = env === 'production'
+    const environment = config.get<string>('WOMPI_ENVIRONMENT');
+    const privateKey = config.get<string>('WOMPI_PRIVATE_KEY');
+    const eventsSecret = config.get<string>('WOMPI_EVENTS_SECRET');
+
+    this.enabled = !!(environment && privateKey && eventsSecret);
+    this.privateKey = privateKey ?? '';
+    this.eventsSecret = eventsSecret ?? '';
+    this.baseUrl = environment === 'production'
       ? 'https://production.wompi.co/v1'
       : 'https://sandbox.wompi.co/v1';
-    this.privateKey = this.config.getOrThrow<string>('WOMPI_PRIVATE_KEY');
-    this.eventsSecret = this.config.getOrThrow<string>('WOMPI_EVENTS_SECRET');
+
+    if (!this.enabled) {
+      this.logger.warn('Wompi disabled — WOMPI_ENVIRONMENT, WOMPI_PRIVATE_KEY or WOMPI_EVENTS_SECRET not set');
+    }
   }
 
   async createPaymentLink(params: CreatePaymentLinkParams): Promise<string> {
+    if (!this.enabled) {
+      throw new Error('Wompi not configured');
+    }
+
     const expiresAt = params.expiresInMinutes
       ? new Date(Date.now() + params.expiresInMinutes * 60_000)
           .toISOString()
@@ -61,6 +75,8 @@ export class WompiService {
   }
 
   validateWebhookSignature(event: WompiWebhookEvent): boolean {
+    if (!this.eventsSecret) return false;
+
     const { transaction } = event.data;
     const properties = `${transaction.id}${transaction.status}${transaction.amount_in_cents}`;
     const timestamp = event.timestamp;
@@ -81,5 +97,9 @@ export class WompiService {
       paymentMethod: event.data.transaction.payment_method_type,
       createdAt: event.data.transaction.created_at,
     };
+  }
+
+  get isEnabled(): boolean {
+    return this.enabled;
   }
 }
