@@ -15,7 +15,7 @@ enum ConversationState {
 interface ConversationContext {
   autorizado?: boolean;
   productCategory?: string | null;
-  petType?: 'gato' | 'perro' | null;
+  petType?: 'gato' | 'perro' | 'mixto' | null;
   coverage?: string[];
   beneficiaries?: number;
   budget?: number | null;

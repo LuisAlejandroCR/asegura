@@ -42,8 +42,8 @@ export class QuotingService {
       matchScore += 40;
     }
 
-    // Hard filter: wrong pet type (gato vs perro products)
-    if (signals.petType && product.eligibility.pet && product.eligibility.pet !== 'any') {
+    // Hard filter: wrong pet type (gato vs perro products); 'mixto' skips the filter
+    if (signals.petType && signals.petType !== 'mixto' && product.eligibility.pet && product.eligibility.pet !== 'any') {
       if (product.eligibility.pet !== signals.petType) return zero;
       matchScore += 20;
       reasons.push(`Para ${signals.petType}s`);

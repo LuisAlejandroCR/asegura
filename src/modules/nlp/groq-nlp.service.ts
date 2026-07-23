@@ -32,7 +32,7 @@ export class GroqNlpService implements INlpProvider {
 Solo responde con JSON válido, sin markdown:
 {
   "productCategory": "vida" | "hogar" | "accidentes" | "asistencia" | "mascotas" | null,
-  "petType": "gato" | "perro" | null,
+  "petType": "gato" | "perro" | "mixto" | null,
   "coverage": ["palabras clave de lo que quiere proteger"],
   "beneficiaries": 1,
   "urgency": "immediate" | "exploring",
@@ -40,7 +40,11 @@ Solo responde con JSON válido, sin markdown:
   "abandonIntent": false,
   "priceObjection": false
 }
-petType solo aplica si productCategory es "mascotas". Si el usuario menciona "gato", "michi", "felino" → "gato". Si menciona "perro", "canino", "mascota" sin especificar → "perro". Si no especifica → null.`,
+petType solo aplica si productCategory es "mascotas". Reglas:
+- Solo menciona gatos ("gato", "michi", "felino") → "gato"
+- Solo menciona perros ("perro", "canino") → "perro"
+- Menciona AMBOS (gato y perro en el mismo mensaje) → "mixto"
+- No especifica → null`,
             },
             { role: 'user', content: text },
           ],
@@ -77,8 +81,11 @@ petType solo aplica si productCategory es "mascotas". Si el usuario menciona "ga
 
     let petType: InsuranceIntent['petType'] = null;
     if (category === 'mascotas') {
-      if (lower.includes('gato') || lower.includes('michi') || lower.includes('felino')) petType = 'gato';
-      else if (lower.includes('perro') || lower.includes('canino')) petType = 'perro';
+      const hasCat = lower.includes('gato') || lower.includes('michi') || lower.includes('felino');
+      const hasDog = lower.includes('perro') || lower.includes('canino');
+      if (hasCat && hasDog) petType = 'mixto';
+      else if (hasCat) petType = 'gato';
+      else if (hasDog) petType = 'perro';
     }
 
     return {

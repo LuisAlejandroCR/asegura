@@ -144,6 +144,14 @@ export class AgentService {
     if (!context.beneficiaries && intent.beneficiaries > 0) newContext.beneficiaries = intent.beneficiaries;
     if (!context.budget && intent.budget) newContext.budget = intent.budget;
 
+    // Mixed pets — ask which one to insure before quoting
+    if (newContext.petType === 'mixto') {
+      return {
+        text: '¡Qué bonita familia de mascotas! 🐱🐶 ¿Para cuál quieres el seguro? ¿Solo el gato, solo los perros, o quieres cotizar para todos por separado?',
+        context: newContext,
+      };
+    }
+
     const hasEnoughInfo = newContext.productCategory && newContext.coverage?.length;
     if (hasEnoughInfo) {
       const quote = this.quoting.bestQuote(newContext as AffiliateSignals);
