@@ -41,7 +41,7 @@ export class AgentService {
     this.logger.log(`Message from ${msg.userId}: "${msg.text.slice(0, 80)}"`);
 
     const conv = await this.conversations.getOrCreate(msg.userId, msg.channel);
-    const lowerText = msg.text.toLowerCase().trim();
+    const lowerText = msg.text.toLowerCase().trim().replace(/[.,!?¡¿:;]+/g, '').trim();
     const intent: InsuranceIntent = await this.nlp.extractIntent(msg.text);
 
     const result = await this.processMessage(conv.id, conv.state, conv.context, lowerText, intent);
