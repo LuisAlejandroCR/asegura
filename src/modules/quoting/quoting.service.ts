@@ -54,7 +54,9 @@ export class QuotingService {
       reasons.push(`Cubre a ${signals.beneficiaries} personas`);
     }
 
-    if (signals.budget && product.basePremium <= signals.budget) {
+    // Budget check: use explicit budget or infer from salary range
+    const effectiveBudget = signals.budget ?? this.budgetFromSalary(signals.rangoSalarial);
+    if (effectiveBudget && product.basePremium <= effectiveBudget) {
       matchScore += 15;
       reasons.push(`Desde $${product.basePremium.toLocaleString()}/mes — dentro de tu presupuesto`);
     }
@@ -78,6 +80,20 @@ export class QuotingService {
       monthlyPremium: product.basePremium,
       priority: matchScore >= 60 ? 'high' : matchScore >= 30 ? 'medium' : 'low',
     };
+  }
+
+  // Maps RANGO_SALARIAL from the affiliate xlsx to an approximate monthly discretionary budget for insurance
+  private budgetFromSalary(rango?: string): number | null {
+    if (!rango) return null;
+    const map: Record<string, number> = {
+      'Hasta 2 SMLV': 20000,
+      'Entre 2 y 4 SMLV': 40000,
+      'Entre 4 y 6 SMLV': 60000,
+      'Entre 6 y 8 SMLV': 80000,
+      'Entre 8 y 10 SMLV': 100000,
+      'Más de 10 SMLV': 150000,
+    };
+    return map[rango] ?? null;
   }
 
   private isRelatedCategory(a: string, b: string): boolean {
