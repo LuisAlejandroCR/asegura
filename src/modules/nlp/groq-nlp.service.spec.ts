@@ -230,3 +230,34 @@ describe('GroqNlpService.postProcess — petResolution extraction', () => {
     }
   });
 });
+
+// ── productCategory inference from petType ────────────────────────────────────
+
+describe('GroqNlpService.postProcess — productCategory inference from petType', () => {
+  const service = makeService();
+
+  function noCategory(petType: InsuranceIntent['petType'] = null): InsuranceIntent {
+    return { productCategory: null, petType, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null };
+  }
+
+  it('infers productCategory mascotas when Groq returns petType gato but productCategory null', () => {
+    expect(postProcess(service, noCategory('gato'), 'mi gata tiene 10 años').productCategory).toBe('mascotas');
+  });
+
+  it('infers productCategory mascotas when Groq returns petType perro but productCategory null', () => {
+    expect(postProcess(service, noCategory('perro'), 'mi perro').productCategory).toBe('mascotas');
+  });
+
+  it('infers productCategory mascotas from pet keyword in text when both are null', () => {
+    expect(postProcess(service, noCategory(), 'tengo un gato').productCategory).toBe('mascotas');
+  });
+
+  it('does NOT infer mascotas when text has no pet keywords and petType is null', () => {
+    expect(postProcess(service, noCategory(), 'necesito proteger a mi familia').productCategory).toBeNull();
+  });
+
+  it('does NOT override productCategory when Groq already set it', () => {
+    const intent: InsuranceIntent = { ...noCategory(), productCategory: 'vida' };
+    expect(postProcess(service, intent, 'mi gato').productCategory).toBe('vida');
+  });
+});

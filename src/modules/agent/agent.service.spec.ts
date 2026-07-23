@@ -437,6 +437,33 @@ describe('AgentService — DISCOVERY productCategory inference', () => {
   });
 });
 
+// ── DISCOVERY — lost-context resilience ──────────────────────────────────────
+
+describe('AgentService — DISCOVERY lost-context resilience', () => {
+  it('regression — ages answer with lost petType (coverage set) does not re-trigger mixto loop', async () => {
+    // Simulates context.petType being lost (e.g., server restart wiped cache) but
+    // coverage survived in DB. Without the guard, intent.petType='mixto' would cause
+    // the clarification question to fire again indefinitely.
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { petType: null, coverage: ['medicina veterinaria'], productCategory: null },
+      intent: makeIntent({ productCategory: 'mascotas', petType: 'mixto' }),
+    });
+    const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
+    quoting.bestQuote.mockReturnValue({
+      product: petProduct,
+      score: { reasons: ['Para mascotas'], matchScore: 60, monthlyPremium: petProduct.basePremium, priority: 'high', productId: petProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('10 años mi gata, 7 años mi perro y 33 yo'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('familia de mascotas');
+    expect(sentText).not.toContain('Para cuál');
+    const saveCall = conversations.saveState.mock.calls[0];
+    if (saveCall) expect(saveCall[1]).toBe(ConversationState.QUOTE_PRESENTED);
+  });
+});
+
 // ── Fuzz tests ────────────────────────────────────────────────────────────────
 
 describe('AgentService FUZZ — cédula validation', () => {

@@ -104,6 +104,16 @@ petResolution: cuando el usuario responde a la pregunta "¿para el gato o los pe
     else if (hasAll) intent.petResolution = 'all';
     // else: keep LLM's petResolution (could be null or a contextual guess like "perro" for "lomito")
 
+    // Guardrail: infer productCategory when LLM returned null but petType or keywords are present.
+    // LLMs often miss productCategory for short or context-dependent pet messages.
+    if (!intent.productCategory) {
+      if (intent.petType) {
+        intent.productCategory = 'mascotas';
+      } else if (['gato', 'gata', 'michi', 'felino', 'perro', 'perra', 'canino', 'mascota'].some(k => lower.includes(k))) {
+        intent.productCategory = 'mascotas';
+      }
+    }
+
     return intent;
   }
 

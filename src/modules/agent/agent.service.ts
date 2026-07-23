@@ -172,16 +172,37 @@ export class AgentService {
       }
       if (!newContext.coverage?.length) newContext.coverage = ['medicina veterinaria'];
     } else {
-      if (!context.petType && intent.petType) newContext.petType = intent.petType;
+      if (!context.petType && intent.petType) {
+        // Guard: if coverage is already set, pet was resolved in a previous turn.
+        // Re-setting petType to 'mixto' here would restart the clarification loop
+        // when context.petType was lost (e.g., after a server restart).
+        if (intent.petType === 'mixto' && newContext.coverage?.length) {
+          // skip — treat as already-resolved; let hasEnoughInfo + bestQuote handle it
+        } else {
+          newContext.petType = intent.petType;
+        }
+      }
     }
 
     if (!context.coverage && intent.coverage?.length) newContext.coverage = intent.coverage;
     if (!context.beneficiaries && intent.beneficiaries > 0) newContext.beneficiaries = intent.beneficiaries;
     if (!context.budget && intent.budget) newContext.budget = intent.budget;
 
-    // Infer productCategory from petType when NLP didn't extract it explicitly
-    if (!newContext.productCategory && (newContext.petType === 'gato' || newContext.petType === 'perro')) {
-      newContext.productCategory = 'mascotas';
+    // Infer productCategory when NLP didn't extract it explicitly
+    if (!newContext.productCategory) {
+      if (newContext.petType === 'gato' || newContext.petType === 'perro') {
+        newContext.productCategory = 'mascotas';
+      } else {
+        // Coverage-based inference: 'medicina veterinaria' → mascotas (set in mixto resolution)
+        const cov = (newContext.coverage ?? []).join(' ').toLowerCase();
+        if (['veterinar', 'mascota'].some(k => cov.includes(k))) {
+          newContext.productCategory = 'mascotas';
+        }
+        // Original context petType before it was cleared by 'all' resolution
+        if (!newContext.productCategory && (context.petType === 'mixto' || context.petType === 'gato' || context.petType === 'perro')) {
+          newContext.productCategory = 'mascotas';
+        }
+      }
     }
 
     // First time detecting mixed pets — ask clarification before quoting
