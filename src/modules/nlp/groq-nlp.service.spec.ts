@@ -8,7 +8,7 @@ function makeService(): GroqNlpService {
 }
 
 function baseMascotas(petType: InsuranceIntent['petType'] = null): InsuranceIntent {
-  return { productCategory: 'mascotas', petType, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false };
+  return { productCategory: 'mascotas', petType, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null };
 }
 
 function postProcess(service: GroqNlpService, intent: InsuranceIntent, text: string): InsuranceIntent {
@@ -55,7 +55,7 @@ describe('GroqNlpService.postProcess — pet type detection', () => {
   });
 
   it('does not override petType when category is not mascotas', () => {
-    const intent: InsuranceIntent = { productCategory: 'vida', petType: null, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false };
+    const intent: InsuranceIntent = { productCategory: 'vida', petType: null, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null };
     expect(postProcess(service, intent, 'mi gato y mi perro').petType).toBeNull();
   });
 
@@ -154,6 +154,79 @@ describe('GroqNlpService FUZZ — petType invariants', () => {
     ];
     for (const text of noise) {
       expect(() => fallback(service, text)).not.toThrow();
+    }
+  });
+});
+
+// ── wantsAlternative extraction ───────────────────────────────────────────────
+
+describe('GroqNlpService — wantsAlternative (fallback)', () => {
+  const service = makeService();
+
+  it.each([
+    'otro',
+    'otra opción',
+    'diferente',
+    'muéstrame más',
+    'cambia',
+    'cambiar',
+    'siguiente cotización',
+    'hay otra',
+    'no ese',
+  ])('"%s" → wantsAlternative true', (text) => {
+    expect(fallback(service, text).wantsAlternative).toBe(true);
+  });
+
+  it.each([
+    'sí',
+    'me interesa',
+    'quiero ese',
+    'hola',
+    'quiero un seguro de vida',
+  ])('"%s" → wantsAlternative false', (text) => {
+    expect(fallback(service, text).wantsAlternative).toBe(false);
+  });
+});
+
+// ── petResolution extraction ──────────────────────────────────────────────────
+
+describe('GroqNlpService.postProcess — petResolution extraction', () => {
+  const service = makeService();
+
+  it.each([
+    ['el gato', 'gato'],
+    ['para mi gatita', 'gato'],
+    ['el michi', 'gato'],
+    ['el felino', 'gato'],
+    ['el minino', 'gato'],
+  ])('"%s" → petResolution gato', (text, expected) => {
+    expect(postProcess(service, baseMascotas(), text).petResolution).toBe(expected);
+  });
+
+  it.each([
+    ['el perro', 'perro'],
+    ['mi lomito', 'perro'],
+    ['mi perrita', 'perro'],
+    ['el canino', 'perro'],
+  ])('"%s" → petResolution perro', (text, expected) => {
+    expect(postProcess(service, baseMascotas(), text).petResolution).toBe(expected);
+  });
+
+  it.each([
+    ['para todos', 'all'],
+    ['los dos', 'all'],
+    ['ambos', 'all'],
+    ['para las dos mascotas', 'all'],
+  ])('"%s" → petResolution all', (text, expected) => {
+    expect(postProcess(service, baseMascotas(), text).petResolution).toBe(expected);
+  });
+
+  it('invariant: cat+dog text never returns petResolution as a single type', () => {
+    const bothTexts = ['mi gato y mi perro', 'gato y canino', 'michi y lomito'];
+    for (const text of bothTexts) {
+      const res = postProcess(service, baseMascotas(), text).petResolution;
+      expect(res).not.toBe('gato');
+      expect(res).not.toBe('perro');
     }
   });
 });

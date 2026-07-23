@@ -148,15 +148,14 @@ export class AgentService {
     if (!context.productCategory && intent.productCategory) newContext.productCategory = intent.productCategory;
     // Handle clarification response when we already know it's a mixed-pet household
     if (context.petType === 'mixto') {
-      const lower = text;
-      if (intent.petType && intent.petType !== 'mixto') {
-        newContext.petType = intent.petType;
-      } else if (intent.isAffirmative || lower.includes('todos') || lower.includes('ambos')) {
-        newContext.petType = null;
-      } else if (lower.includes('gato') || lower.includes('michi') || lower.includes('felino')) {
+      if (intent.petResolution === 'gato') {
         newContext.petType = 'gato';
-      } else if (lower.includes('perro') || lower.includes('canino')) {
+      } else if (intent.petResolution === 'perro') {
         newContext.petType = 'perro';
+      } else if (intent.petResolution === 'all') {
+        newContext.petType = null;
+      } else if (intent.petType && intent.petType !== 'mixto') {
+        newContext.petType = intent.petType;
       } else {
         return {
           text: '¿Para cuál mascota? Escríbeme "el gato", "los perros" o "para todos".',
@@ -210,7 +209,7 @@ export class AgentService {
       };
     }
 
-    if (intent.isNegative || text.includes('otro') || text.includes('otra') || text.includes('diferente')) {
+    if (intent.wantsAlternative || (intent.isNegative && !intent.isAffirmative)) {
       const allScores = this.quoting.score(context as AffiliateSignals);
       const seen = context.shownProductIds ?? (context.quoteProductId ? [context.quoteProductId] : []);
       const nextProduct = allScores.find((s) => !seen.includes(s.productId));

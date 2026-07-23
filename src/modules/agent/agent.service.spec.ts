@@ -10,7 +10,17 @@ function makeMessage(text: string) {
 }
 
 function makeIntent(overrides: Partial<InsuranceIntent> = {}): InsuranceIntent {
-  return { productCategory: null, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false, ...overrides };
+  return { productCategory: null, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null, ...overrides };
+}
+
+function extractPetResolutionMock(lower: string): 'gato' | 'perro' | 'all' | null {
+  const hasCat = lower.includes('gato') || lower.includes('michi') || lower.includes('felino');
+  const hasDog = lower.includes('perro') || lower.includes('canino');
+  const hasAll = lower.includes('todos') || lower.includes('ambos') || lower.includes('los dos');
+  if (hasCat && !hasDog) return 'gato';
+  if (hasDog && !hasCat) return 'perro';
+  if (hasAll) return 'all';
+  return null;
 }
 
 function makeConversation(state: ConversationState, context: ConversationContext = {}) {
@@ -33,6 +43,8 @@ function buildService(overrides: {
       return makeIntent({
         isAffirmative: ['sí', 'si', 'claro', 'me interesa', 'quiero', 'perfecto', 'adelante', 'todos', 'todas', 'ambos', 'hagámoslo', 'confirmo', 'listo', 'dale'].some((a) => lower.includes(a)),
         isNegative: ['no', 'paso', 'otro', 'otra', 'diferente', 'ninguno', 'ninguna', 'después', 'luego'].some((n) => lower.includes(n)),
+        wantsAlternative: ['otro', 'otra', 'diferente', 'muéstrame más', 'más opciones', 'cambia', 'cambiar', 'siguiente'].some((a) => lower.includes(a)),
+        petResolution: extractPetResolutionMock(lower),
       });
     }),
   };
@@ -293,7 +305,7 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     const { service, telegram, conversations, quoting } = buildService({
       state: ConversationState.DISCOVERY,
       context: { petType: 'mixto', productCategory: 'mascotas' },
-      intent: makeIntent({ productCategory: 'mascotas' }),
+      intent: makeIntent({ productCategory: 'mascotas', petResolution: 'all' }),
     });
     const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
     quoting.bestQuote.mockReturnValue({ product: petProduct, score: { reasons: ['Para mascotas'], matchScore: 60, monthlyPremium: petProduct.basePremium, priority: 'high', productId: petProduct.id } });
@@ -310,7 +322,7 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     const { service, telegram, conversations, quoting } = buildService({
       state: ConversationState.DISCOVERY,
       context: { petType: 'mixto', productCategory: 'mascotas' },
-      intent: makeIntent({ productCategory: 'mascotas' }),
+      intent: makeIntent({ productCategory: 'mascotas', petResolution: 'gato' }),
     });
     const gatoProduct = PRODUCTS.find(p => p.id === 'medicina-prepagada-gatos')!;
     quoting.bestQuote.mockReturnValue({ product: gatoProduct, score: { reasons: ['Para gatos'], matchScore: 80, monthlyPremium: gatoProduct.basePremium, priority: 'high', productId: gatoProduct.id } });

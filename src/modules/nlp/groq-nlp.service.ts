@@ -40,7 +40,9 @@ Solo responde con JSON válido, sin markdown:
   "abandonIntent": false,
   "priceObjection": false,
   "isAffirmative": false,
-  "isNegative": false
+  "isNegative": false,
+  "wantsAlternative": false,
+  "petResolution": null
 }
 petType solo aplica si productCategory es "mascotas". Reglas:
 - Solo menciona gatos ("gato", "michi", "felino") → "gato"
@@ -50,7 +52,14 @@ petType solo aplica si productCategory es "mascotas". Reglas:
 
 isAffirmative: true cuando el usuario expresa acuerdo, confirmación, interés positivo o deseo de continuar (ej: "sí", "claro", "me interesa", "quiero", "perfecto", "adelante", "todos", "todas", "hagámoslo", "confirmo", "listo", "dale", "me parece bien")
 isNegative: true cuando el usuario expresa rechazo, deseo de cambiar, o desinterés (ej: "no", "paso", "otro", "otra", "diferente", "no me interesa", "quizás después", "ninguno")
-Ambos pueden ser false si el mensaje es neutral o informativo.`,
+Ambos pueden ser false si el mensaje es neutral o informativo.
+
+wantsAlternative: true cuando el usuario quiere ver otra opción de seguro distinta (ej: "otro", "muéstrame más", "diferente", "hay otra opción", "cambia", "siguiente cotización", "no ese, otro")
+petResolution: cuando el usuario responde a la pregunta "¿para el gato o los perros?":
+- "gato" si menciona gato, gatita, michi, felino, la gata, el minino
+- "perro" si menciona perro, lomito, canino, el peludo, mi perrita, mascota canina
+- "all" si dice todos, para todos, los dos, ambos, para las dos mascotas
+- null si no especifica o el mensaje no es una respuesta a esta pregunta`,
             },
             { role: 'user', content: text },
           ],
@@ -81,8 +90,20 @@ Ambos pueden ser false si el mensaje es neutral o informativo.`,
       if (hasCat && hasDog) intent.petType = 'mixto';
       else if (hasCat) intent.petType = 'gato';
       else if (hasDog) intent.petType = 'perro';
-      else if (intent.petType === 'mixto') intent.petType = null;  // Groq guessed 'mixto' but no pet keywords → reject
+      else if (intent.petType === 'mixto') intent.petType = null;
     }
+
+    // Guardrail: keywords override LLM for petResolution
+    const lower = text.toLowerCase();
+    const hasCat = lower.includes('gato') || lower.includes('michi') || lower.includes('felino') || lower.includes('gatita') || lower.includes('minino');
+    const hasDog = lower.includes('perro') || lower.includes('canino') || lower.includes('lomito') || lower.includes('peludo') || lower.includes('perrita');
+    const hasAll = lower.includes('todos') || lower.includes('ambos') || lower.includes('los dos') || lower.includes('las dos') || lower.includes('para todos');
+
+    if (hasCat && !hasDog) intent.petResolution = 'gato';
+    else if (hasDog && !hasCat) intent.petResolution = 'perro';
+    else if (hasAll) intent.petResolution = 'all';
+    // else: keep LLM's petResolution (could be null or a contextual guess like "perro" for "lomito")
+
     return intent;
   }
 
@@ -118,6 +139,8 @@ Ambos pueden ser false si el mensaje es neutral o informativo.`,
       priceObjection: lower.includes('caro') || lower.includes('precio'),
       isAffirmative: this.isAffirmativeText(lower),
       isNegative: this.isNegativeText(lower),
+      wantsAlternative: this.wantsAlternativeText(lower),
+      petResolution: this.extractPetResolution(lower),
     };
   }
 
@@ -131,5 +154,23 @@ Ambos pueden ser false si el mensaje es neutral o informativo.`,
     const negatives = ['no', 'paso', 'otro', 'otra', 'diferente', 'no me interesa',
       'ninguno', 'ninguna', 'después', 'luego'];
     return negatives.some((a) => lower.includes(a));
+  }
+
+  private wantsAlternativeText(lower: string): boolean {
+    const alternatives = ['otro', 'otra', 'diferente', 'muéstrame más', 'muestrame mas',
+      'más opciones', 'mas opciones', 'cambia', 'cambiar', 'siguiente cotización',
+      'siguiente opcion', 'hay otra', 'no ese'];
+    return alternatives.some((a) => lower.includes(a));
+  }
+
+  private extractPetResolution(lower: string): 'gato' | 'perro' | 'all' | null {
+    const hasCat = lower.includes('gato') || lower.includes('michi') || lower.includes('felino') || lower.includes('gatita') || lower.includes('minino');
+    const hasDog = lower.includes('perro') || lower.includes('canino') || lower.includes('lomito') || lower.includes('peludo') || lower.includes('perrita');
+    const hasAll = lower.includes('todos') || lower.includes('ambos') || lower.includes('los dos') || lower.includes('las dos') || lower.includes('para todos');
+
+    if (hasCat && !hasDog) return 'gato';
+    if (hasDog && !hasCat) return 'perro';
+    if (hasAll) return 'all';
+    return null;
   }
 }

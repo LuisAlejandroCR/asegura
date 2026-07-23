@@ -10,6 +10,8 @@ interface InsuranceIntent {
   whyThisProduct?: string;
   isAffirmative: boolean;
   isNegative: boolean;
+  wantsAlternative: boolean;
+  petResolution: 'gato' | 'perro' | 'all' | null;
 }
 
 interface INlpProvider {
