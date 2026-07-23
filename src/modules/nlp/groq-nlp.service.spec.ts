@@ -63,6 +63,18 @@ describe('GroqNlpService.postProcess — pet type detection', () => {
     const intent = baseMascotas('gato');
     expect(postProcess(service, intent, 'quiero el seguro').petType).toBe('gato');
   });
+
+  it('regression — resets mixto to null when text has no pet keywords ("para todos")', () => {
+    // Groq might return 'mixto' for "para todos" but there are no cat/dog keywords
+    // postProcess must reject this guess, otherwise the clarification loop re-triggers
+    const intent = baseMascotas('mixto');
+    expect(postProcess(service, intent, 'para todos').petType).toBeNull();
+  });
+
+  it('regression — resets mixto to null for bare "todos"', () => {
+    const intent = baseMascotas('mixto');
+    expect(postProcess(service, intent, 'todos').petType).toBeNull();
+  });
 });
 
 describe('GroqNlpService.fallbackIntent — intent extraction', () => {

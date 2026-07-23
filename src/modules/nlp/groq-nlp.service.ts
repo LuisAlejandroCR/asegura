@@ -38,13 +38,19 @@ Solo responde con JSON válido, sin markdown:
   "urgency": "immediate" | "exploring",
   "budget": null | number,
   "abandonIntent": false,
-  "priceObjection": false
+  "priceObjection": false,
+  "isAffirmative": false,
+  "isNegative": false
 }
 petType solo aplica si productCategory es "mascotas". Reglas:
 - Solo menciona gatos ("gato", "michi", "felino") → "gato"
 - Solo menciona perros ("perro", "canino") → "perro"
 - Menciona AMBOS (gato y perro en el mismo mensaje) → "mixto"
-- No especifica → null`,
+- No especifica → null
+
+isAffirmative: true cuando el usuario expresa acuerdo, confirmación, interés positivo o deseo de continuar (ej: "sí", "claro", "me interesa", "quiero", "perfecto", "adelante", "todos", "todas", "hagámoslo", "confirmo", "listo", "dale", "me parece bien")
+isNegative: true cuando el usuario expresa rechazo, deseo de cambiar, o desinterés (ej: "no", "paso", "otro", "otra", "diferente", "no me interesa", "quizás después", "ninguno")
+Ambos pueden ser false si el mensaje es neutral o informativo.`,
             },
             { role: 'user', content: text },
           ],
@@ -75,6 +81,7 @@ petType solo aplica si productCategory es "mascotas". Reglas:
       if (hasCat && hasDog) intent.petType = 'mixto';
       else if (hasCat) intent.petType = 'gato';
       else if (hasDog) intent.petType = 'perro';
+      else if (intent.petType === 'mixto') intent.petType = null;  // Groq guessed 'mixto' but no pet keywords → reject
     }
     return intent;
   }
@@ -109,6 +116,20 @@ petType solo aplica si productCategory es "mascotas". Reglas:
       urgency: lower.includes('urgente') || lower.includes('ya') ? 'immediate' : 'exploring',
       abandonIntent: lower.includes('no') || lower.includes('después') || lower.includes('luego'),
       priceObjection: lower.includes('caro') || lower.includes('precio'),
+      isAffirmative: this.isAffirmativeText(lower),
+      isNegative: this.isNegativeText(lower),
     };
+  }
+
+  private isAffirmativeText(lower: string): boolean {
+    const affirmatives = ['sí', 'si', 'claro', 'me interesa', 'quiero', 'perfecto', 'adelante',
+      'todos', 'todas', 'ambos', 'hagámoslo', 'confirmo', 'listo', 'dale', 'me parece bien'];
+    return affirmatives.some((a) => lower.includes(a));
+  }
+
+  private isNegativeText(lower: string): boolean {
+    const negatives = ['no', 'paso', 'otro', 'otra', 'diferente', 'no me interesa',
+      'ninguno', 'ninguna', 'después', 'luego'];
+    return negatives.some((a) => lower.includes(a));
   }
 }
