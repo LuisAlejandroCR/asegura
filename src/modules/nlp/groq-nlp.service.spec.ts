@@ -8,7 +8,7 @@ function makeService(): GroqNlpService {
 }
 
 function baseMascotas(petType: InsuranceIntent['petType'] = null): InsuranceIntent {
-  return { productCategory: 'mascotas', petType, coverage: [], beneficiaries: 1, urgency: 'exploring' };
+  return { productCategory: 'mascotas', petType, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false };
 }
 
 function postProcess(service: GroqNlpService, intent: InsuranceIntent, text: string): InsuranceIntent {
@@ -55,7 +55,7 @@ describe('GroqNlpService.postProcess — pet type detection', () => {
   });
 
   it('does not override petType when category is not mascotas', () => {
-    const intent: InsuranceIntent = { productCategory: 'vida', petType: null, coverage: [], beneficiaries: 1, urgency: 'exploring' };
+    const intent: InsuranceIntent = { productCategory: 'vida', petType: null, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false };
     expect(postProcess(service, intent, 'mi gato y mi perro').petType).toBeNull();
   });
 

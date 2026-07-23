@@ -149,12 +149,14 @@ export class AgentService {
     // Handle clarification response when we already know it's a mixed-pet household
     if (context.petType === 'mixto') {
       const lower = text;
-      if (lower.includes('gato') || lower.includes('michi') || lower.includes('felino')) {
+      if (intent.petType && intent.petType !== 'mixto') {
+        newContext.petType = intent.petType;
+      } else if (intent.isAffirmative || lower.includes('todos') || lower.includes('ambos')) {
+        newContext.petType = null;
+      } else if (lower.includes('gato') || lower.includes('michi') || lower.includes('felino')) {
         newContext.petType = 'gato';
       } else if (lower.includes('perro') || lower.includes('canino')) {
         newContext.petType = 'perro';
-      } else if (lower.includes('todos') || lower.includes('ambos') || lower.includes('todo')) {
-        newContext.petType = null;
       } else {
         return {
           text: '¿Para cuál mascota? Escríbeme "el gato", "los perros" o "para todos".',
@@ -335,7 +337,7 @@ export class AgentService {
       };
     }
 
-    if (context.checkoutUrl && text === 'no') {
+    if (context.checkoutUrl && intent.isNegative) {
       return {
         text: 'Entendido. Si quieres intentar de nuevo más tarde, escríbeme cuando gustes.',
         nextState: ConversationState.ABANDONED,
@@ -385,7 +387,7 @@ export class AgentService {
       }
     }
 
-    if (text === 'no') {
+    if (intent.isNegative) {
       return {
         text: 'Entendido. Si quieres intentar de nuevo más tarde, escríbeme cuando gustes.',
         nextState: ConversationState.ABANDONED,

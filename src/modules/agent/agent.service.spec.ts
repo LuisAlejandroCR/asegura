@@ -10,7 +10,7 @@ function makeMessage(text: string) {
 }
 
 function makeIntent(overrides: Partial<InsuranceIntent> = {}): InsuranceIntent {
-  return { productCategory: null, coverage: [], beneficiaries: 1, urgency: 'exploring', ...overrides };
+  return { productCategory: null, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false, ...overrides };
 }
 
 function makeConversation(state: ConversationState, context: ConversationContext = {}) {
@@ -24,9 +24,18 @@ function buildService(overrides: {
 } = {}) {
   const state = overrides.state ?? ConversationState.GREETING;
   const context = overrides.context ?? {};
-  const intent = overrides.intent ?? makeIntent();
+  const staticIntent = overrides.intent;
 
-  const nlp = { extractIntent: jest.fn().mockResolvedValue(intent) };
+  const nlp = {
+    extractIntent: jest.fn().mockImplementation(async (text: string) => {
+      if (staticIntent) return staticIntent;
+      const lower = text.toLowerCase();
+      return makeIntent({
+        isAffirmative: ['sí', 'si', 'claro', 'me interesa', 'quiero', 'perfecto', 'adelante', 'todos', 'todas', 'ambos', 'hagámoslo', 'confirmo', 'listo', 'dale'].some((a) => lower.includes(a)),
+        isNegative: ['no', 'paso', 'otro', 'otra', 'diferente', 'ninguno', 'ninguna', 'después', 'luego'].some((n) => lower.includes(n)),
+      });
+    }),
+  };
   const telegram = {
     normalize: jest.fn().mockResolvedValue(makeMessage('test')),
     sendText: jest.fn().mockResolvedValue(undefined),
@@ -105,13 +114,11 @@ describe('AgentService — AUTHORIZATION', () => {
     );
   });
 
-  it('random non-sí text falls through to REJECTED', async () => {
+  it('random non-sí text re-prompts instead of rejecting', async () => {
     const { service, telegram, conversations } = buildService({ state: ConversationState.AUTHORIZATION });
     telegram.normalize.mockResolvedValue(makeMessage('quizás'));
     await service.handleMessage({});
-    expect(conversations.saveState).toHaveBeenCalledWith(
-      'conv-1', ConversationState.REJECTED, expect.anything(),
-    );
+    expect(conversations.saveState).not.toHaveBeenCalled(); // stays in AUTHORIZATION
   });
 });
 
