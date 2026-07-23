@@ -4,9 +4,11 @@ import { WompiService } from './wompi.service';
 import { WompiWebhookController } from './wompi-webhook.controller';
 import { PolicyModule } from '../policy/policy.module';
 import { BlockchainModule } from '../blockchain/blockchain.module';
+import { ConversationModule } from '../agent/conversation.module';
+import { ChannelModule } from '../channel/channel.module';
 
 @Module({
-  imports: [PolicyModule, BlockchainModule],
+  imports: [PolicyModule, BlockchainModule, ConversationModule, ChannelModule],
   controllers: [WompiWebhookController],
   providers: [WompiService],
   exports: [WompiService],

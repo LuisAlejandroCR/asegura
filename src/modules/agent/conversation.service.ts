@@ -34,6 +34,22 @@ export class ConversationService {
     return data as Conversation | null;
   }
 
+  // Used by the Wompi webhook to resolve which Telegram user/channel owns a policy's
+  // conversation, so the payment confirmation can be pushed to them proactively.
+  async findById(conversationId: string): Promise<Conversation | null> {
+    const { data, error } = await this.supabase.db
+      .from('conversations')
+      .select('*')
+      .eq('id', conversationId)
+      .maybeSingle();
+
+    if (error) {
+      this.logger.warn(`findById error: ${error.message}`);
+      return null;
+    }
+    return data as Conversation | null;
+  }
+
   async create(userId: string, channel: string): Promise<Conversation> {
     const { data, error } = await this.supabase.db
       .from('conversations')

@@ -2,7 +2,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
-import { CreatePaymentLinkParams, WompiWebhookEvent, WompiTransactionResult } from './types';
+import { CreatePaymentLinkParams, CreatePaymentLinkResult, WompiWebhookEvent, WompiTransactionResult } from './types';
 
 @Injectable()
 export class WompiService {
@@ -29,7 +29,7 @@ export class WompiService {
     }
   }
 
-  async createPaymentLink(params: CreatePaymentLinkParams): Promise<string> {
+  async createPaymentLink(params: CreatePaymentLinkParams): Promise<CreatePaymentLinkResult> {
     if (!this.enabled) {
       throw new Error('Wompi not configured');
     }
@@ -68,10 +68,11 @@ export class WompiService {
     }
 
     const result = await response.json() as any;
-    const checkoutUrl = `https://checkout.wompi.co/l/${result.data.id}`;
+    const paymentLinkId: string = result.data.id;
+    const checkoutUrl = `https://checkout.wompi.co/l/${paymentLinkId}`;
 
     this.logger.log(`Payment link created: ${checkoutUrl}`);
-    return checkoutUrl;
+    return { checkoutUrl, paymentLinkId };
   }
 
   validateWebhookSignature(event: WompiWebhookEvent): boolean {
@@ -92,6 +93,7 @@ export class WompiService {
     return {
       transactionId: event.data.transaction.id,
       reference: event.data.transaction.reference,
+      paymentLinkId: event.data.transaction.payment_link_id ?? null,
       status: event.data.transaction.status,
       amountInCents: event.data.transaction.amount_in_cents,
       paymentMethod: event.data.transaction.payment_method_type,

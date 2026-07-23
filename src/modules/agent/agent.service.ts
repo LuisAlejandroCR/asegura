@@ -8,7 +8,6 @@ import { STATE_RESPONSES } from './conversation-state.machine';
 import { QuotingService } from '../quoting/quoting.service';
 import { PolicyService } from '../policy/policy.service';
 import { WompiService } from '../payments/wompi.service';
-import { CeloService } from '../blockchain/celo.service';
 import { AffiliateSignals, InsuranceProduct } from '../quoting/types';
 import { PRODUCTS } from '../quoting/products.data';
 
@@ -32,7 +31,6 @@ export class AgentService {
     private readonly quoting: QuotingService,
     private readonly policy: PolicyService,
     private readonly wompi: WompiService,
-    private readonly blockchain: CeloService,
   ) {}
 
   async handleMessage(raw: unknown): Promise<void> {
@@ -383,26 +381,11 @@ export class AgentService {
   ): Promise<ProcessResult> {
     const isConfirm = intent.isAffirmative;
 
-    if (context.checkoutUrl && isConfirm) {
-      const newContext: ConversationContext = { ...context, checkoutUrl: undefined };
-
-      // Register on Celo — non-blocking, fails gracefully
-      if (context.policyId) {
-        const referenceURI = `https://asegura.co/poliza/${context.policyId}`;
-        const { celoscanUrl } = await this.blockchain.registerPolicy(context.policyId, referenceURI);
-        if (celoscanUrl) {
-          newContext.celoscanUrl = celoscanUrl;
-          await this.policy.updateStatus(context.policyId, 'active', { celo_tx_hash: celoscanUrl.split('/tx/')[1] });
-        }
-      }
-
-      return {
-        text: STATE_RESPONSES[ConversationState.POLICY_ISSUED](newContext),
-        nextState: ConversationState.POLICY_ISSUED,
-        context: newContext,
-      };
-    }
-
+    // Payment confirmation is no longer trust-based: the user's word was never actually
+    // verified against Wompi, so anyone could type "sí" and get a policy issued +
+    // registered on-chain without paying. The Wompi webhook (wompi-webhook.controller.ts)
+    // is now the sole source of truth — it confirms, registers on Celo, and notifies the
+    // user proactively once Wompi reports the transaction as APPROVED.
     if (context.checkoutUrl && intent.isNegative) {
       return {
         text: 'Entendido. Si quieres intentar de nuevo más tarde, escríbeme cuando gustes.',
@@ -413,7 +396,7 @@ export class AgentService {
 
     if (context.checkoutUrl) {
       return {
-        text: `El link de pago ya está generado: [Pagar aquí](${context.checkoutUrl})\n\nUna vez pagues, escríbeme "sí" para continuar.`,
+        text: `Tu link de pago sigue activo: [Pagar aquí](${context.checkoutUrl})\n\nEn cuanto Wompi confirme tu pago, te aviso automáticamente aquí mismo — no necesitas escribirme de nuevo.`,
         context,
       };
     }
@@ -423,12 +406,18 @@ export class AgentService {
       const amountCOP = quoteProduct?.basePremium ?? 20000;
 
       try {
-        const checkoutUrl = await this.wompi.createPaymentLink({
+        const { checkoutUrl, paymentLinkId } = await this.wompi.createPaymentLink({
           policyId: context.policyId ?? convId,
           productName: quoteProduct?.name ?? 'Seguro Colsubsidio',
           amountCOP,
           expiresInMinutes: 30,
         });
+
+        // Persist immediately — the webhook can only find this policy via payment_link_id
+        // (Wompi's Payment Links API has no "reference" create-parameter).
+        if (context.policyId) {
+          await this.policy.updateStatus(context.policyId, 'pending_payment', { wompi_link_id: paymentLinkId });
+        }
 
         const amountStr = `$${amountCOP.toLocaleString('es-CO')}`;
         const msg = (
@@ -436,7 +425,7 @@ export class AgentService {
           `🔗 [Pagar ${amountStr} — Link seguro Wompi](${checkoutUrl})\n\n` +
           `El link es seguro (Wompi + Bancolombia). Acepta tarjeta de crédito, débito, Nequi y PSE.\n\n` +
           `⏱️ El link vence en 30 minutos.\n\n` +
-          `Una vez pagues, escríbeme "sí" para que active tu póliza.`
+          `En cuanto tu pago sea confirmado, te aviso aquí automáticamente con tu póliza.`
         );
 
         return { text: msg, context: { ...context, checkoutUrl } };

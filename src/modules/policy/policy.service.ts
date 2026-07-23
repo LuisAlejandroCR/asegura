@@ -4,6 +4,7 @@ import { SupabaseService } from '../../database/supabase.service';
 import { PdfService } from './pdf.service';
 import { PRODUCTS } from '../quoting/products.data';
 import { ConversationContext } from '../agent/types';
+import { Policy } from './types';
 
 export interface IssuedPolicy {
   policyId: string;
@@ -72,5 +73,60 @@ export class PolicyService {
       .eq('id', policyId);
 
     if (error) this.logger.error(`updateStatus error: ${error.message}`);
+  }
+
+  async findById(policyId: string): Promise<Policy | null> {
+    const { data, error } = await this.supabase.db
+      .from('policies')
+      .select('*')
+      .eq('id', policyId)
+      .maybeSingle();
+
+    if (error) {
+      this.logger.error(`findById error: ${error.message}`);
+      return null;
+    }
+    return data as Policy | null;
+  }
+
+  // Wompi's Payment Links API has no "reference" field — the webhook's transaction
+  // carries payment_link_id instead, which we match back to the policy here.
+  async findByWompiLinkId(wompiLinkId: string): Promise<Policy | null> {
+    const { data, error } = await this.supabase.db
+      .from('policies')
+      .select('*')
+      .eq('wompi_link_id', wompiLinkId)
+      .maybeSingle();
+
+    if (error) {
+      this.logger.error(`findByWompiLinkId error: ${error.message}`);
+      return null;
+    }
+    return data as Policy | null;
+  }
+
+  // Regenerates the policy PDF once the real Celoscan tx is known (post-payment),
+  // replacing the referenceURI fallback the initial PDF used before payment completed.
+  async generateFinalPdf(policy: Policy, celoscanUrl: string): Promise<Buffer | null> {
+    const product = PRODUCTS.find((p) => p.id === policy.product_id);
+    if (!product) return null;
+
+    try {
+      return await this.pdf.generate({
+        policyId: policy.id,
+        productName: product.name,
+        insurer: product.insurer,
+        coverages: product.coverages,
+        nombre: policy.nombre,
+        cedula: policy.cedula,
+        email: policy.email ?? undefined,
+        monthlyPremium: product.basePremium,
+        issuedAt: new Date(policy.created_at),
+        celoscanUrl,
+      });
+    } catch (err) {
+      this.logger.error(`Final PDF generation failed: ${String(err)}`);
+      return null;
+    }
   }
 }

@@ -65,12 +65,17 @@ function buildService(overrides: {
     issue: jest.fn().mockResolvedValue({ policyId: 'pol-1', pdfBuffer: null }),
     updateStatus: jest.fn().mockResolvedValue(undefined),
   };
-  const wompi = { createPaymentLink: jest.fn().mockResolvedValue('https://checkout.wompi.co/l/test'), isEnabled: true };
+  const wompi = {
+    createPaymentLink: jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.wompi.co/l/test', paymentLinkId: 'link-test' }),
+    isEnabled: true,
+  };
+  // Kept as a spy target only — AgentService no longer depends on CeloService directly.
+  // Celo registration now happens exclusively in wompi-webhook.controller.ts.
   const blockchain = { registerPolicy: jest.fn().mockResolvedValue({ txHash: null, celoscanUrl: null }) };
 
   const service = new AgentService(
     nlp as any, telegram as any, conversations as any,
-    quoting as any, policy as any, wompi as any, blockchain as any,
+    quoting as any, policy as any, wompi as any,
   );
 
   return { service, nlp, telegram, conversations, quoting, policy, wompi, blockchain };
@@ -252,6 +257,67 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     expect(conversations.saveState).toHaveBeenCalledWith(
       'conv-1', ConversationState.DATA_CAPTURE,
       expect.objectContaining({ cedula: undefined, nombre: undefined, email: undefined }),
+    );
+  });
+});
+
+// ── PAYMENT — webhook is the source of truth, chat "sí" no longer confirms ────
+
+describe('AgentService — PAYMENT webhook-driven confirmation', () => {
+  it('creating a payment link persists wompi_link_id on the policy record', async () => {
+    // The webhook can only find our policy via payment_link_id (Wompi has no
+    // "reference" create-parameter) — it must be persisted the moment the link exists.
+    const { service, telegram, policy, wompi } = buildService({
+      state: ConversationState.PAYMENT,
+      context: { policyId: 'pol-1', quoteProductId: PRODUCTS[0].id },
+      intent: makeIntent({ isAffirmative: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    expect(wompi.createPaymentLink).toHaveBeenCalled();
+    expect(policy.updateStatus).toHaveBeenCalledWith(
+      'pol-1', 'pending_payment', expect.objectContaining({ wompi_link_id: 'link-test' }),
+    );
+  });
+
+  it('regression — "sí" after checkoutUrl exists does NOT issue the policy or advance state', async () => {
+    // Trusting the user's word was the bug: anyone could type "sí" without paying and
+    // get a policy issued + registered on-chain. Only the Wompi webhook may do that now.
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.PAYMENT,
+      context: { policyId: 'pol-1', checkoutUrl: 'https://checkout.wompi.co/l/test' },
+      intent: makeIntent({ isAffirmative: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    expect(conversations.saveState).not.toHaveBeenCalledWith(
+      expect.anything(), ConversationState.POLICY_ISSUED, expect.anything(),
+    );
+  });
+
+  it('"sí" after checkoutUrl exists gives a waiting acknowledgment, not a repeated payment prompt', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.PAYMENT,
+      context: { policyId: 'pol-1', checkoutUrl: 'https://checkout.wompi.co/l/test' },
+      intent: makeIntent({ isAffirmative: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    // Must not tell the user to say "sí" again — the webhook confirms automatically now
+    expect(sentText).not.toMatch(/escríbeme.*sí/i);
+  });
+
+  it('"no" after checkoutUrl exists still abandons (unchanged behavior)', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.PAYMENT,
+      context: { policyId: 'pol-1', checkoutUrl: 'https://checkout.wompi.co/l/test' },
+      intent: makeIntent({ isNegative: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('no'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.ABANDONED, expect.anything(),
     );
   });
 });

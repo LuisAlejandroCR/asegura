@@ -5,13 +5,12 @@ import { DatabaseModule } from '../../database/database.module';
 import { QuotingModule } from '../quoting/quoting.module';
 import { PolicyModule } from '../policy/policy.module';
 import { PaymentsModule } from '../payments/payments.module';
-import { BlockchainModule } from '../blockchain/blockchain.module';
+import { ConversationModule } from './conversation.module';
 import { AgentService } from './agent.service';
-import { ConversationService } from './conversation.service';
 
 @Module({
-  imports: [ChannelModule, NlpModule, DatabaseModule, QuotingModule, PolicyModule, PaymentsModule, BlockchainModule],
-  providers: [AgentService, ConversationService],
+  imports: [ChannelModule, NlpModule, DatabaseModule, QuotingModule, PolicyModule, PaymentsModule, ConversationModule],
+  providers: [AgentService],
   exports: [AgentService],
 })
 export class AgentModule {}
