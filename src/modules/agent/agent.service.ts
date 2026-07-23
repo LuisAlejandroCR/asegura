@@ -35,7 +35,7 @@ export class AgentService {
   ) {}
 
   async handleMessage(raw: unknown): Promise<void> {
-    const msg: NormalizedMessage = this.telegram.normalize(raw);
+    const msg: NormalizedMessage = await this.telegram.normalize(raw);
     if (!msg.text) return;
 
     this.logger.log(`Message from ${msg.userId}: "${msg.text.slice(0, 80)}"`);

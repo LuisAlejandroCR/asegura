@@ -8,7 +8,7 @@ interface NormalizedMessage {
 }
 
 interface IChannelAdapter {
-  normalize(raw: unknown): NormalizedMessage;
+  normalize(raw: unknown): Promise<NormalizedMessage>;
   sendText(userId: string, text: string): Promise<void>;
   sendDocument(userId: string, file: Buffer, filename: string): Promise<void>;
   setWebhook(url: string, secret: string): Promise<void>;

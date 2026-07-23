@@ -33,17 +33,57 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
     return this.bot;
   }
 
-  normalize(raw: unknown): NormalizedMessage {
+  async normalize(raw: unknown): Promise<NormalizedMessage> {
     const ctx = raw as Context;
     const msg = ctx.message ?? ctx.editedMessage;
+
+    let text = msg?.text ?? '';
+
+    if (!text && msg?.voice) {
+      try {
+        text = await this.transcribeVoice(msg.voice.file_id);
+      } catch (err) {
+        this.logger.error(`Voice transcription failed: ${err}`);
+      }
+    }
+
     return {
       channelId: String(msg?.chat.id ?? ctx.chat?.id),
       channel: 'telegram',
       userId: String(msg?.from?.id ?? ctx.from?.id),
-      text: msg?.text ?? '',
+      text,
       timestamp: msg?.date ? new Date(msg.date * 1000) : new Date(),
       metadata: { updateId: ctx.update.update_id },
     };
+  }
+
+  private async transcribeVoice(fileId: string): Promise<string> {
+    if (!this.bot) return '';
+    const llmKey = this.config.get<string>('LLM_API_KEY');
+    if (!llmKey) return '';
+    const token = this.config.get<string>('TELEGRAM_BOT_TOKEN') ?? '';
+
+    const fileInfo = await this.bot.api.getFile(fileId);
+    if (!fileInfo.file_path) return '';
+
+    const fileUrl = `https://api.telegram.org/file/bot${token}/${fileInfo.file_path}`;
+    const fileRes = await fetch(fileUrl);
+    const audioBuffer = Buffer.from(await fileRes.arrayBuffer());
+
+    const form = new FormData();
+    form.append('file', new Blob([audioBuffer], { type: 'audio/ogg' }), 'voice.ogg');
+    form.append('model', 'whisper-large-v3-turbo');
+    form.append('language', 'es');
+
+    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${llmKey}` },
+      body: form,
+    });
+
+    const data = (await res.json()) as { text?: string };
+    this.logger.log(`Voice transcribed: "${(data.text ?? '').slice(0, 80)}"`);
+    return data.text ?? '';
   }
 
   async sendText(userId: string, text: string): Promise<void> {
