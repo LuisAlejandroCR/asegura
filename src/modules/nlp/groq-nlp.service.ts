@@ -59,11 +59,22 @@ petType solo aplica si productCategory es "mascotas". Reglas:
 
       const data = await response.json() as any;
       const content = data.choices[0].message.content;
-      return JSON.parse(content) as InsuranceIntent;
+      const intent = JSON.parse(content) as InsuranceIntent;
+      return this.postProcess(intent, text);
     } catch (err) {
       this.logger.warn(`Groq extraction failed, using fallback: ${err}`);
       return this.fallbackIntent(text);
     }
+  }
+
+  private postProcess(intent: InsuranceIntent, text: string): InsuranceIntent {
+    if (intent.productCategory === 'mascotas') {
+      const lower = text.toLowerCase();
+      const hasCat = lower.includes('gato') || lower.includes('michi') || lower.includes('felino');
+      const hasDog = lower.includes('perro') || lower.includes('canino');
+      if (hasCat && hasDog) intent.petType = 'mixto';
+    }
+    return intent;
   }
 
   private fallbackIntent(text: string): InsuranceIntent {
