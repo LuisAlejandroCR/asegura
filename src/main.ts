@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
+import { AgentService } from './modules/agent/agent.service';
+import { TelegramAdapter } from './modules/channel/telegram-adapter.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -51,6 +53,22 @@ async function bootstrap() {
   );
 
   app.useGlobalFilters(new GlobalExceptionFilter());
+
+  const agent = app.get(AgentService);
+  const telegram = app.get(TelegramAdapter);
+
+  telegram.instance.on('message', async (ctx) => {
+    await agent.handleMessage(ctx);
+  });
+
+  const telegramToken = config.get<string>('TELEGRAM_BOT_TOKEN');
+  if (telegramToken) {
+    const host = config.get<string>('HOST', '');
+    if (host) {
+      const secret = config.getOrThrow<string>('TELEGRAM_WEBHOOK_SECRET');
+      await telegram.setWebhook(`${host}/webhook/telegram`, secret);
+    }
+  }
 
   const port = config.get<number>('PORT', 3000);
   await app.listen(port);

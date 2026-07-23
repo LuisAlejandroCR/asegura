@@ -4,6 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { validate } from './config/env.validation';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
+import { AgentModule } from './modules/agent/agent.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { HealthModule } from './health/health.module';
     ]),
     DatabaseModule,
     HealthModule,
+    AgentModule,
   ],
 })
 export class AppModule {}
