@@ -19,6 +19,7 @@ interface ConversationContext {
   beneficiaries?: number;
   budget?: number | null;
   quoteProductId?: string;
+  shownProductIds?: string[];
   cedula?: string;
   nombre?: string;
   email?: string;

@@ -106,6 +106,7 @@ export class AgentService {
           const quote = this.quoting.bestQuote(newContext as AffiliateSignals);
           if (quote) {
             newContext.quoteProductId = quote.product.id;
+            newContext.shownProductIds = [quote.product.id];
             return {
               text: this.formatQuote(quote.product, quote.score),
               nextState: ConversationState.QUOTE_PRESENTED,
@@ -135,9 +136,8 @@ export class AgentService {
         }
         if (text === 'no' || text.includes('otro') || text.includes('otra') || text.includes('diferente') || text.includes('más')) {
           const allScores = this.quoting.score(context as AffiliateSignals);
-          const remaining = context.quoteProductId
-            ? allScores.filter((s) => s.productId !== context.quoteProductId)
-            : allScores;
+          const seen = context.shownProductIds ?? (context.quoteProductId ? [context.quoteProductId] : []);
+          const remaining = allScores.filter((s) => !seen.includes(s.productId));
           const nextProduct = remaining[0];
           if (nextProduct) {
             const altProduct = PRODUCTS.find((p) => p.id === nextProduct.productId);
@@ -145,7 +145,7 @@ export class AgentService {
               return {
                 text: this.formatQuote(altProduct, nextProduct),
                 nextState: ConversationState.QUOTE_PRESENTED,
-                context: { ...context, quoteProductId: altProduct.id },
+                context: { ...context, quoteProductId: altProduct.id, shownProductIds: [...seen, altProduct.id] },
               };
             }
           }
