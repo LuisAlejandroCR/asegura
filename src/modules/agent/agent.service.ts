@@ -8,6 +8,7 @@ import { STATE_RESPONSES } from './conversation-state.machine';
 import { QuotingService } from '../quoting/quoting.service';
 import { PolicyService } from '../policy/policy.service';
 import { WompiService } from '../payments/wompi.service';
+import { CeloService } from '../blockchain/celo.service';
 import { AffiliateSignals, InsuranceProduct } from '../quoting/types';
 import { PRODUCTS } from '../quoting/products.data';
 
@@ -30,6 +31,7 @@ export class AgentService {
     private readonly quoting: QuotingService,
     private readonly policy: PolicyService,
     private readonly wompi: WompiService,
+    private readonly blockchain: CeloService,
   ) {}
 
   async handleMessage(raw: unknown): Promise<void> {
@@ -283,10 +285,22 @@ export class AgentService {
     const isConfirm = text === 'sí' || text === 'si';
 
     if (context.checkoutUrl && isConfirm) {
+      const newContext: ConversationContext = { ...context, checkoutUrl: undefined };
+
+      // Register on Celo — non-blocking, fails gracefully
+      if (context.policyId) {
+        const referenceURI = `https://asegura.co/poliza/${context.policyId}`;
+        const { celoscanUrl } = await this.blockchain.registerPolicy(context.policyId, referenceURI);
+        if (celoscanUrl) {
+          newContext.celoscanUrl = celoscanUrl;
+          await this.policy.updateStatus(context.policyId, 'active', { celo_tx_hash: celoscanUrl.split('/tx/')[1] });
+        }
+      }
+
       return {
-        text: STATE_RESPONSES[ConversationState.POLICY_ISSUED](context),
+        text: STATE_RESPONSES[ConversationState.POLICY_ISSUED](newContext),
         nextState: ConversationState.POLICY_ISSUED,
-        context: { ...context, checkoutUrl: undefined },
+        context: newContext,
       };
     }
 

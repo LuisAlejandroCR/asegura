@@ -62,8 +62,13 @@ export const STATE_RESPONSES: ResponsesMap = {
     return '¿Quieres proceder con el pago? Escríbeme "sí" para generar el link.';
   },
 
-  [ConversationState.POLICY_ISSUED]: () =>
-    '✅ ¡Tu seguro está activo!\n\nTu póliza ya fue emitida. En un momento recibirás el PDF y el link de verificación en blockchain.',
+  [ConversationState.POLICY_ISSUED]: (ctx) => {
+    const c = translate(ctx);
+    const celoLine = c.celoscanUrl
+      ? `\n\n🔗 Verificación blockchain: [Ver en Celoscan](${c.celoscanUrl})\nTu póliza quedó registrada de forma permanente en Celo Mainnet.`
+      : '';
+    return `✅ ¡Tu seguro está activo!\n\nTu póliza ya fue emitida. En un momento recibirás el PDF adjunto.${celoLine}`;
+  },
 
   [ConversationState.COMPLETED]: () =>
     '✅ ¡Todo listo! Quedaste asegurado.\n\nSi necesitas algo más, solo escríbeme.',

@@ -26,6 +26,7 @@ interface ConversationContext {
   email?: string;
   policyId?: string;
   checkoutUrl?: string;
+  celoscanUrl?: string;
 }
 
 interface Conversation {
