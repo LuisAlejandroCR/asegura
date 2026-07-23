@@ -28,6 +28,11 @@ CREATE TRIGGER conversations_updated_at
   BEFORE UPDATE ON conversations
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
--- RLS: disabled — service_role key is used by the backend (bypasses RLS anyway)
--- Enable only if you add anon/user-level policies later
-ALTER TABLE conversations DISABLE ROW LEVEL SECURITY;
+-- RLS: enabled with no policies.
+-- service_role (used by the NestJS backend) ALWAYS bypasses RLS in Supabase —
+-- no policy needed for it to work. With RLS on and no permissive policies,
+-- anon/authenticated keys get zero access to this table by default.
+ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
+
+-- Remove the auto-created allow_all policy if it exists (it grants anon read/write — insecure)
+DROP POLICY IF EXISTS allow_all ON conversations;
