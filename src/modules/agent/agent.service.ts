@@ -187,6 +187,7 @@ export class AgentService {
     if (!context.coverage && intent.coverage?.length) newContext.coverage = intent.coverage;
     if (!context.beneficiaries && intent.beneficiaries > 0) newContext.beneficiaries = intent.beneficiaries;
     if (!context.budget && intent.budget) newContext.budget = intent.budget;
+    if (!context.petCount && intent.petCount && intent.petCount > 0) newContext.petCount = intent.petCount;
 
     // Infer productCategory when NLP didn't extract it explicitly
     if (!newContext.productCategory) {
@@ -220,7 +221,7 @@ export class AgentService {
         newContext.quoteProductId = quote.product.id;
         newContext.shownProductIds = [quote.product.id];
         return {
-          text: this.formatQuote(quote.product, quote.score),
+          text: this.formatQuote(quote.product, quote.score, newContext),
           nextState: ConversationState.QUOTE_PRESENTED,
           context: newContext,
         };
@@ -257,7 +258,7 @@ export class AgentService {
         const altProduct = PRODUCTS.find((p) => p.id === nextProduct.productId);
         if (altProduct) {
           return {
-            text: this.formatQuote(altProduct, nextProduct),
+            text: this.formatQuote(altProduct, nextProduct, context),
             nextState: ConversationState.QUOTE_PRESENTED,
             context: { ...context, quoteProductId: altProduct.id, shownProductIds: [...seen, altProduct.id] },
           };
@@ -441,15 +442,36 @@ export class AgentService {
   private formatQuote(
     product: InsuranceProduct,
     score: { reasons: string[]; monthlyPremium: number },
+    context?: ConversationContext,
   ): string {
     const cov = product.coverages.slice(0, 3).map((c) => `✅ ${c}`).join('\n');
     const reason = score.reasons[0] ?? 'se ajusta a lo que buscas';
+    const isPet = product.category === 'mascotas';
+    const petCount = (isPet && context?.petCount && context.petCount > 0) ? context.petCount : null;
+    const pricePerUnit = product.basePremium;
+
+    let priceBlock: string;
+    if (isPet && petCount && petCount > 1) {
+      const total = pricePerUnit * petCount;
+      priceBlock =
+        `💰 *$${pricePerUnit.toLocaleString('es-CO')}/mes por mascota*\n` +
+        `📊 *Total para ${petCount} mascotas: $${total.toLocaleString('es-CO')}/mes*`;
+    } else if (isPet) {
+      priceBlock = `💰 *$${pricePerUnit.toLocaleString('es-CO')}/mes por mascota*`;
+    } else {
+      priceBlock = `💰 *Desde $${pricePerUnit.toLocaleString('es-CO')}/mes*`;
+    }
+
+    const petNote = isPet
+      ? '\n\n_Este seguro cubre a tus mascotas. Para ti también tenemos seguros de salud y accidentes — cuéntame si los quieres ver._'
+      : '';
+
     return (
       `📋 *Tu cotización personalizada*\n\n` +
       `🛡️ *${product.name}* con ${product.insurer}\n${cov}\n\n` +
       `Te lo recomiendo porque: ${reason}.\n\n` +
       `👉 Ver detalles: ${product.url}\n\n` +
-      `💰 *Desde $${product.basePremium.toLocaleString('es-CO')}/mes*\n\n` +
+      `${priceBlock}${petNote}\n\n` +
       `¿Te interesa o prefieres que busquemos otra opción?`
     );
   }

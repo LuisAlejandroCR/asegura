@@ -10,7 +10,7 @@ function makeMessage(text: string) {
 }
 
 function makeIntent(overrides: Partial<InsuranceIntent> = {}): InsuranceIntent {
-  return { productCategory: null, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null, ...overrides };
+  return { productCategory: null, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null, petCount: null, ...overrides };
 }
 
 function extractPetResolutionMock(lower: string): 'gato' | 'perro' | 'all' | null {
@@ -434,6 +434,67 @@ describe('AgentService — DISCOVERY productCategory inference', () => {
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).not.toContain('rango de edades');
     expect(sentText).toContain('diferente');
+  });
+});
+
+// ── DISCOVERY — pet count + quote clarity ────────────────────────────────────
+
+describe('AgentService — DISCOVERY pet count and quote pricing', () => {
+  it('petCount from intent is saved to context', async () => {
+    const { service, conversations, telegram, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { petType: null, coverage: ['medicina veterinaria'], productCategory: 'mascotas' },
+      intent: makeIntent({ productCategory: 'mascotas', petCount: 3 }),
+    });
+    const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
+    quoting.bestQuote.mockReturnValue({ product: petProduct, score: { reasons: ['Para mascotas'], matchScore: 60, monthlyPremium: petProduct.basePremium, priority: 'high', productId: petProduct.id } });
+    telegram.normalize.mockResolvedValue(makeMessage('para todos'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext?.petCount).toBe(3);
+  });
+
+  it('quote for pet product always labels price as "por mascota"', async () => {
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { petType: null, coverage: ['medicina veterinaria'], productCategory: 'mascotas', petCount: 3 },
+      intent: makeIntent({ productCategory: 'mascotas' }),
+    });
+    const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
+    quoting.bestQuote.mockReturnValue({ product: petProduct, score: { reasons: ['Para mascotas'], matchScore: 60, monthlyPremium: petProduct.basePremium, priority: 'high', productId: petProduct.id } });
+    telegram.normalize.mockResolvedValue(makeMessage('para todos'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('por mascota');
+  });
+
+  it('quote for pet product with petCount=3 shows total monthly price', async () => {
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { petType: null, coverage: ['medicina veterinaria'], productCategory: 'mascotas', petCount: 3 },
+      intent: makeIntent({ productCategory: 'mascotas' }),
+    });
+    const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!; // basePremium: 14500
+    quoting.bestQuote.mockReturnValue({ product: petProduct, score: { reasons: ['Para mascotas'], matchScore: 60, monthlyPremium: petProduct.basePremium, priority: 'high', productId: petProduct.id } });
+    telegram.normalize.mockResolvedValue(makeMessage('para todos'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('43.500'); // 14500 × 3
+    expect(sentText).toContain('3 mascotas');
+  });
+
+  it('quote for pet product includes note that coverage is for pets, not the owner', async () => {
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { petType: 'gato', coverage: ['medicina veterinaria'], productCategory: 'mascotas', petCount: 1 },
+      intent: makeIntent({ productCategory: 'mascotas', petType: 'gato' }),
+    });
+    const petProduct = PRODUCTS.find(p => p.id === 'medicina-prepagada-gatos')!;
+    quoting.bestQuote.mockReturnValue({ product: petProduct, score: { reasons: ['Para gatos'], matchScore: 80, monthlyPremium: petProduct.basePremium, priority: 'high', productId: petProduct.id } });
+    telegram.normalize.mockResolvedValue(makeMessage('el gato'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/mascota|para ti|también/);
   });
 });
 

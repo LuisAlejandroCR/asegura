@@ -21,6 +21,7 @@ interface ConversationContext {
   budget?: number | null;
   quoteProductId?: string;
   shownProductIds?: string[];
+  petCount?: number | null;
   cedula?: string;
   nombre?: string;
   email?: string;

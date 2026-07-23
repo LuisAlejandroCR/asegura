@@ -33,6 +33,7 @@ Solo responde con JSON válido, sin markdown:
 {
   "productCategory": "vida" | "hogar" | "accidentes" | "asistencia" | "mascotas" | null,
   "petType": "gato" | "perro" | "mixto" | null,
+  "petCount": null,
   "coverage": ["palabras clave de lo que quiere proteger"],
   "beneficiaries": 1,
   "urgency": "immediate" | "exploring",
@@ -55,6 +56,7 @@ isNegative: true cuando el usuario expresa rechazo, deseo de cambiar, o desinter
 Ambos pueden ser false si el mensaje es neutral o informativo.
 
 wantsAlternative: true cuando el usuario quiere ver otra opción de seguro distinta (ej: "otro", "muéstrame más", "diferente", "hay otra opción", "cambia", "siguiente cotización", "no ese, otro")
+petCount: número total de mascotas mencionadas explícitamente (ej: "un gato y dos perros" → 3; "mi perro" → 1; si no especifica → null).
 petResolution: cuando el usuario responde a la pregunta "¿para el gato o los perros?":
 - "gato" si menciona gato, gatita, michi, felino, la gata, el minino
 - "perro" si menciona perro, lomito, canino, el peludo, mi perrita, mascota canina

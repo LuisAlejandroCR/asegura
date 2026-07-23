@@ -12,6 +12,7 @@ interface InsuranceIntent {
   isNegative: boolean;
   wantsAlternative: boolean;
   petResolution: 'gato' | 'perro' | 'all' | null;
+  petCount?: number | null;
 }
 
 interface INlpProvider {
