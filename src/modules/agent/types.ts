@@ -23,6 +23,7 @@ interface ConversationContext {
   cedula?: string;
   nombre?: string;
   email?: string;
+  policyId?: string;
 }
 
 interface Conversation {

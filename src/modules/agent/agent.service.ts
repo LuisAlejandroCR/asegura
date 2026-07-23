@@ -6,8 +6,17 @@ import { ConversationService } from './conversation.service';
 import { ConversationState, ConversationContext } from './types';
 import { STATE_RESPONSES } from './conversation-state.machine';
 import { QuotingService } from '../quoting/quoting.service';
+import { PolicyService } from '../policy/policy.service';
+import { WompiService } from '../payments/wompi.service';
 import { AffiliateSignals, InsuranceProduct } from '../quoting/types';
 import { PRODUCTS } from '../quoting/products.data';
+
+interface ProcessResult {
+  text?: string;
+  nextState?: ConversationState;
+  context?: ConversationContext;
+  document?: { buffer: Buffer; filename: string };
+}
 
 @Injectable()
 export class AgentService {
@@ -19,6 +28,8 @@ export class AgentService {
     private readonly telegram: TelegramAdapter,
     private readonly conversations: ConversationService,
     private readonly quoting: QuotingService,
+    private readonly policy: PolicyService,
+    private readonly wompi: WompiService,
   ) {}
 
   async handleMessage(raw: unknown): Promise<void> {
@@ -29,30 +40,40 @@ export class AgentService {
 
     const conv = await this.conversations.getOrCreate(msg.userId, msg.channel);
     const lowerText = msg.text.toLowerCase().trim();
-
     const intent: InsuranceIntent = await this.nlp.extractIntent(msg.text);
-    const response = await this.processMessage(conv.state, conv.context, lowerText, intent);
 
-    if (response.nextState) {
+    const result = await this.processMessage(conv.id, conv.state, conv.context, lowerText, intent);
+
+    // Persist state/context whenever either changes
+    if (result.nextState || result.context) {
       await this.conversations.saveState(
         conv.id,
-        response.nextState,
-        response.context ?? conv.context,
+        result.nextState ?? conv.state,
+        result.context ?? conv.context,
       );
     }
 
-    if (response.text) {
-      await this.telegram.sendText(msg.userId, response.text);
+    if (result.document) {
+      await this.telegram.sendDocument(msg.userId, result.document.buffer, result.document.filename);
+    }
+
+    if (result.text) {
+      await this.telegram.sendText(msg.userId, result.text);
     }
   }
 
   private async processMessage(
+    convId: string,
     currentState: ConversationState,
     context: ConversationContext,
     text: string,
     intent: InsuranceIntent,
-  ): Promise<{ text?: string; nextState?: ConversationState; context?: ConversationContext }> {
-    if (intent.abandonIntent && currentState !== ConversationState.GREETING && currentState !== ConversationState.QUOTE_PRESENTED) {
+  ): Promise<ProcessResult> {
+    if (
+      intent.abandonIntent &&
+      currentState !== ConversationState.GREETING &&
+      currentState !== ConversationState.QUOTE_PRESENTED
+    ) {
       return {
         text: STATE_RESPONSES[ConversationState.ABANDONED](context),
         nextState: ConversationState.ABANDONED,
@@ -80,125 +101,18 @@ export class AgentService {
           context: { ...context, autorizado: false },
         };
 
-      case ConversationState.DISCOVERY: {
-        const newContext: ConversationContext = { ...context };
-        let changed = false;
-
-        if (!context.productCategory && intent.productCategory) {
-          newContext.productCategory = intent.productCategory;
-          changed = true;
-        }
-        if (!context.coverage && intent.coverage?.length) {
-          newContext.coverage = intent.coverage;
-          changed = true;
-        }
-        if (!context.beneficiaries && intent.beneficiaries > 0) {
-          newContext.beneficiaries = intent.beneficiaries;
-          changed = true;
-        }
-        if (!context.budget && intent.budget) {
-          newContext.budget = intent.budget;
-          changed = true;
-        }
-
-        const hasEnoughInfo = newContext.productCategory && newContext.coverage?.length;
-        if (hasEnoughInfo) {
-          const quote = this.quoting.bestQuote(newContext as AffiliateSignals);
-          if (quote) {
-            newContext.quoteProductId = quote.product.id;
-            newContext.shownProductIds = [quote.product.id];
-            return {
-              text: this.formatQuote(quote.product, quote.score),
-              nextState: ConversationState.QUOTE_PRESENTED,
-              context: newContext,
-            };
-          }
-          return {
-            text: STATE_RESPONSES[ConversationState.QUOTE_PRESENTED](newContext),
-            nextState: ConversationState.QUOTE_PRESENTED,
-            context: newContext,
-          };
-        }
-
-        return {
-          text: STATE_RESPONSES[ConversationState.DISCOVERY](newContext),
-          context: changed ? newContext : context,
-        };
-      }
+      case ConversationState.DISCOVERY:
+        return this.handleDiscovery(context, text, intent);
 
       case ConversationState.QUOTING:
-      case ConversationState.QUOTE_PRESENTED: {
-        if (text === 'sí' || text === 'si') {
-          return {
-            text: 'Perfecto. Para emitir la póliza necesito tus datos.',
-            nextState: ConversationState.DATA_CAPTURE,
-          };
-        }
-        if (text === 'no' || text.includes('otro') || text.includes('otra') || text.includes('diferente') || text.includes('más')) {
-          const allScores = this.quoting.score(context as AffiliateSignals);
-          const seen = context.shownProductIds ?? (context.quoteProductId ? [context.quoteProductId] : []);
-          const remaining = allScores.filter((s) => !seen.includes(s.productId));
-          const nextProduct = remaining[0];
-          if (nextProduct) {
-            const altProduct = PRODUCTS.find((p) => p.id === nextProduct.productId);
-            if (altProduct) {
-              return {
-                text: this.formatQuote(altProduct, nextProduct),
-                nextState: ConversationState.QUOTE_PRESENTED,
-                context: { ...context, quoteProductId: altProduct.id, shownProductIds: [...seen, altProduct.id] },
-              };
-            }
-          }
-          return {
-            text: 'No tengo más opciones en esta categoría. ¿Quieres probar con otra?',
-            nextState: ConversationState.DISCOVERY,
-          };
-        }
-        return {
-          text: STATE_RESPONSES[ConversationState.QUOTE_PRESENTED](context),
-        };
-      }
+      case ConversationState.QUOTE_PRESENTED:
+        return this.handleQuotation(context, text);
 
-      case ConversationState.DATA_CAPTURE: {
-        const newContext = { ...context };
-        let nextState: ConversationState = currentState;
-
-        if (!context.cedula && /^\d{6,10}$/.test(text)) {
-          newContext.cedula = text;
-        } else if (!context.cedula) {
-          return { text: 'La cédula debe tener entre 6 y 10 dígitos. Intenta de nuevo.' };
-        }
-
-        if (!context.nombre && context.cedula) {
-          newContext.nombre = text;
-          return { text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext), context: newContext };
-        } else if (!context.nombre) {
-          return { text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext) };
-        }
-
-        if (!context.email) {
-          if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
-            newContext.email = text;
-            nextState = ConversationState.PAYMENT;
-          } else if (!context.email) {
-            newContext.email = text;
-            nextState = ConversationState.PAYMENT;
-          }
-        }
-
-        if (nextState === ConversationState.PAYMENT) {
-          return {
-            text: STATE_RESPONSES[ConversationState.PAYMENT](newContext),
-            nextState,
-            context: newContext,
-          };
-        }
-
-        return { text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext), context: newContext };
-      }
+      case ConversationState.DATA_CAPTURE:
+        return this.handleDataCapture(convId, context, text);
 
       default:
-        if (text.includes('hola') || text.includes('ayuda')) {
+        if (text.includes('hola') || text.includes('ayuda') || text.includes('inicio') || text === '/start') {
           return {
             text: STATE_RESPONSES[ConversationState.GREETING](context),
             nextState: ConversationState.GREETING,
@@ -210,8 +124,166 @@ export class AgentService {
     }
   }
 
-  private formatQuote(product: { name: string; insurer: string; coverages: string[]; basePremium: number; url: string }, score: { reasons: string[]; monthlyPremium: number }): string {
+  // ── Discovery ────────────────────────────────────────────────────────────────
+
+  private handleDiscovery(
+    context: ConversationContext,
+    _text: string,
+    intent: InsuranceIntent,
+  ): ProcessResult {
+    const newContext: ConversationContext = { ...context };
+
+    if (!context.productCategory && intent.productCategory) newContext.productCategory = intent.productCategory;
+    if (!context.coverage && intent.coverage?.length) newContext.coverage = intent.coverage;
+    if (!context.beneficiaries && intent.beneficiaries > 0) newContext.beneficiaries = intent.beneficiaries;
+    if (!context.budget && intent.budget) newContext.budget = intent.budget;
+
+    const hasEnoughInfo = newContext.productCategory && newContext.coverage?.length;
+    if (hasEnoughInfo) {
+      const quote = this.quoting.bestQuote(newContext as AffiliateSignals);
+      if (quote) {
+        newContext.quoteProductId = quote.product.id;
+        newContext.shownProductIds = [quote.product.id];
+        return {
+          text: this.formatQuote(quote.product, quote.score),
+          nextState: ConversationState.QUOTE_PRESENTED,
+          context: newContext,
+        };
+      }
+    }
+
+    return {
+      text: STATE_RESPONSES[ConversationState.DISCOVERY](newContext),
+      context: newContext,
+    };
+  }
+
+  // ── Quotation ────────────────────────────────────────────────────────────────
+
+  private handleQuotation(context: ConversationContext, text: string): ProcessResult {
+    if (text === 'sí' || text === 'si') {
+      return {
+        text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](context),
+        nextState: ConversationState.DATA_CAPTURE,
+      };
+    }
+
+    if (
+      text === 'no' ||
+      text.includes('otro') ||
+      text.includes('otra') ||
+      text.includes('diferente') ||
+      text.includes('más')
+    ) {
+      const allScores = this.quoting.score(context as AffiliateSignals);
+      const seen = context.shownProductIds ?? (context.quoteProductId ? [context.quoteProductId] : []);
+      const nextProduct = allScores.find((s) => !seen.includes(s.productId));
+
+      if (nextProduct) {
+        const altProduct = PRODUCTS.find((p) => p.id === nextProduct.productId);
+        if (altProduct) {
+          return {
+            text: this.formatQuote(altProduct, nextProduct),
+            nextState: ConversationState.QUOTE_PRESENTED,
+            context: { ...context, quoteProductId: altProduct.id, shownProductIds: [...seen, altProduct.id] },
+          };
+        }
+      }
+
+      return {
+        text: 'No tengo más opciones en esta categoría. ¿Quieres que busquemos en otra?',
+        nextState: ConversationState.DISCOVERY,
+        context: { ...context, productCategory: undefined, coverage: undefined, shownProductIds: [] },
+      };
+    }
+
+    return { text: STATE_RESPONSES[ConversationState.QUOTE_PRESENTED](context) };
+  }
+
+  // ── Data capture ─────────────────────────────────────────────────────────────
+
+  private async handleDataCapture(
+    convId: string,
+    context: ConversationContext,
+    text: string,
+  ): Promise<ProcessResult> {
+    const newContext: ConversationContext = { ...context };
+
+    // Step 1 — collect cédula
+    if (!context.cedula) {
+      if (!/^\d{6,10}$/.test(text)) {
+        return { text: 'La cédula debe tener entre 6 y 10 dígitos. Intenta de nuevo.' };
+      }
+      newContext.cedula = text;
+      return {
+        text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext),
+        context: newContext,
+      };
+    }
+
+    // Step 2 — collect nombre
+    if (!context.nombre) {
+      newContext.nombre = text;
+      return {
+        text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext),
+        context: newContext,
+      };
+    }
+
+    // Step 3 — collect email
+    if (!context.email) {
+      newContext.email = text;
+      return {
+        text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext),
+        context: newContext,
+      };
+    }
+
+    // Step 4 — confirmation ("sí" → issue policy)
+    if (text === 'sí' || text === 'si') {
+      const { policyId, pdfBuffer } = await this.policy.issue(convId, newContext);
+      newContext.policyId = policyId;
+
+      const result: ProcessResult = {
+        text: STATE_RESPONSES[ConversationState.PAYMENT](newContext),
+        nextState: ConversationState.PAYMENT,
+        context: newContext,
+      };
+
+      if (pdfBuffer) {
+        result.document = { buffer: pdfBuffer, filename: `poliza-${policyId.slice(0, 8)}.pdf` };
+      }
+
+      return result;
+    }
+
+    if (text === 'no' || text.includes('corregir')) {
+      return {
+        text: '¿Qué dato quieres corregir? Escríbeme tu cédula de nuevo y empezamos.',
+        nextState: ConversationState.DATA_CAPTURE,
+        context: { ...context, cedula: undefined, nombre: undefined, email: undefined },
+      };
+    }
+
+    // Default — re-show confirmation summary
+    return { text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](context) };
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  private formatQuote(
+    product: InsuranceProduct,
+    score: { reasons: string[]; monthlyPremium: number },
+  ): string {
     const cov = product.coverages.slice(0, 3).map((c) => `✅ ${c}`).join('\n');
-    return `📋 *Tu cotización personalizada*\n\n🛡️ *${product.name}* con ${product.insurer}\n${cov}\n\nTe lo recomiendo porque: ${score.reasons[0] ?? 'se ajusta a lo que buscas'}.\n\n👉 Ver detalles: ${product.url}\n\n💰 *Desde $${product.basePremium.toLocaleString()}/mes*\n\n¿Te interesa o prefieres que busquemos otra opción?`;
+    const reason = score.reasons[0] ?? 'se ajusta a lo que buscas';
+    return (
+      `📋 *Tu cotización personalizada*\n\n` +
+      `🛡️ *${product.name}* con ${product.insurer}\n${cov}\n\n` +
+      `Te lo recomiendo porque: ${reason}.\n\n` +
+      `👉 Ver detalles: ${product.url}\n\n` +
+      `💰 *Desde $${product.basePremium.toLocaleString('es-CO')}/mes*\n\n` +
+      `¿Te interesa o prefieres que busquemos otra opción?`
+    );
   }
 }
