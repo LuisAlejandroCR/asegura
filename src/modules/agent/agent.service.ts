@@ -6,7 +6,8 @@ import { ConversationService } from './conversation.service';
 import { ConversationState, ConversationContext } from './types';
 import { STATE_RESPONSES } from './conversation-state.machine';
 import { QuotingService } from '../quoting/quoting.service';
-import { AffiliateSignals } from '../quoting/types';
+import { AffiliateSignals, InsuranceProduct } from '../quoting/types';
+import { PRODUCTS } from '../quoting/products.data';
 
 @Injectable()
 export class AgentService {
@@ -124,33 +125,36 @@ export class AgentService {
         };
       }
 
-      case ConversationState.QUOTE_PRESENTED:
+      case ConversationState.QUOTING:
+      case ConversationState.QUOTE_PRESENTED: {
         if (text === 'sí' || text === 'si') {
           return {
             text: 'Perfecto. Para emitir la póliza necesito tus datos.',
             nextState: ConversationState.DATA_CAPTURE,
           };
         }
-        if (text.includes('otro') || text.includes('otra') || text.includes('diferente')) {
-          const signals = { ...context } as AffiliateSignals;
-          const allScores = this.quoting.score(signals);
+        if (text.includes('otro') || text.includes('otra') || text.includes('diferente') || text.includes('más')) {
+          const allScores = this.quoting.score(context as AffiliateSignals);
           const nextProduct = allScores.find((s) => s.productId !== context.quoteProductId);
           if (nextProduct) {
-            const { default: { PRODUCTS } } = require('../quoting/products.data') as any;
-            const product = PRODUCTS.find((p: any) => p.id === nextProduct.productId);
-            if (product) {
+            const altProduct = PRODUCTS.find((p) => p.id === nextProduct.productId);
+            if (altProduct) {
               return {
-                text: this.formatQuote(product, nextProduct),
+                text: this.formatQuote(altProduct, nextProduct),
                 nextState: ConversationState.QUOTE_PRESENTED,
-                context: { ...context, quoteProductId: product.id },
+                context: { ...context, quoteProductId: altProduct.id },
               };
             }
           }
+          return {
+            text: 'No tengo más opciones en esta categoría. ¿Quieres probar con otra?',
+            nextState: ConversationState.DISCOVERY,
+          };
         }
         return {
-          text: STATE_RESPONSES[ConversationState.QUOTING](context),
-          nextState: ConversationState.QUOTING,
+          text: STATE_RESPONSES[ConversationState.QUOTE_PRESENTED](context),
         };
+      }
 
       case ConversationState.DATA_CAPTURE: {
         const newContext = { ...context };

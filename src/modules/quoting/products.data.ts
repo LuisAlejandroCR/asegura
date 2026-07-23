@@ -8,7 +8,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     insurer: 'MetLife',
     basePremium: 18000,
     url: 'https://www.colsubsidio.com/seguros/familiares/accidentes',
-    coverages: ['Cobertura por accidentes', 'Gastos médicos', 'Indemnización diaria'],
+    coverages: ['Cobertura por accidentes', 'Gastos médicos', 'Indemnización diaria por hospitalización', 'Reembolso de gastos médicos'],
     eligibility: { minAge: 18, maxAge: 70 },
   },
   {
@@ -18,7 +18,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     insurer: 'Chubb',
     basePremium: 28100,
     url: 'https://www.colsubsidio.com/seguros/familiares/accidentes',
-    coverages: ['Cobertura ampliada por accidentes', 'Gastos médicos mayores', 'Indemnización diaria'],
+    coverages: ['Cobertura ampliada por accidentes', 'Gastos médicos mayores', 'Indemnización diaria', 'Protección familiar'],
     eligibility: { minAge: 18, maxAge: 70 },
   },
   {
@@ -28,7 +28,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     insurer: 'Pan American Life',
     basePremium: 12000,
     url: 'https://www.colsubsidio.com/seguros/familiares/vida',
-    coverages: ['Protección por fallecimiento', 'Cobertura familiar'],
+    coverages: ['Protección por fallecimiento', 'Cobertura familiar', 'Indemnización por incapacidad'],
     eligibility: { minAge: 18, maxAge: 65 },
   },
   {
@@ -38,7 +38,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     insurer: 'GEA',
     basePremium: 20000,
     url: 'https://www.colsubsidio.com/seguros/familiares/asistencias-multiples',
-    coverages: ['Asistencia en el hogar', 'Asistencia vehículo', 'Asistencia jurídica'],
+    coverages: ['Asistencia en el hogar', 'Asistencia vehículo', 'Asistencia jurídica telefónica', 'Orientación familiar'],
     eligibility: {},
   },
   {
@@ -48,7 +48,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     insurer: 'Grupo Recordar',
     basePremium: 26000,
     url: 'https://www.colsubsidio.com/seguros/familiares/exequial',
-    coverages: ['Servicios exequiales', 'Traslado nacional'],
+    coverages: ['Servicios exequiales', 'Traslado nacional', 'Apoyo funerario familiar'],
     eligibility: {},
   },
   {
@@ -58,7 +58,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     insurer: 'Pan American Life',
     basePremium: 14000,
     url: 'https://www.colsubsidio.com/seguros/familiares/accidente-exequial',
-    coverages: ['Cobertura por accidentes', 'Servicios exequiales'],
+    coverages: ['Cobertura por accidentes', 'Servicios exequiales', 'Protección familiar'],
     eligibility: {},
   },
   {
@@ -68,7 +68,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     insurer: 'BMI',
     basePremium: 20000,
     url: 'https://www.colsubsidio.com/seguros/familiares/vida-ahorro',
-    coverages: ['Protección por fallecimiento', 'Componente de ahorro'],
+    coverages: ['Protección por fallecimiento', 'Componente de ahorro', 'Cobertura por incapacidad'],
     eligibility: {},
   },
   {
@@ -78,7 +78,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     insurer: 'GEA',
     basePremium: 16800,
     url: 'https://www.colsubsidio.com/seguros/familiares/asistencias-medicas',
-    coverages: ['Asistencia médica telefónica', 'Consultas virtuales', 'Descuentos en medicamentos'],
+    coverages: ['Asistencia médica telefónica', 'Consultas virtuales', 'Descuentos en medicamentos', 'Orientación nutricional'],
     eligibility: { family: true },
   },
   {
@@ -88,7 +88,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     insurer: 'GEA',
     basePremium: 14500,
     url: 'https://www.colsubsidio.com/seguros/mascotas/asistencia-veterinaria',
-    coverages: ['Asistencia veterinaria telefónica', 'Descuentos en consultas'],
+    coverages: ['Consulta veterinaria', 'Refuerzo de vacunación', 'Sala de urgencias por accidente', 'Búsqueda y localización de mascotas', 'Exámenes de laboratorio', 'Baño medicado', 'Servicio exequial'],
     eligibility: { pet: 'any' },
   },
   {
@@ -98,7 +98,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     insurer: 'VetPlus',
     basePremium: 81800,
     url: 'https://www.colsubsidio.com/seguros/mascotas/medicina-prepagada',
-    coverages: ['Medicina prepagada para gatos', 'Consultas ilimitadas', 'Cirugías'],
+    coverages: ['Medicina prepagada para gatos', 'Consultas ilimitadas', 'Cirugías', 'Hospitalización', 'Exámenes diagnósticos'],
     eligibility: { pet: 'gato' },
   },
   {
@@ -108,7 +108,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     insurer: 'VetPlus',
     basePremium: 96600,
     url: 'https://www.colsubsidio.com/seguros/mascotas/medicina-prepagada',
-    coverages: ['Medicina prepagada para perros', 'Consultas ilimitadas', 'Cirugías'],
+    coverages: ['Medicina prepagada para perros', 'Consultas ilimitadas', 'Cirugías', 'Hospitalización', 'Exámenes diagnósticos'],
     eligibility: { pet: 'perro' },
   },
 ];
