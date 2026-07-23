@@ -139,12 +139,31 @@ export class AgentService {
     const newContext: ConversationContext = { ...context };
 
     if (!context.productCategory && intent.productCategory) newContext.productCategory = intent.productCategory;
-    if (!context.petType && intent.petType) newContext.petType = intent.petType;
+    // Handle clarification response when we already know it's a mixed-pet household
+    if (context.petType === 'mixto') {
+      const lower = text;
+      if (lower.includes('gato') || lower.includes('michi') || lower.includes('felino')) {
+        newContext.petType = 'gato';
+      } else if (lower.includes('perro') || lower.includes('canino')) {
+        newContext.petType = 'perro';
+      } else if (lower.includes('todos') || lower.includes('ambos') || lower.includes('todo')) {
+        newContext.petType = null;
+      } else {
+        return {
+          text: '¿Para cuál mascota? Escríbeme "el gato", "los perros" o "para todos".',
+          context,
+        };
+      }
+      if (!newContext.coverage?.length) newContext.coverage = ['medicina veterinaria'];
+    } else {
+      if (!context.petType && intent.petType) newContext.petType = intent.petType;
+    }
+
     if (!context.coverage && intent.coverage?.length) newContext.coverage = intent.coverage;
     if (!context.beneficiaries && intent.beneficiaries > 0) newContext.beneficiaries = intent.beneficiaries;
     if (!context.budget && intent.budget) newContext.budget = intent.budget;
 
-    // Mixed pets — ask which one to insure before quoting
+    // First time detecting mixed pets — ask clarification before quoting
     if (newContext.petType === 'mixto') {
       return {
         text: '¡Qué bonita familia de mascotas! 🐱🐶 ¿Para cuál quieres el seguro? ¿Solo el gato, solo los perros, o quieres cotizar para todos por separado?',
