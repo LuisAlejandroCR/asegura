@@ -233,8 +233,21 @@ export class AgentService {
       };
     }
 
+    // No new signal extracted this turn (e.g. unclear/short voice transcription) —
+    // acknowledge instead of silently repeating the exact same question, which reads
+    // as the agent ignoring the user. `beneficiaries` is excluded: Groq's JSON schema
+    // shows "beneficiaries": 1 as an example value, so the LLM often defaults to 1
+    // even when the message carries no real signal — it's not a reliable progress marker.
+    const madeProgress =
+      newContext.productCategory !== context.productCategory ||
+      newContext.petType !== context.petType ||
+      (newContext.coverage?.length ?? 0) !== (context.coverage?.length ?? 0) ||
+      newContext.budget !== context.budget ||
+      newContext.petCount !== context.petCount;
+
+    const question = STATE_RESPONSES[ConversationState.DISCOVERY](newContext);
     return {
-      text: STATE_RESPONSES[ConversationState.DISCOVERY](newContext),
+      text: madeProgress ? question : `No logré entender bien eso. ${question}`,
       context: newContext,
     };
   }

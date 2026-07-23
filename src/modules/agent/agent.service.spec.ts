@@ -498,6 +498,39 @@ describe('AgentService — DISCOVERY pet count and quote pricing', () => {
   });
 });
 
+// ── DISCOVERY — unclear/unextractable message acknowledgment ────────────────
+
+describe('AgentService — DISCOVERY unclear message handling', () => {
+  it('regression — message with no extractable signal gets an acknowledgment, not a silent verbatim repeat', async () => {
+    // Simulates a short/unclear voice transcription (e.g. "mmh", static, mumbling) —
+    // NLP extracts nothing. Repeating the exact same question with no acknowledgment
+    // reads as the agent ignoring the user, breaking the "transmite confianza" criterion.
+    const { service, telegram } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({}),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('mmh no sé'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toMatch(/no logré entender|no te entendí|no entendí bien/i);
+  });
+
+  it('does not show the "no entendí" acknowledgment when partial progress was made', async () => {
+    // productCategory was extracted this turn (progress) even though coverage/beneficiaries
+    // are still missing — this must NOT be treated as an unclear/no-signal message.
+    const { service, telegram } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ productCategory: 'vida' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('quiero un seguro de vida'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toMatch(/no logré entender|no te entendí|no entendí bien/i);
+  });
+});
+
 // ── DISCOVERY — lost-context resilience ──────────────────────────────────────
 
 describe('AgentService — DISCOVERY lost-context resilience', () => {
