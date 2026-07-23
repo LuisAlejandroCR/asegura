@@ -41,10 +41,11 @@ export class AgentService {
     this.logger.log(`Message from ${msg.userId}: "${msg.text.slice(0, 80)}"`);
 
     const conv = await this.conversations.getOrCreate(msg.userId, msg.channel);
-    const lowerText = msg.text.toLowerCase().trim().replace(/[.,!?¡¿:;]+/g, '').trim();
+    const lowerText = msg.text.toLowerCase().trim().replace(/[.,!?¡¿:;]+$/, '').trim();
+    const rawText = msg.text.trim().replace(/[.,!?¡¿:;]+$/, '').trim();
     const intent: InsuranceIntent = await this.nlp.extractIntent(msg.text);
 
-    const result = await this.processMessage(conv.id, conv.state, conv.context, lowerText, intent);
+    const result = await this.processMessage(conv.id, conv.state, conv.context, lowerText, intent, rawText);
 
     // Persist state/context whenever either changes
     if (result.nextState || result.context) {
@@ -70,6 +71,7 @@ export class AgentService {
     context: ConversationContext,
     text: string,
     intent: InsuranceIntent,
+    rawText: string = text,
   ): Promise<ProcessResult> {
     if (
       intent.abandonIntent &&
@@ -111,7 +113,7 @@ export class AgentService {
         return this.handleQuotation(context, text);
 
       case ConversationState.DATA_CAPTURE:
-        return this.handleDataCapture(convId, context, text);
+        return this.handleDataCapture(convId, context, text, rawText);
 
       case ConversationState.PAYMENT:
         return this.handlePayment(convId, context, text);
@@ -133,7 +135,7 @@ export class AgentService {
 
   private handleDiscovery(
     context: ConversationContext,
-    _text: string,
+    text: string,
     intent: InsuranceIntent,
   ): ProcessResult {
     const newContext: ConversationContext = { ...context };
@@ -239,6 +241,7 @@ export class AgentService {
     convId: string,
     context: ConversationContext,
     text: string,
+    rawText: string = text,
   ): Promise<ProcessResult> {
     const newContext: ConversationContext = { ...context };
 
@@ -256,7 +259,7 @@ export class AgentService {
 
     // Step 2 — collect nombre
     if (!context.nombre) {
-      newContext.nombre = text;
+      newContext.nombre = rawText;
       return {
         text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext),
         context: newContext,
@@ -265,7 +268,7 @@ export class AgentService {
 
     // Step 3 — collect email
     if (!context.email) {
-      newContext.email = text;
+      newContext.email = rawText;
       return {
         text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext),
         context: newContext,
