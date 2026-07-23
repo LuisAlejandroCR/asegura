@@ -1,47 +1,61 @@
+// groq-nlp.service.ts: Groq provider implementing INlpProvider using Groq's OpenAI-compatible API
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { INlpProvider, InsuranceIntent } from './types';
 
 @Injectable()
-export class OllamaNlpService implements INlpProvider {
-  private readonly logger = new Logger(OllamaNlpService.name);
-  private readonly baseUrl: string;
+export class GroqNlpService implements INlpProvider {
+  private readonly logger = new Logger(GroqNlpService.name);
+  private readonly apiKey: string;
   private readonly model: string;
+  private readonly baseUrl = 'https://api.groq.com/openai/v1';
 
   constructor(private readonly config: ConfigService) {
-    this.baseUrl = config.get<string>('LLM_BASE_URL', 'http://localhost:11434');
-    this.model = config.get<string>('LLM_MODEL', 'mistral');
+    this.apiKey = config.get<string>('LLM_API_KEY', '');
+    this.model = config.get<string>('LLM_MODEL', 'llama3-8b-8192');
   }
 
   async extractIntent(text: string): Promise<InsuranceIntent> {
     try {
-      const { default: ollama } = await import('ollama');
-      const response = await ollama.chat({
-        model: this.model,
-        messages: [
-          {
-            role: 'system',
-            content: `Eres un asistente de seguros. Extrae la intención del usuario en JSON.
+      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            {
+              role: 'system',
+              content: `Eres un asistente de seguros. Extrae la intención del usuario en JSON.
 Solo responde con JSON válido, sin markdown:
 {
   "productCategory": "vida" | "hogar" | "accidentes" | "asistencia" | "mascotas" | null,
   "coverage": ["palabras clave de lo que quiere proteger"],
   "beneficiaries": 1,
   "urgency": "immediate" | "exploring",
-  "budget": null | número,
+  "budget": null | number,
   "abandonIntent": false,
   "priceObjection": false
 }`,
-          },
-          { role: 'user', content: text },
-        ],
-        format: 'json',
-        stream: false,
+            },
+            { role: 'user', content: text },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.1,
+        }),
       });
 
-      return JSON.parse(response.message.content) as InsuranceIntent;
+      if (!response.ok) {
+        throw new Error(`Groq API error: ${response.status} ${await response.text()}`);
+      }
+
+      const data = await response.json() as any;
+      const content = data.choices[0].message.content;
+      return JSON.parse(content) as InsuranceIntent;
     } catch (err) {
-      this.logger.warn(`Ollama extraction failed, using fallback: ${err}`);
+      this.logger.warn(`Groq extraction failed, using fallback: ${err}`);
       return this.fallbackIntent(text);
     }
   }

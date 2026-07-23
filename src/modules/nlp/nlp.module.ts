@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
-import { OllamaNlpService } from './ollama-nlp.service';
+import { GroqNlpService } from './groq-nlp.service';
 
 @Module({
   providers: [
-    { provide: 'INlpProvider', useClass: OllamaNlpService },
-    OllamaNlpService,
+    { provide: 'INlpProvider', useClass: GroqNlpService },
+    GroqNlpService,
   ],
   exports: ['INlpProvider'],
 })
