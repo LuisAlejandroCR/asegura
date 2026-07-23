@@ -1,38 +1,84 @@
 # Asegura
 
-Venta automatizada de seguros para Colsubsidio.
+Agente conversacional para la venta automatizada de seguros Colsubsidio.
 De "no sé qué seguro necesito" a "ya quedé asegurado" — sin asesor humano, en menos de 3 minutos.
+
+Hackathon Colsubsidio × 30X · Julio 2026
+
+---
+
+## El problema
+
+Comprar un seguro en Colsubsidio hoy exige hablar con un asesor: horarios restringidos, esperas, experiencias inconsistentes. El modelo no escala. Asegura lo reemplaza.
 
 ---
 
 ## ¿Qué hace?
 
-Asegura reemplaza al asesor de seguros con un agente conversacional que:
+Asegura es un agente que conversa en español (texto y voz), identifica la necesidad real del afiliado con base en su perfil, y cierra la venta dentro del chat:
 
-1. **Identifica la necesidad** — Pregunta y entiende (texto y voz en español)
-2. **Cotiza** — Precio real y coberturas claras
-3. **Explica** — Cada recomendación tiene una razón visible
-4. **Cierra la venta** — Pago directo en el chat, póliza emitida al instante
-
-Sin formularios, sin esperas, sin menús. El usuario nunca sale del chat.
+| Criterio | Cómo lo resuelve Asegura |
+|----------|--------------------------|
+| **Propensión explicable** | Cada recomendación incluye una razón específica basada en el perfil del afiliado — no "por defecto" |
+| **Oferta por perfil** | Un soltero y una familia de 3 ven productos, coberturas y razones distintas |
+| **Transmite confianza** | Lenguaje conversacional, sin tecnicismos. El usuario siente que lo entienden |
+| **Flujo autogestionado** | GREETING → póliza emitida en una sola conversación, sin intervención del equipo |
 
 ---
 
 ## ¿Cómo funciona?
 
 ```
-Escribes o envías nota de voz: "Quiero proteger a mi familia"
+Usuario escribe o envía nota de voz: "Quiero proteger a mi familia"
     ↓
-El agente pregunta sobre tu situación
+El agente autoriza tratamiento de datos (Ley 1581)
     ↓
-Te recomienda un producto con razones claras
+Pregunta sobre situación de vida y dependientes
     ↓
-Te muestra el precio real + link de información
+Recomienda el producto más adecuado con razón explícita
     ↓
-Confirmas y pagas (link seguro dentro del chat)
+Usuario confirma y paga (link Wompi, dentro del chat)
     ↓
-Recibes tu póliza (PDF) + verificación en blockchain
+PDF de póliza adjunto al chat
+    ↓
+Registro inmutable en Celo Mainnet + link Celoscan
 ```
+
+Sin formularios. Sin menús. Sin salir del chat.
+
+---
+
+## Productos disponibles (precios reales de colsubsidio.com/seguros)
+
+| Producto | Aseguradora | Desde/mes |
+|----------|-------------|-----------|
+| Accidentes personales | MetLife | $18.000 |
+| Accidentes personales (premium) | Chubb | $28.100 |
+| Seguro de vida | Pan American Life | $12.000 |
+| Asistencias múltiples | GEA | $20.000 |
+| Exequial | Grupo Recordar | $26.000 |
+| Accidentes + Exequial | Pan American Life | $14.000 |
+| Vida + Ahorro | BMI | $20.000 |
+| Asistencias médicas | GEA | $16.800 |
+| Asistencia veterinaria | GEA | $14.500 |
+| Medicina prepagada gatos | VetPlus | $81.800 |
+| Medicina prepagada perros | VetPlus | $96.600 |
+
+---
+
+## Stack
+
+| Capa | Tecnología |
+|------|-----------|
+| Backend | NestJS + TypeScript |
+| NLP | Groq (llama-3.1-8b-instant) + Whisper (voz) |
+| Base de datos | Supabase (Postgres) |
+| Canal MVP | Telegram (grammy) |
+| Canal futuro | WhatsApp Business API |
+| Pagos | Wompi — Payment Links + Bre-B |
+| Blockchain | Celo Mainnet · AseguraLedger.sol · Foundry |
+| Deploy | Railway (API) + Vercel (pitch web) |
+| Dashboard | Metabase |
 
 ---
 
@@ -40,45 +86,45 @@ Recibes tu póliza (PDF) + verificación en blockchain
 
 | Canal | Estado |
 |-------|--------|
-| Telegram | ✓ Disponible |
+| Telegram (`t.me/AseguraBot`) | ✓ Disponible |
 | WhatsApp Business | Próximamente |
 
 ---
 
 ## Demo
 
-▶ **Escríbele al agente:** `[t.me/AseguraBot — próximamente]`
+▶ **Escríbele al agente:** `t.me/AseguraBot`
 
-▶ **Pitch web:** `[useasegura.app — próximamente]`
+▶ **Pitch web:** `useasegura.app`
 
 ---
 
-## Verificación y auditoría blockchain
+## Verificación blockchain
 
-Cada póliza vendida queda registrada en Celo Mainnet como prueba inmutable.
+Cada póliza vendida queda registrada en Celo Mainnet como evidencia pública e inmutable.
 
 🔗 **Contrato AseguraLedger:** `[dirección — próximamente]`
-
-🔍 **Auditar contrato (código fuente público):** [celoscan.io](https://celoscan.io)
 
 | Propiedad | Detalle |
 |-----------|---------|
 | Red | Celo Mainnet (chainId 42220) |
 | Contrato | AseguraLedger (verificado en Celoscan) |
-| Custodia fondos | NO — solo registra eventos |
-| Verificación | Cualquier persona puede leer las transacciones |
+| Custodia de fondos | NO — solo registra eventos |
+| Verificación | Cualquier persona puede auditar las transacciones |
 | Datos públicos | `referenceURI` en pestaña Logs de cada tx |
 | Costo por registro | < $0.001 USD |
 
-El código fuente del contrato es público y verificado. Cualquier persona puede auditar qué hace el contrato y revisar las pólizas registradas.
+El código fuente del contrato es público y verificado. Cualquier persona puede auditar qué hace y leer las pólizas registradas.
+
+---
+
+## Privacidad
+
+La autorización de tratamiento de datos se solicita antes de consultar cualquier perfil (Ley 1581 de 2012). Sin autorización, el flujo no continúa. Los datos del afiliado no se almacenan fuera de Supabase y no se comparten con terceros.
 
 ---
 
 ## Licencia
 
-MIT — aplica solo al contrato inteligente publicado.
-La lógica de negocio, prompts y reglas del agente NO son open source.
-
----
-
-Hackathon Colsubsidio × 30X · Julio 2026
+MIT — aplica al contrato inteligente publicado en este repositorio.
+La lógica de negocio, prompts y reglas del agente son privadas.
