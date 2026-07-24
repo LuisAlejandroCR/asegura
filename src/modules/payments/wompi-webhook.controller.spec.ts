@@ -260,6 +260,22 @@ describe('WompiWebhookController — post-purchase cross-sell (2026-07-24 "resto
       phoneVerified: true, verifiedPhone: '+573001234567',
     }));
   });
+
+  // Same reasoning as phoneVerified — the cosmetic selfie step is also a one-time
+  // identity confirmation, not a per-purchase one.
+  it('preserves selfieProvided into the new DISCOVERY context, same as phoneVerified', async () => {
+    const { controller, conversations } = buildController();
+    conversations.findById.mockResolvedValue(makeConversation({
+      context: {
+        cedula: '123456789', nombre: 'Juan Pérez', email: 'juan@test.com',
+        phoneVerified: true, verifiedPhone: '+573001234567', selfieProvided: true,
+      },
+    }));
+    await controller.handleWebhook(makeEvent());
+
+    const discoveryCall = conversations.saveState.mock.calls.find((c: any[]) => c[1] === ConversationState.DISCOVERY);
+    expect(discoveryCall?.[2]).toEqual(expect.objectContaining({ selfieProvided: true }));
+  });
 });
 
 describe('WompiWebhookController — multi-product purchase (one payment, several policies)', () => {
@@ -294,6 +310,27 @@ describe('WompiWebhookController — multi-product purchase (one payment, severa
     // One combined confirmation message + one post-purchase cross-sell follow-up.
     expect(telegram.sendText).toHaveBeenCalledTimes(2);
     expect(telegram.sendText).toHaveBeenCalledWith('999888777', expect.stringContaining('2 pólizas'));
+  });
+
+  // 2026-07-24 gamification feedback: same celebratory personalization as the
+  // single-policy STATE_RESPONSES[POLICY_ISSUED] message.
+  it('regression — the multi-policy confirmation is also personalized with name and pet names', async () => {
+    const policies = [
+      makePolicy({ id: 'pol-1', product_id: 'vida-pan-american' }),
+      makePolicy({ id: 'pol-2', product_id: 'asistencia-veterinaria' }),
+    ];
+    const { controller, telegram, conversations } = buildController({ policies });
+    conversations.findById.mockResolvedValue(makeConversation({
+      context: {
+        nombre: 'Juan Pérez',
+        pets: [{ name: 'Ramón', age: '3 años', breed: 'Doberman' }, { name: 'Pancha', age: '10 años', breed: 'Cocker Spaniel' }],
+      },
+    }));
+    await controller.handleWebhook(makeEvent());
+
+    const confirmCall = telegram.sendText.mock.calls.find((c: any[]) => c[1].includes('2 pólizas'));
+    expect(confirmCall?.[1]).toContain('Juan');
+    expect(confirmCall?.[1]).toContain('Ramón y Pancha');
   });
 
   it('saves policyIds (plural) alongside the single policyId for backward compatibility', async () => {

@@ -24,9 +24,14 @@ function makeCtx(message: Record<string, unknown>) {
 describe('TelegramAdapter.normalize — unsupported media', () => {
   const adapter = new TelegramAdapter(makeConfig());
 
-  it('regression — a photo sets unsupportedInput to "image" instead of silently returning empty text', async () => {
+  // 2026-07-24: a plain photo is no longer generically "unsupported" — the cosmetic
+  // selfie-KYC step needs to receive one as a valid answer (see AgentService's
+  // awaitingSelfie step). It sets `photo: true` instead, and AgentService decides what
+  // that means based on conversation state (expected selfie vs. a stray unrelated photo).
+  it('regression — a plain photo sets photo:true instead of unsupportedInput, so a cosmetic selfie-KYC step can receive it', async () => {
     const result = await adapter.normalize(makeCtx({ photo: [{ file_id: 'photo-1', width: 100, height: 100 }] }));
-    expect(result.unsupportedInput).toBe('image');
+    expect(result.photo).toBe(true);
+    expect(result.unsupportedInput).toBeUndefined();
   });
 
   it('a document (e.g. PDF/file upload) also sets unsupportedInput to "image" (generic unreadable media)', async () => {

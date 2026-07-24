@@ -162,7 +162,7 @@ describe('AgentService — KYC phone verification gate', () => {
     expect(sentText.toLowerCase()).toMatch(/documento de identidad|cédula/);
   });
 
-  it('sharing contact while awaiting verification marks phoneVerified and immediately asks the real first question', async () => {
+  it('sharing contact while awaiting verification marks phoneVerified and asks for a selfie next (not the real question yet)', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DATA_CAPTURE,
       context: { awaitingPhoneVerification: true },
@@ -178,36 +178,101 @@ describe('AgentService — KYC phone verification gate', () => {
         phoneVerified: true,
         verifiedPhone: '+573001234567',
         awaitingPhoneVerification: undefined,
+        awaitingSelfie: true,
       }),
     );
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    expect(sentText.toLowerCase()).toMatch(/documento de identidad|cédula/);
+    expect(sentText.toLowerCase()).toMatch(/selfie|foto/);
+    expect(sentText.toLowerCase()).not.toMatch(/documento de identidad|cédula/);
   });
 
-  it('re-prompts with the contact button (does not silently advance) if the user types instead of sharing', async () => {
+  // Real bug found 2026-07-24 (confirmed independently by a live test session and a
+  // teammate's findings report): this used to re-show the exact same "toca el botón"
+  // prompt forever for ANY typed reply that wasn't the contact-share — a genuine
+  // demo-killing infinite loop ("no me interesa" / "cobertura familiar" / random text
+  // all got the identical response, permanently). The button is shown once, at the
+  // QUOTE_PRESENTED -> DATA_CAPTURE transition; if the very next message still isn't a
+  // contact-share, this cosmetic KYC step must be skipped rather than asked again — it
+  // must never be allowed to block a real sale.
+  it('regression — typing instead of sharing contact skips phone verification and moves on (never loops)', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DATA_CAPTURE,
       context: { awaitingPhoneVerification: true },
     });
-    telegram.normalize.mockResolvedValue(makeMessage('hola'));
+    telegram.normalize.mockResolvedValue(makeMessage('no me interesa'));
     await service.handleMessage({});
-    expect(telegram.sendContactRequest).toHaveBeenCalledTimes(1);
-    expect(conversations.saveState).not.toHaveBeenCalled();
+    expect(telegram.sendContactRequest).not.toHaveBeenCalled();
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ awaitingPhoneVerification: undefined, phoneVerified: false }),
+    );
+  });
+});
+
+// ── KYC — cosmetic selfie step (2026-07-24, simulated identity confirmation) ──
+// User feedback: "let user know that the camera will open, take the selfie immediately,
+// simulate a KYC as cosmetic and let the user know it was successfully approved... this
+// is possible with a third-party service integrated into the chat to avoid false
+// identity" (a future, real integration). This step does NOT perform any real face
+// matching or liveness check — any photo received counts as "confirmed".
+
+describe('AgentService — KYC cosmetic selfie step', () => {
+  // Same "never loop forever" fix as phone verification above — this is a cosmetic,
+  // simulated step and must never block a real sale.
+  it('regression — typing instead of sending a photo skips the selfie step and moves on (never loops)', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { phoneVerified: true, awaitingSelfie: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('no gracias'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ awaitingSelfie: undefined, selfieProvided: false }),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/cédula|documento de identidad/);
   });
 
-  it('mascotas purchase: after phone verification, asks for the first pet before cédula', async () => {
+  it('a photo marks selfieProvided and proceeds to the real first question (cédula)', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { phoneVerified: true, awaitingSelfie: true },
+    });
+    telegram.normalize.mockResolvedValue({ ...makeMessage(''), photo: true });
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ selfieProvided: true, awaitingSelfie: undefined }),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/cédula|documento de identidad/);
+  });
+
+  it('mascotas purchase: a photo proceeds to the first pet question, not cédula', async () => {
     const { service, telegram } = buildService({
       state: ConversationState.DATA_CAPTURE,
-      context: { awaitingPhoneVerification: true, productCategory: 'mascotas', petCount: 2 },
+      context: { phoneVerified: true, awaitingSelfie: true, productCategory: 'mascotas', petCount: 2 },
     });
-    telegram.normalize.mockResolvedValue({
-      ...makeMessage(''),
-      contact: { phoneNumber: '+573001234567', firstName: 'Juan' },
-    });
+    telegram.normalize.mockResolvedValue({ ...makeMessage(''), photo: true });
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain('1 de 2');
     expect(sentText).not.toContain('dígitos');
+  });
+
+  it('does not re-trigger once selfieProvided is already true', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { phoneVerified: true, selfieProvided: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('123456789'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).not.toMatch(/selfie/);
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE, expect.objectContaining({ cedula: '123456789' }),
+    );
   });
 });
 
@@ -519,21 +584,25 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     expect(telegram.sendDocument).not.toHaveBeenCalled();
   });
 
-  it('regression — "sí" at confirmation generates the payment link immediately, no extra "listo?" question', async () => {
+  it('regression — "sí" at confirmation asks the payment method (no separate "listo?" confirmation) instead of generating the link right away', async () => {
     // User feedback: "¿Listo para generar tu link de pago?" was an unnecessary second
-    // confirmation — the user already said "sí" to the purchase summary. Generate and
-    // send the real Wompi link right away; this should just be informative, not another ask.
-    const { service, telegram, wompi } = buildService({
+    // confirmation. The payment-method question below is a deliberate, newly-requested
+    // addition (a genuine choice, not redundant friction) — it must not resurrect the
+    // old "listo?" wording, and it must not call Wompi until the method is chosen.
+    const { service, telegram, wompi, conversations } = buildService({
       state: ConversationState.DATA_CAPTURE,
       context: { cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com', quoteProductId: PRODUCTS[0].id },
       intent: makeIntent({ isAffirmative: true }),
     });
     telegram.normalize.mockResolvedValue(makeMessage('sí'));
     await service.handleMessage({});
-    expect(wompi.createPaymentLink).toHaveBeenCalled();
+    expect(wompi.createPaymentLink).not.toHaveBeenCalled();
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    expect(sentText).toContain('checkout.wompi.co');
+    expect(sentText.toLowerCase()).toMatch(/tarjeta colsubsidio/);
     expect(sentText).not.toContain('¿Listo para generar');
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE, expect.objectContaining({ awaitingPaymentMethodChoice: true }),
+    );
   });
 
   it('regression — aborts instead of charging a hardcoded fallback amount when no product resolves', async () => {
@@ -556,18 +625,88 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     );
   });
 
-  it('persists checkoutUrl and wompi_link_id in the same turn as the DATA_CAPTURE confirmation', async () => {
+  it('persists checkoutUrl and wompi_link_id in the same turn as answering the payment method question', async () => {
     const { service, telegram, conversations, policy } = buildService({
       state: ConversationState.DATA_CAPTURE,
-      context: { cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com', policyId: 'pol-1', quoteProductId: PRODUCTS[0].id },
-      intent: makeIntent({ isAffirmative: true }),
+      context: {
+        cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com', policyId: 'pol-1',
+        quoteProductId: PRODUCTS[0].id, awaitingPaymentMethodChoice: true,
+      },
+      intent: makeIntent({}),
     });
-    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    telegram.normalize.mockResolvedValue(makeMessage('el link de pago'));
     await service.handleMessage({});
     expect(conversations.saveState).toHaveBeenCalledWith(
       'conv-1', ConversationState.PAYMENT, expect.objectContaining({ checkoutUrl: 'https://checkout.wompi.co/l/test' }),
     );
     expect(policy.updateStatus).toHaveBeenCalledWith('pol-1', 'pending_payment', expect.objectContaining({ wompi_link_id: 'link-test' }));
+  });
+});
+
+// ── Payment method choice (2026-07-24 feedback) ───────────────────────────────
+// "at the end let user choose if they want to pay with Tarjeta Colsubsidio or Link de
+// pago" — both route to the exact same real Wompi checkout link (no new payment rail,
+// nothing faked): Wompi already accepts card payments, so this is a wording/framing
+// choice, not a second payment integration. Deliberately does NOT claim the payment
+// already succeeded before it actually has — that would be dishonest to the user.
+
+describe('AgentService — payment method choice (Tarjeta Colsubsidio vs Link de pago)', () => {
+  // Real bug found 2026-07-24, same root cause as the KYC infinite-loop fixes above:
+  // this used to re-ask the same question forever for any unclear answer. Defaults to
+  // the plain link de pago (the always-available, no-ambiguity option) instead of
+  // looping — this must never be allowed to strand a purchase that's otherwise ready.
+  it('regression — defaults to link de pago and proceeds when the answer names neither option (never loops)', async () => {
+    const { service, telegram, wompi, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com',
+        quoteProductId: PRODUCTS[0].id, awaitingPaymentMethodChoice: true,
+      },
+      intent: makeIntent({}),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('mmh no sé'));
+    await service.handleMessage({});
+    expect(wompi.createPaymentLink).toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('checkout.wompi.co');
+  });
+
+  it('"link de pago" generates the same real Wompi link as always', async () => {
+    const { service, telegram, wompi } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com',
+        quoteProductId: PRODUCTS[0].id, awaitingPaymentMethodChoice: true,
+      },
+      intent: makeIntent({}),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('link de pago'));
+    await service.handleMessage({});
+    expect(wompi.createPaymentLink).toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('checkout.wompi.co');
+    expect(sentText.toLowerCase()).not.toMatch(/coincidencia|emparejamos/);
+  });
+
+  it('"Tarjeta Colsubsidio" generates the exact same real Wompi link, with themed copy, not a faked instant success', async () => {
+    const { service, telegram, wompi } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com',
+        quoteProductId: PRODUCTS[0].id, awaitingPaymentMethodChoice: true,
+      },
+      intent: makeIntent({}),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('tarjeta colsubsidio'));
+    await service.handleMessage({});
+    expect(wompi.createPaymentLink).toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    // Same real link as the other path — nothing about the payment is faked
+    expect(sentText).toContain('checkout.wompi.co');
+    // Themed copy acknowledges the card choice, but must not claim the payment is
+    // already done before the user has actually paid via the link.
+    expect(sentText.toLowerCase()).toMatch(/tarjeta colsubsidio/);
+    expect(sentText.toLowerCase()).not.toMatch(/pago exitoso|pago realizado|ya pagaste|pago fue exitoso/);
   });
 });
 
@@ -733,6 +872,77 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
     );
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain('8 años');
+  });
+
+  // Real live-test bug (2026-07-24): a 3-pet message ("Bruna... Ramón... Pancha...")
+  // came back with Pancha duplicated and Bruna missing. Every correction attempt by name
+  // ("Pancha, 10 años, Cocker") always matched the FIRST "Pancha", never the duplicate;
+  // ordinal attempts ("el tercero es Ramón...") were not understood at all. The corrupted
+  // data made it all the way into the final, paid, issued policy PDF.
+  it('regression — a name matching two pets asks which one instead of silently updating the first', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        productCategory: 'mascotas', petCount: 3,
+        pets: [
+          { name: 'Ramón', age: '3 años', breed: 'Doberman' },
+          { name: 'Pancha', age: '10 años', breed: 'Cocker Spaniel' },
+          { name: 'Pancha', age: '10 años', breed: 'Cocker Spaniel' },
+        ],
+        petsAwaitingConfirmation: true,
+      },
+      intent: makeIntent({ isAffirmative: false, petName: 'Pancha', petAge: '10 años' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Pancha, 10 años, Cocker'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toMatch(/2 mascotas llamadas.*Pancha/i);
+    // Nothing changed yet — must not silently guess which "Pancha" was meant
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    if (savedContext) expect(savedContext.pets).toHaveLength(3);
+  });
+
+  it('regression — an ordinal reference ("el tercero") targets that pet by position, not by name lookup', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        productCategory: 'mascotas', petCount: 3,
+        pets: [
+          { name: 'Ramón', age: '3 años', breed: 'Doberman' },
+          { name: 'Pancha', age: '10 años', breed: 'Cocker Spaniel' },
+          { name: 'Pancha', age: '10 años', breed: 'Cocker Spaniel' },
+        ],
+        petsAwaitingConfirmation: true,
+      },
+      // "Ramón" here also matches pets[0] by name — the ordinal must win so the THIRD
+      // slot (the actual duplicate) gets corrected, not the already-correct first one.
+      intent: makeIntent({ isAffirmative: false, petName: 'Bruna', petAge: '10 años', petBreed: 'Criolla' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('el tercero es Bruna, 10 años, criolla'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext?.pets?.[0]).toEqual({ name: 'Ramón', age: '3 años', breed: 'Doberman' });
+    expect(savedContext?.pets?.[2].name).toBe('Bruna');
+  });
+
+  it('supports "la segunda" (feminine ordinal) targeting the second pet', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        productCategory: 'mascotas', petCount: 2,
+        pets: [
+          { name: 'Rocky', age: '5 años', breed: 'Doberman' },
+          { name: 'Luna', age: '2 años', breed: 'Siamés' },
+        ],
+        petsAwaitingConfirmation: true,
+      },
+      intent: makeIntent({ isAffirmative: false, petAge: '3 años' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('la segunda tiene 3 años'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext?.pets?.[1].age).toBe('3 años');
+    expect(savedContext?.pets?.[0].age).toBe('5 años');
   });
 
   it('asks for clarification when a correction at pets confirmation does not name a known pet', async () => {
@@ -956,6 +1166,56 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain(petProduct.name);
     expect(sentText).not.toContain('precio accesible');
+  });
+});
+
+// ── QUOTE_PRESENTED / DISCOVERY — out-of-catalog category mentions ────────────
+// Real bug independently confirmed by both a live test session and a teammate's
+// findings report: asking for a category we don't sell ("vehicular", "seguro vehicular")
+// silently re-showed the unrelated, already-quoted product verbatim (Seguro de vida,
+// twice, identically) instead of honestly saying we don't offer it. The agent must never
+// silently pretend an unrelated stale quote answers a genuinely different question.
+
+describe('AgentService — QUOTE_PRESENTED honest response to an out-of-catalog category', () => {
+  it('regression — "vehicular" does not silently re-show the unrelated current quote', async () => {
+    const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: vidaProduct.id, productCategory: 'vida' },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('vehicular'));
+    await service.handleMessage({});
+    expect(quoting.bestQuote).not.toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain(vidaProduct.name);
+    expect(sentText.toLowerCase()).toMatch(/no tengo|no ofrecemos|no cuento con/);
+  });
+
+  it('regression — "seguro vehicular" (fuller phrasing) is also recognized as out-of-catalog', async () => {
+    const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: vidaProduct.id, productCategory: 'vida' },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('seguro vehicular'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain(vidaProduct.name);
+  });
+
+  it('still re-shows the current quote for a genuinely neutral follow-up (no regression on the real product name test above)', async () => {
+    const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: vidaProduct.id, productCategory: 'vida' },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿cuánto dura la cobertura?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(vidaProduct.name);
   });
 });
 

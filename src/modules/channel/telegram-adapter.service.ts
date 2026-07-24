@@ -54,7 +54,9 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
       ? { phoneNumber: msg.contact.phone_number, firstName: msg.contact.first_name }
       : undefined;
 
-    if (msg?.photo || msg?.document || msg?.sticker || msg?.video || msg?.video_note) {
+    const photo = msg?.photo ? true : undefined;
+
+    if (msg?.document || msg?.sticker || msg?.video || msg?.video_note) {
       unsupportedInput = 'image';
     } else if (msg?.voice) {
       if (msg.voice.duration > TelegramAdapter.MAX_VOICE_DURATION_SECONDS) {
@@ -77,6 +79,7 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
       metadata: { updateId: ctx.update.update_id },
       ...(unsupportedInput && { unsupportedInput }),
       ...(contact && { contact }),
+      ...(photo && { photo }),
     };
   }
 

@@ -49,9 +49,10 @@ export class AgentService {
       return;
     }
 
-    // A contact-share (KYC) message carries no text at all — let it through instead of
-    // the usual empty-text bail, since AgentService needs to see it.
-    if (!msg.text && !msg.contact) return;
+    // A contact-share (KYC) or a photo (cosmetic selfie-KYC) message carries no text at
+    // all — let it through instead of the usual empty-text bail, since AgentService
+    // needs to see it.
+    if (!msg.text && !msg.contact && !msg.photo) return;
 
     this.logger.log(`Message from ${msg.userId}: "${msg.text.slice(0, 80)}"`);
 
@@ -65,7 +66,7 @@ export class AgentService {
           isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null,
         };
 
-    const result = await this.processMessage(conv.id, conv.state, conv.context, lowerText, intent, msg.contact, rawText);
+    const result = await this.processMessage(conv.id, conv.state, conv.context, lowerText, intent, msg.contact, msg.photo, rawText);
 
     // Persist state/context whenever either changes
     if (result.nextState || result.context) {
@@ -98,6 +99,7 @@ export class AgentService {
     text: string,
     intent: InsuranceIntent,
     contact?: NormalizedMessage['contact'],
+    photo?: boolean,
     rawText: string = text,
   ): Promise<ProcessResult> {
     if (
@@ -147,7 +149,7 @@ export class AgentService {
         return this.handleQuotation(context, text, intent);
 
       case ConversationState.DATA_CAPTURE:
-        return this.handleDataCapture(convId, context, text, intent, rawText, contact);
+        return this.handleDataCapture(convId, context, text, intent, rawText, contact, photo);
 
       case ConversationState.PAYMENT:
         return this.handlePayment(convId, context, text, intent);
@@ -380,6 +382,19 @@ export class AgentService {
       };
     }
 
+    // Real bug found 2026-07-24 (confirmed independently by a live test session and a
+    // teammate's findings report): asking for a category we don't sell ("vehicular",
+    // "seguro vehicular") silently re-showed the unrelated, already-quoted product
+    // verbatim, identically, twice — the agent never acknowledged the request was for
+    // something else entirely. Must check this BEFORE falling through to the
+    // neutral-message re-show below.
+    const outOfCatalog = this.detectOutOfCatalogCategory(text);
+    if (outOfCatalog) {
+      return {
+        text: `Por ahora no tengo seguros de ${outOfCatalog}, pero sí tengo vida, accidentes, asistencia médica y mascotas. ¿Te interesa alguno de estos?`,
+      };
+    }
+
     // Neutral/unclear message (e.g. a follow-up question) — re-show the actual quoted
     // product instead of the generic STATE_RESPONSES placeholder, which has no real
     // product name or price and reads as a broken response.
@@ -421,6 +436,24 @@ export class AgentService {
     if (text.includes('accidente')) categories.push('accidentes');
     if (['hogar', 'casa'].some((k) => text.includes(k))) categories.push('hogar');
     return [...new Set(categories)];
+  }
+
+  // Real catalog covers vida, accidentes, asistencia, mascotas (hogar cross-sells into
+  // asistencia — see QuotingService.isRelatedCategory). Vehículos and empresas are NOT
+  // in the real Colsubsidio catalog this hackathon uses (AGENTS.md rule 12: only real
+  // colsubsidio.com/seguros prices) — a mention of one must get an honest "we don't
+  // offer that" instead of silently reusing whatever was quoted before.
+  private static readonly OUT_OF_CATALOG_KEYWORDS: Record<string, string> = {
+    vehicular: 'vehículos', vehiculo: 'vehículos', vehículo: 'vehículos',
+    carro: 'vehículos', moto: 'vehículos', motocicleta: 'vehículos',
+    empresa: 'empresas', negocio: 'empresas', compañía: 'empresas', compania: 'empresas',
+  };
+
+  private detectOutOfCatalogCategory(text: string): string | null {
+    for (const [keyword, label] of Object.entries(AgentService.OUT_OF_CATALOG_KEYWORDS)) {
+      if (text.includes(keyword)) return label;
+    }
+    return null;
   }
 
   // buildMultiQuote (removed 2026-07-24) used to set productCategory to the FIRST
@@ -467,12 +500,40 @@ export class AgentService {
     return AgentService.FILLER_WORDS.includes(normalized);
   }
 
+  // The real first DATA_CAPTURE question once identity verification (phone + selfie)
+  // is done — per-pet details for a mascotas purchase, otherwise cédula.
+  private firstDataCaptureQuestion(context: ConversationContext): string {
+    const totalPets = context.petCount ?? 1;
+    return this.isPetSelected(context)
+      ? `Para emitir la póliza necesito los datos de cada mascota (puedes contarme de todas a la vez o una por una). Mascota 1 de ${totalPets}: ¿nombre, edad y raza?`
+      : STATE_RESPONSES[ConversationState.DATA_CAPTURE](context);
+  }
+
   private formatPetsSummary(pets: PetDetail[]): string {
     const lines = pets.map((p, i) => `${i + 1}. ${p.name} — ${p.age} — ${p.breed}`).join('\n');
     return (
       `📋 *Resumen de tus mascotas:*\n\n${lines}\n\n` +
       `¿Todo correcto? Escríbeme *"sí"* para continuar, o dime qué corregir (ej: "Bruna tiene 8 años").`
     );
+  }
+
+  // Lets a pets-summary correction reference a pet by position ("el tercero", "la
+  // segunda") instead of only by name — needed because a name alone is ambiguous when
+  // two pets share it, and the position is unambiguous by construction.
+  private static readonly ORDINAL_WORDS: Record<string, number> = {
+    primero: 0, primera: 0, primer: 0,
+    segundo: 1, segunda: 1,
+    tercero: 2, tercera: 2,
+    cuarto: 3, cuarta: 3,
+    quinto: 4, quinta: 4,
+  };
+
+  private extractOrdinalIndex(text: string): number | null {
+    const lower = text.toLowerCase();
+    for (const [word, idx] of Object.entries(AgentService.ORDINAL_WORDS)) {
+      if (new RegExp(`\\b${word}\\b`).test(lower)) return idx;
+    }
+    return null;
   }
 
   // Not everyone has a CC (cédula de ciudadanía) — CE (extranjería), TI (tarjeta de
@@ -496,33 +557,75 @@ export class AgentService {
     intent: InsuranceIntent,
     rawText: string = text,
     contact?: NormalizedMessage['contact'],
+    photo?: boolean,
   ): Promise<ProcessResult> {
     const newContext: ConversationContext = { ...context };
 
-    // Step -1 — identity verification (2026-07-24 KYC feedback). Fires exactly once, set
-    // up by handleQuotation's isAffirmative branch. A contact share marks it verified and
-    // falls straight into whatever the real first question is (pets or cédula); anything
-    // else (the user typed instead of tapping the button) just re-shows the same prompt.
+    // Step -1 — identity verification (2026-07-24 KYC feedback). Set up by
+    // handleQuotation's isAffirmative branch, which shows the contact-share button
+    // exactly once. A contact share marks the phone verified and moves on to the
+    // cosmetic selfie step below.
+    //
+    // Real bug found 2026-07-24 (confirmed independently by a live test session and a
+    // teammate's findings report): this used to re-show the same "toca el botón" prompt
+    // forever for ANY typed reply — a genuine demo-killing infinite loop with zero
+    // escape route ("no me interesa" / random text / anything got the identical
+    // response, permanently). This is a cosmetic KYC step and must never be allowed to
+    // block a real sale — if the user's very next message still isn't a contact-share,
+    // treat it as declined and move on immediately instead of asking again.
     if (context.awaitingPhoneVerification && !context.phoneVerified) {
-      if (!contact) {
+      if (contact) {
+        const verifiedContext: ConversationContext = {
+          ...context,
+          phoneVerified: true,
+          verifiedPhone: contact.phoneNumber,
+          awaitingPhoneVerification: undefined,
+          awaitingSelfie: true,
+        };
         return {
-          text: 'Para continuar, toca el botón para compartir tu número de Telegram (verificado, no necesitas escribir nada) 👇',
-          requestContact: true,
+          text: 'Identidad verificada ✅\n\n📸 Por último, toca el clip 📎 y envíame una selfie ahora mismo para confirmar tu identidad.',
+          context: verifiedContext,
         };
       }
-      const verifiedContext: ConversationContext = {
+      const skippedContext: ConversationContext = {
         ...context,
-        phoneVerified: true,
-        verifiedPhone: contact.phoneNumber,
         awaitingPhoneVerification: undefined,
+        phoneVerified: false,
+        awaitingSelfie: true,
       };
-      const totalPets = verifiedContext.petCount ?? 1;
-      const nextPrompt = this.isPetSelected(verifiedContext)
-        ? `Para emitir la póliza necesito los datos de cada mascota (puedes contarme de todas a la vez o una por una). Mascota 1 de ${totalPets}: ¿nombre, edad y raza?`
-        : STATE_RESPONSES[ConversationState.DATA_CAPTURE](verifiedContext);
       return {
-        text: `Identidad verificada ✅\n\n${nextPrompt}`,
-        context: verifiedContext,
+        text: 'Sin problema, seguimos así.\n\n📸 Por último, toca el clip 📎 y envíame una selfie ahora mismo para confirmar tu identidad.',
+        context: skippedContext,
+      };
+    }
+
+    // Step -0.5 — cosmetic selfie confirmation (2026-07-24 feedback). This is a
+    // SIMULATION, not a real identity check — no face matching, no liveness detection,
+    // any photo received counts as "confirmed". It's a placeholder to demonstrate the
+    // concept; a real deployment would swap this for an actual third-party
+    // identity-verification provider to guard against a false identity. Same
+    // never-loop-forever fix as phone verification above — skips and moves on if the
+    // very next message isn't a photo.
+    if (context.awaitingSelfie && !context.selfieProvided) {
+      if (photo) {
+        const confirmedContext: ConversationContext = {
+          ...context,
+          selfieProvided: true,
+          awaitingSelfie: undefined,
+        };
+        return {
+          text: `✅ Identidad confirmada con tu foto.\n\n${this.firstDataCaptureQuestion(confirmedContext)}`,
+          context: confirmedContext,
+        };
+      }
+      const skippedContext: ConversationContext = {
+        ...context,
+        awaitingSelfie: undefined,
+        selfieProvided: false,
+      };
+      return {
+        text: `Sin problema, seguimos así.\n\n${this.firstDataCaptureQuestion(skippedContext)}`,
+        context: skippedContext,
       };
     }
 
@@ -591,8 +694,32 @@ export class AgentService {
       const hasUpdateData = !!(intent.petName || intent.petAge || intent.petBreed);
       const pets = context.pets ?? [];
       let targetIndex = -1;
-      if (hasUpdateData && intent.petName) {
-        targetIndex = pets.findIndex((p) => p.name.toLowerCase() === intent.petName!.toLowerCase());
+
+      // Real live-test bug (2026-07-24): a 3-pet message came back with one name
+      // duplicated and another pet dropped entirely. Every correction attempt by name
+      // always matched the FIRST occurrence, silently editing the wrong entry, and an
+      // explicit positional reference ("el tercero es...") was not understood at all —
+      // the corrupted pets list made it all the way into the final, paid, issued policy.
+      // An ordinal reference is checked FIRST and wins outright: it's unambiguous by
+      // construction, whereas the name it's paired with (e.g. "Ramón") may also
+      // legitimately match a different, already-correct pet elsewhere in the list.
+      const ordinalIndex = this.extractOrdinalIndex(rawText);
+      if (hasUpdateData && ordinalIndex !== null && ordinalIndex < pets.length) {
+        targetIndex = ordinalIndex;
+      } else if (hasUpdateData && intent.petName) {
+        const matches = pets.reduce<number[]>(
+          (acc, p, i) => (p.name.toLowerCase() === intent.petName!.toLowerCase() ? [...acc, i] : acc),
+          [],
+        );
+        if (matches.length === 1) {
+          targetIndex = matches[0];
+        } else if (matches.length > 1) {
+          // Ambiguous — never guess which duplicate was meant. Ask instead.
+          return {
+            text: `Tienes ${matches.length} mascotas llamadas "${intent.petName}". ¿Cuál corriges? Dime "la primera", "la segunda"${matches.length > 2 ? ', "la tercera"' : ''}, etc.`,
+            context,
+          };
+        }
       }
       if (hasUpdateData && targetIndex === -1 && pets.length === 1) {
         targetIndex = 0;
@@ -695,18 +822,41 @@ export class AgentService {
       };
     }
 
-    // Step 4 — confirmation ("sí" → create pending policy record, generate the payment
-    // link immediately). No extra "¿listo para generar tu link?" question — the user
-    // already confirmed by saying "sí" here; asking again is redundant friction, and the
-    // message is informative, not another prompt. No PDF is sent here — the only PDF the
-    // user receives is generated and sent by wompi-webhook.controller.ts once Wompi
-    // reports the transaction as APPROVED.
+    // Step 4.5 — payment method choice (2026-07-24 feedback). "Tarjeta Colsubsidio" and
+    // "link de pago" route to the exact SAME real Wompi checkout link (Wompi already
+    // accepts card payments) — this is a wording/framing choice, not a second payment
+    // rail, and createPaymentLinkFlow reads context.paymentMethodChoice to theme the
+    // copy. Deliberately never claims the payment already succeeded before it has.
+    //
+    // Real bug found 2026-07-24, same root cause as the KYC infinite-loop fixes above:
+    // an unrecognized answer used to re-ask this question forever. Defaults to the
+    // plain link de pago (always unambiguous) instead — a payment-method preference
+    // must never be allowed to strand an otherwise-ready purchase.
+    if (context.awaitingPaymentMethodChoice) {
+      const lower = text.toLowerCase();
+      const choice: ConversationContext['paymentMethodChoice'] =
+        (lower.includes('tarjeta') || lower.includes('colsubsidio')) ? 'tarjeta_colsubsidio' : 'link_pago';
+
+      return this.createPaymentLinkFlow(convId, {
+        ...context,
+        paymentMethodChoice: choice,
+        awaitingPaymentMethodChoice: undefined,
+      });
+    }
+
+    // Step 4 — confirmation ("sí" → create pending policy record, ask how the user wants
+    // to pay). No extra "¿listo para generar tu link?" re-confirmation — the user already
+    // confirmed by saying "sí" here — but the payment-method question below is a
+    // genuine, distinct choice, not the same redundant friction. No PDF is sent here —
+    // the only PDF the user receives is generated and sent by
+    // wompi-webhook.controller.ts once Wompi reports the transaction as APPROVED.
     if (intent.isAffirmative) {
       // Multi-product purchase — issue one policy per selected product; they'll share a
       // single combined Wompi payment link, created next in createPaymentLinkFlow.
       const productIds = newContext.selectedProductIds?.length
         ? newContext.selectedProductIds
         : (newContext.quoteProductId ? [newContext.quoteProductId] : []);
+      const hasResolvableProduct = productIds.some((id) => PRODUCTS.find((p) => p.id === id));
 
       const policyIds: string[] = [];
       for (const productId of productIds) {
@@ -716,7 +866,17 @@ export class AgentService {
       newContext.policyId = policyIds[0];
       newContext.policyIds = policyIds;
 
-      return this.createPaymentLinkFlow(convId, newContext);
+      // No resolvable product at all — nothing to ask a payment method for. Let
+      // createPaymentLinkFlow's own guard abort cleanly instead of asking a pointless
+      // question first.
+      if (!hasResolvableProduct) {
+        return this.createPaymentLinkFlow(convId, newContext);
+      }
+
+      return {
+        text: '¿Cómo prefieres pagar: con tu *Tarjeta Colsubsidio* o con el *link de pago*?',
+        context: { ...newContext, awaitingPaymentMethodChoice: true },
+      };
     }
 
     const correctionTriggered = intent.isNegative ||
@@ -818,8 +978,15 @@ export class AgentService {
       }
 
       const amountStr = `$${amountCOP.toLocaleString('es-CO')}`;
+      // "Tarjeta Colsubsidio" and "link de pago" (2026-07-24 feedback) route to this
+      // EXACT same real Wompi link — Wompi already accepts card payments, so this is
+      // themed copy, not a second payment rail. Deliberately does not claim the payment
+      // already succeeded before the user has actually paid via the link below.
+      const intro = context.paymentMethodChoice === 'tarjeta_colsubsidio'
+        ? `🎉 ¡Coincidencia encontrada! Ya emparejamos tu *Tarjeta Colsubsidio* con esta compra.\n\n`
+        : '';
       const msg = (
-        `🔒 Tu pago es 100% seguro a través de Wompi — plataforma oficial de Bancolombia.\n\n` +
+        `${intro}🔒 Tu pago es 100% seguro a través de Wompi — plataforma oficial de Bancolombia.\n\n` +
         `🔗 [Pagar ${amountStr} — Link seguro Wompi](${checkoutUrl})\n\n` +
         `Acepta tarjeta débito/crédito, Nequi y PSE.\n\n` +
         `⏱️ El link vence en ${AgentService.PAYMENT_LINK_EXPIRY_MINUTES} minutos.\n\n` +

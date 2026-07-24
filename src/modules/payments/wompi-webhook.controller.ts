@@ -11,7 +11,7 @@ import { TelegramAdapter } from '../channel/telegram-adapter.service';
 import { WompiWebhookEvent } from './types';
 import { Policy } from '../policy/types';
 import { ConversationState, ConversationContext } from '../agent/types';
-import { STATE_RESPONSES } from '../agent/conversation-state.machine';
+import { STATE_RESPONSES, formatNameList } from '../agent/conversation-state.machine';
 
 const PROCESSED_STATUSES = ['paid', 'active'];
 
@@ -96,11 +96,23 @@ export class WompiWebhookController {
     };
     await this.conversations.saveState(conversation.id, ConversationState.POLICY_ISSUED, newContext);
 
-    const message = policies.length > 1
-      ? `✅ *¡Quedaste asegurado con ${policies.length} pólizas!*\n\n` +
+    // 2026-07-24 gamification feedback: same celebratory, personalized style as the
+    // single-policy STATE_RESPONSES[POLICY_ISSUED] message.
+    let message: string;
+    if (policies.length > 1) {
+      const firstName = newContext.nombre?.split(' ')[0];
+      const petNames = (newContext.pets ?? []).map((p) => p.name);
+      const headline = firstName ? `¡Listo, ${firstName}!` : '¡Listo!';
+      const petsLine = petNames.length > 0
+        ? ` ${formatNameList(petNames)} ya ${petNames.length > 1 ? 'cuentan' : 'cuenta'} con su seguro.`
+        : '';
+      message =
+        `🎉 *${headline}* Quedaste asegurado con ${policies.length} pólizas.${petsLine}\n\n` +
         `Tus seguros están activos desde hoy. Recibirás un PDF por cada uno adjunto a este chat.\n\n` +
-        `Si tienes dudas sobre coberturas o quieres proteger algo más, aquí estoy 24/7.`
-      : STATE_RESPONSES[ConversationState.POLICY_ISSUED](newContext);
+        `Si tienes dudas sobre coberturas o quieres proteger algo más, aquí estoy 24/7.`;
+    } else {
+      message = STATE_RESPONSES[ConversationState.POLICY_ISSUED](newContext);
+    }
     await this.telegram.sendText(conversation.user_id, message);
 
     // This is the only PDF the user ever receives — the draft PDF before payment was
@@ -135,6 +147,8 @@ export class WompiWebhookController {
       // customer isn't asked to re-verify on their next purchase in this conversation.
       phoneVerified: newContext.phoneVerified,
       verifiedPhone: newContext.verifiedPhone,
+      // Cosmetic selfie step (2026-07-24) — same one-time-per-conversation reasoning.
+      selfieProvided: newContext.selfieProvided,
       productCategory: pendingCategory ?? undefined,
     };
     await this.conversations.saveState(conversation.id, ConversationState.DISCOVERY, followUpContext);

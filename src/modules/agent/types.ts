@@ -73,6 +73,19 @@ interface ConversationContext {
   // a post-purchase cross-sell follow-up so a returning customer isn't asked to re-verify.
   phoneVerified?: boolean;
   verifiedPhone?: string;
+  // Cosmetic/simulated selfie step (2026-07-24) — asked right after phone verification.
+  // NOT a real identity check: no face matching, no liveness detection, just "a photo
+  // was received." Placeholder to demonstrate the concept for judges/mentors; a real
+  // deployment would swap this for an actual third-party identity-verification provider
+  // to guard against a fake identity (see flujo-conversacional.md's KYC section).
+  awaitingSelfie?: boolean;
+  selfieProvided?: boolean;
+  // Payment method wording choice (2026-07-24 feedback) — "Tarjeta Colsubsidio" and
+  // "link_pago" route to the exact same real Wompi checkout link; this only changes the
+  // surrounding copy. Not a second payment rail, and never claims the payment already
+  // succeeded before the user has actually paid via the link.
+  awaitingPaymentMethodChoice?: boolean;
+  paymentMethodChoice?: 'tarjeta_colsubsidio' | 'link_pago';
 }
 
 interface Conversation {

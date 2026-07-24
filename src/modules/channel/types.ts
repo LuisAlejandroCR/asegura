@@ -16,6 +16,11 @@ interface NormalizedMessage {
   // mismatch (or a non-Telegram contact with no user_id) leaves this unset rather than
   // being treated as identity verification.
   contact?: { phoneNumber: string; firstName: string };
+  // A plain photo message — set instead of unsupportedInput because a cosmetic
+  // selfie-KYC step (2026-07-24, simulated identity confirmation — see
+  // AgentService's awaitingSelfie step) needs to receive a photo as a valid answer.
+  // AgentService decides what it means based on conversation state.
+  photo?: true;
 }
 
 interface IChannelAdapter {
