@@ -1001,6 +1001,25 @@ describe('AgentService — QUOTE_PRESENTED explicit category switch', () => {
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain(vidaProduct.name);
   });
+
+  it('regression — a plain confirmation reaches DATA_CAPTURE even if the LLM spuriously sets productCategory with no category actually named in the text', async () => {
+    // Real live-test bug: "Sí, quiero esa." confirmed a shown quote, but the LLM
+    // sometimes returns a productCategory value anyway despite the message naming no
+    // category at all — this used to hijack a clear purchase confirmation into an
+    // unwanted category switch, and DATA_CAPTURE was never reached ("after confirm,
+    // keeps offering more insurance").
+    const asistenciaProduct = PRODUCTS.find(p => p.category === 'asistencia')!;
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: asistenciaProduct.id, productCategory: 'asistencia' },
+      intent: makeIntent({ isAffirmative: true, isNegative: false, wantsAlternative: false, productCategory: 'vida' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Sí, quiero esa.'));
+    await service.handleMessage({});
+    expect(quoting.bestQuote).not.toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/documento de identidad|cédula/);
+  });
 });
 
 // ── DISCOVERY — mixed pets clarification ──────────────────────────────────────

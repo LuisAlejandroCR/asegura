@@ -345,7 +345,19 @@ export class AgentService {
     // asistencia quote). wantsAlternative only cycles within the SAME category, so this
     // used to fall through to the neutral re-display branch below and just repeat the
     // unchanged quote no matter what category the user asked for next (real live-test bug).
-    if (intent.productCategory && currentProduct && intent.productCategory !== currentProduct.category) {
+    //
+    // Requires the raw text to actually name that category (detectAllMentionedCategories),
+    // not just intent.productCategory being set — real live-test bug: a plain confirmation
+    // like "Sí, quiero esa." sometimes got a spurious productCategory from the LLM despite
+    // naming nothing, hijacking a clear purchase confirmation into an unwanted category
+    // switch and never reaching DATA_CAPTURE ("after confirm, keeps offering more
+    // insurance").
+    if (
+      intent.productCategory &&
+      currentProduct &&
+      intent.productCategory !== currentProduct.category &&
+      this.detectAllMentionedCategories(text).includes(intent.productCategory)
+    ) {
       const switchedContext: ConversationContext = {
         ...context, productCategory: intent.productCategory, coverage: undefined, shownProductIds: [],
       };
@@ -421,14 +433,14 @@ export class AgentService {
   // unrelated personal "asistencia médica" category.
   private detectAllMentionedCategories(text: string): NonNullable<InsuranceIntent['productCategory']>[] {
     const categories: NonNullable<InsuranceIntent['productCategory']>[] = [];
-    if (['mascota', 'perro', 'gato', 'michi', 'veterinar'].some((k) => text.includes(k))) {
+    if (['mascota', 'perro', 'canino', 'gato', 'gata', 'gatic', 'michi', 'minino', 'veterinar'].some((k) => text.includes(k))) {
       categories.push('mascotas');
     }
     const withoutVetAsistencia = text.replace(/asistencia\s+veterinaria/g, '');
     if (['asistencia', 'salud'].some((k) => withoutVetAsistencia.includes(k))) categories.push('asistencia');
     if (text.includes('vida')) categories.push('vida');
     if (text.includes('accidente')) categories.push('accidentes');
-    if (text.includes('hogar')) categories.push('hogar');
+    if (['hogar', 'casa'].some((k) => text.includes(k))) categories.push('hogar');
     return [...new Set(categories)];
   }
 

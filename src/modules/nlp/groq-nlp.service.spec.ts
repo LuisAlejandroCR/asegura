@@ -79,6 +79,16 @@ describe('GroqNlpService.postProcess — pet type detection', () => {
     expect(postProcess(service, intent, 'un gato, dos perros y yo solo').petType).toBe('mixto');
   });
 
+  // Real live-test bug: "Somos dos perros, una gatica y yo." — hasCat here checked only
+  // 'gato'/'gata'/'michi'/'felino', missing the "gatica" diminutive that hasCatExt
+  // (petResolution, a few lines below) already recognized. This silently overrode a
+  // correct mixto classification back to 'perro', dropping the cat entirely and quoting
+  // the whole household as a dogs-only product.
+  it('regression — overrides Groq perro → mixto for the "gatica" diminutive, not just "gato"/"gata"', () => {
+    const intent = baseMascotas('perro');
+    expect(postProcess(service, intent, 'somos dos perros, una gatica y yo').petType).toBe('mixto');
+  });
+
   it('does not override petType when category is not mascotas', () => {
     const intent: InsuranceIntent = { productCategory: 'vida', petType: null, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null };
     expect(postProcess(service, intent, 'mi gato y mi perro').petType).toBeNull();
@@ -126,6 +136,13 @@ describe('GroqNlpService.fallbackIntent — intent extraction', () => {
 
   it('detects mixto in fallback when both gato and perro present', () => {
     expect(fallback(service, 'tengo un gato y un perro').petType).toBe('mixto');
+  });
+
+  // Real live-test bug (fallback path — used when Groq itself is unreachable): "una
+  // gatica" matched no category key at all before ('gato'/'gata' aren't substrings of
+  // 'gatica'), so the whole household got silently classified as dogs-only.
+  it('regression — detects mixto in fallback for the "gatica" diminutive', () => {
+    expect(fallback(service, 'somos dos perros, una gatica y yo').petType).toBe('mixto');
   });
 
   it('detects mixto for aliases: michi y canino', () => {

@@ -114,7 +114,10 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
 
   private postProcess(intent: InsuranceIntent, text: string): InsuranceIntent {
     const lower = text.toLowerCase();
-    const hasCat = lower.includes('gato') || lower.includes('gata') || lower.includes('michi') || lower.includes('felino');
+    // "gatica"/"gatita"/"minino" were only recognized a few lines below (hasCatExt, for
+    // petResolution) — missing here silently overrode a correct mixto classification back
+    // to a single species, dropping a pet entirely from a multi-pet quote (real bug).
+    const hasCat = lower.includes('gato') || lower.includes('gata') || lower.includes('gatic') || lower.includes('michi') || lower.includes('felino') || lower.includes('minino');
     const hasDog = lower.includes('perro') || lower.includes('perra') || lower.includes('canino');
 
     // petType from keywords: runs when Groq already classified this as mascotas, OR when
@@ -167,7 +170,9 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       // category — real live-test message "Ahora el de salud." got no category at all
       // without this alias, and just re-showed the previously quoted product unchanged.
       salud: 'asistencia',
-      mascota: 'mascotas', perro: 'mascotas', gato: 'mascotas', michi: 'mascotas',
+      // "gatic" covers the "gatica"/"gatico" diminutives — a bare "gato"/"gata" substring
+      // check misses them entirely (real bug: "una gatica" matched no category at all).
+      mascota: 'mascotas', perro: 'mascotas', gato: 'mascotas', gata: 'mascotas', gatic: 'mascotas', michi: 'mascotas',
       familia: 'vida', hijo: 'vida',
     };
     let category: InsuranceIntent['productCategory'] = null;
@@ -177,7 +182,7 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
 
     let petType: InsuranceIntent['petType'] = null;
     if (category === 'mascotas') {
-      const hasCat = lower.includes('gato') || lower.includes('michi') || lower.includes('felino');
+      const hasCat = lower.includes('gato') || lower.includes('gata') || lower.includes('gatic') || lower.includes('michi') || lower.includes('felino') || lower.includes('minino');
       const hasDog = lower.includes('perro') || lower.includes('canino');
       if (hasCat && hasDog) petType = 'mixto';
       else if (hasCat) petType = 'gato';
