@@ -89,11 +89,13 @@ describe('PdfService — petCount pricing display', () => {
   });
 
   it('still generates a valid PDF when documentType is provided (CE, TI, NIP, NUIP)', async () => {
+    // 5 real sequential PDF generations (~1.2s each) — comfortably past Jest's 5000ms
+    // default, hence the explicit override (same pattern as telegram-adapter.service.spec.ts).
     for (const documentType of ['CC', 'CE', 'TI', 'NIP', 'NUIP']) {
       const buffer = await service.generate(baseData({ documentType }));
       expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
     }
-  });
+  }, 15000);
 });
 
 // ── resolveAuditUrl — QR target logic ─────────────────────────────────────────
