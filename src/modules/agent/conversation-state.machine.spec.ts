@@ -88,6 +88,33 @@ describe('STATE_RESPONSES — POLICY_ISSUED', () => {
   it('shows active policy confirmation', () => {
     expect(STATE_RESPONSES[ConversationState.POLICY_ISSUED](empty)).toContain('activo');
   });
+
+  // 2026-07-24 gamification feedback: celebratory milestone copy at policy issuance —
+  // the biggest "you did it" moment in the flow — personalized with the user's first
+  // name and, for a mascotas purchase, each pet's name.
+  it('regression — greets the user by first name when known', () => {
+    const text = STATE_RESPONSES[ConversationState.POLICY_ISSUED]({ nombre: 'Juan Pérez' });
+    expect(text).toContain('Juan');
+    expect(text).not.toContain('Pérez');
+  });
+
+  it('regression — names each covered pet when the purchase includes pets', () => {
+    const text = STATE_RESPONSES[ConversationState.POLICY_ISSUED]({
+      nombre: 'Juan Pérez',
+      pets: [
+        { name: 'Ramón', age: '3 años', breed: 'Doberman' },
+        { name: 'Bruna', age: '10 años', breed: 'Criolla' },
+        { name: 'Pancha', age: '10 años', breed: 'Cocker Spaniel' },
+      ],
+    });
+    expect(text).toContain('Ramón, Bruna y Pancha');
+  });
+
+  it('still shows a celebratory message without a name or pets (no data available)', () => {
+    const text = STATE_RESPONSES[ConversationState.POLICY_ISSUED](empty);
+    expect(text).toContain('🎉');
+    expect(text).toContain('activo');
+  });
 });
 
 describe('STATE_RESPONSES — null/undefined context safety', () => {

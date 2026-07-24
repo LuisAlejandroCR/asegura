@@ -23,6 +23,13 @@ function translate(ctx: ConversationContext): ConversationContext {
   return ctx && typeof ctx === 'object' ? ctx : {};
 }
 
+// "Ramón, Bruna y Pancha" — Spanish list joining, "y" before the last item. Exported so
+// wompi-webhook.controller.ts's multi-policy confirmation can reuse the same formatting.
+export function formatNameList(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} y ${names[names.length - 1]}`;
+}
+
 export const STATE_RESPONSES: ResponsesMap = {
   // 2026-07-24 feedback: the greeting + full authorization paragraph as two separate
   // messages read as a wall of text before the user gets to say anything — people
@@ -92,10 +99,23 @@ export const STATE_RESPONSES: ResponsesMap = {
   [ConversationState.PAYMENT]: () =>
     '🔐 El pago es 100% seguro a través de Wompi — plataforma oficial de Bancolombia.\n\nAcepta tarjeta débito/crédito, Nequi y PSE.\n\n¿Listo para generar tu link de pago?',
 
-  [ConversationState.POLICY_ISSUED]: () =>
-    `✅ *¡Quedaste asegurado!*\n\n` +
-    `Tu seguro está activo desde hoy. Recibirás el PDF con todos los detalles adjunto a este chat.\n\n` +
-    `Si tienes dudas sobre coberturas o quieres proteger algo más, aquí estoy 24/7.`,
+  // 2026-07-24 gamification feedback: celebratory milestone copy at the biggest "you
+  // did it" moment in the flow — personalized with the user's first name and, for a
+  // mascotas purchase, each pet's name (reuses data already in context, no new fields).
+  [ConversationState.POLICY_ISSUED]: (ctx) => {
+    const c = translate(ctx);
+    const firstName = c.nombre?.split(' ')[0];
+    const petNames = (c.pets ?? []).map((p) => p.name);
+    const headline = firstName ? `¡Listo, ${firstName}!` : '¡Listo!';
+    const petsLine = petNames.length > 0
+      ? ` ${formatNameList(petNames)} ya ${petNames.length > 1 ? 'cuentan' : 'cuenta'} con su seguro.`
+      : '';
+    return (
+      `🎉 *${headline}*${petsLine}\n\n` +
+      `Tu seguro está activo desde hoy. Recibirás el PDF con todos los detalles adjunto a este chat.\n\n` +
+      `Si tienes dudas sobre coberturas o quieres proteger algo más, aquí estoy 24/7.`
+    );
+  },
 
   [ConversationState.COMPLETED]: () =>
     '✅ ¡Todo listo! Tu seguro Colsubsidio está activo.\n\n' +
