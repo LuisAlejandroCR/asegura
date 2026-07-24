@@ -24,15 +24,20 @@ function translate(ctx: ConversationContext): ConversationContext {
 }
 
 export const STATE_RESPONSES: ResponsesMap = {
+  // 2026-07-24 feedback: the greeting + full authorization paragraph as two separate
+  // messages read as a wall of text before the user gets to say anything — people
+  // arrive with social-media attention spans and bounce. Combined into one short
+  // message; the Ley 1581 disclosure is kept (legally required) but folded into a
+  // parenthetical instead of its own centered paragraph.
   [ConversationState.GREETING]: () =>
-    '¡Hola! Soy Asegura 🛡️ — tu asesor de seguros Colsubsidio, disponible 24/7.\n\n' +
-    'En menos de 3 minutos te ayudo a encontrar el seguro que realmente necesitas, según tu situación de vida. Sin formularios. Sin asesores. Sin esperas.\n\n' +
-    '¿En qué te puedo ayudar hoy?',
+    '¡Hola! Soy Asegura 🛡️ — encuentro tu seguro ideal en 3 minutos, sin formularios ni asesores.\n\n' +
+    'Para cotizarte necesito tu autorización para consultar tu perfil de afiliado ' +
+    '(*Ley 1581* · [política de datos](https://colsubsidio.com/transparencia-acceso-informacion/tratamiento-datos-personales)).\n\n' +
+    'Escríbeme *"sí"* para empezar.',
 
   [ConversationState.AUTHORIZATION]: () =>
-    'Antes de continuar, necesito tu autorización para consultar tu perfil de afiliado y enviarte cotizaciones personalizadas, según la *Ley 1581 de 2012*.\n\n' +
-    '📋 [Política de tratamiento de datos — Colsubsidio](https://colsubsidio.com/transparencia-acceso-informacion/tratamiento-datos-personales)\n\n' +
-    '¿Autorizas el tratamiento de tus datos? Escríbeme *"sí"* para continuar.',
+    '¿Autorizas el tratamiento de tus datos según la *Ley 1581 de 2012*? Escríbeme *"sí"* para continuar.\n\n' +
+    '📋 [Política de tratamiento de datos — Colsubsidio](https://colsubsidio.com/transparencia-acceso-informacion/tratamiento-datos-personales)',
 
   [ConversationState.DISCOVERY]: (ctx) => {
     const c = translate(ctx);

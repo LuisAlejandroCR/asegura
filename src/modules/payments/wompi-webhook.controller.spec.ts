@@ -196,6 +196,72 @@ describe('WompiWebhookController — APPROVED payment', () => {
   });
 });
 
+describe('WompiWebhookController — post-purchase cross-sell (2026-07-24 "restore the flow")', () => {
+  // The mid-quote cross-sell interruption was removed from AgentService — a purchase now
+  // always completes (payment + PDF) before anything else is offered. This is where that
+  // "something else" gets offered: once the policy is issued, the agent follows up with
+  // either the SPECIFIC category the user showed interest in earlier (context.pendingCrossSell,
+  // set by deferCrossSell) or a generic "want something else?" prompt, then transitions to
+  // DISCOVERY so the very next message starts a genuinely new, separate purchase.
+  it('offers the specific deferred category and pre-seeds it in the new DISCOVERY context', async () => {
+    const { controller, telegram, conversations } = buildController();
+    conversations.findById.mockResolvedValue(makeConversation({ context: { pendingCrossSell: 'vida' } }));
+    await controller.handleWebhook(makeEvent());
+
+    expect(telegram.sendText).toHaveBeenCalledWith('999888777', expect.stringContaining('vida'));
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DISCOVERY, expect.objectContaining({ productCategory: 'vida' }),
+    );
+  });
+
+  it('offers a generic follow-up and leaves productCategory unset when nothing was deferred', async () => {
+    const { controller, telegram, conversations } = buildController();
+    conversations.findById.mockResolvedValue(makeConversation({ context: {} }));
+    await controller.handleWebhook(makeEvent());
+
+    expect(telegram.sendText).toHaveBeenCalledWith('999888777', expect.stringContaining('algo más'));
+    const discoveryCall = conversations.saveState.mock.calls.find((c: any[]) => c[1] === ConversationState.DISCOVERY);
+    expect(discoveryCall?.[2].productCategory).toBeUndefined();
+  });
+
+  it('preserves identity (cédula, nombre, correo) but clears product-specific fields in the new DISCOVERY context', async () => {
+    const { controller, conversations } = buildController();
+    conversations.findById.mockResolvedValue(makeConversation({
+      context: {
+        cedula: '123456789', documentType: 'CC', nombre: 'Juan Pérez', email: 'juan@test.com',
+        productCategory: 'mascotas', quoteProductId: 'asistencia-veterinaria', petCount: 2,
+      },
+    }));
+    await controller.handleWebhook(makeEvent());
+
+    const discoveryCall = conversations.saveState.mock.calls.find((c: any[]) => c[1] === ConversationState.DISCOVERY);
+    expect(discoveryCall?.[2]).toEqual(expect.objectContaining({
+      cedula: '123456789', documentType: 'CC', nombre: 'Juan Pérez', email: 'juan@test.com',
+    }));
+    expect(discoveryCall?.[2].quoteProductId).toBeUndefined();
+    expect(discoveryCall?.[2].petCount).toBeUndefined();
+  });
+
+  // 2026-07-24 KYC feedback: phone verification (Telegram's native contact-share button)
+  // is a one-time identity check, not a per-purchase one — a returning customer buying a
+  // second product in the same conversation must not be asked to re-verify.
+  it('preserves phoneVerified/verifiedPhone into the new DISCOVERY context, same as identity fields', async () => {
+    const { controller, conversations } = buildController();
+    conversations.findById.mockResolvedValue(makeConversation({
+      context: {
+        cedula: '123456789', nombre: 'Juan Pérez', email: 'juan@test.com',
+        phoneVerified: true, verifiedPhone: '+573001234567',
+      },
+    }));
+    await controller.handleWebhook(makeEvent());
+
+    const discoveryCall = conversations.saveState.mock.calls.find((c: any[]) => c[1] === ConversationState.DISCOVERY);
+    expect(discoveryCall?.[2]).toEqual(expect.objectContaining({
+      phoneVerified: true, verifiedPhone: '+573001234567',
+    }));
+  });
+});
+
 describe('WompiWebhookController — multi-product purchase (one payment, several policies)', () => {
   // Real feature: "quiero los dos" issues one policy per product, all sharing one
   // combined Wompi payment link — the webhook must settle every one of them, not just
@@ -225,7 +291,8 @@ describe('WompiWebhookController — multi-product purchase (one payment, severa
     expect(policyService.generateFinalPdf).toHaveBeenCalledWith(expect.objectContaining({ id: 'pol-1' }));
     expect(policyService.generateFinalPdf).toHaveBeenCalledWith(expect.objectContaining({ id: 'pol-2' }));
     expect(telegram.sendDocument).toHaveBeenCalledTimes(2);
-    expect(telegram.sendText).toHaveBeenCalledTimes(1);
+    // One combined confirmation message + one post-purchase cross-sell follow-up.
+    expect(telegram.sendText).toHaveBeenCalledTimes(2);
     expect(telegram.sendText).toHaveBeenCalledWith('999888777', expect.stringContaining('2 pólizas'));
   });
 

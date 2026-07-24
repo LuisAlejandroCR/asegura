@@ -140,3 +140,84 @@ describe('TelegramAdapter — transcribeVoice error handling', () => {
     expect(result.text).toBe('hola quiero un seguro');
   });
 });
+
+describe('TelegramAdapter.sendText — typing pacing (2026-07-24 gamification feedback)', () => {
+  // Real feedback: a bot that instantly dumps text feels like an IVR menu, not a
+  // conversation. A brief "typing..." indicator + pause reads as alive — no buttons or
+  // menus involved (AGENTS.md rule 10 stays intact, this is pure pacing).
+  function mockSendableBot() {
+    return { api: { sendChatAction: jest.fn().mockResolvedValue(undefined), sendMessage: jest.fn().mockResolvedValue(undefined) } };
+  }
+
+  it('shows a typing indicator, then sends the message', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    const bot = mockSendableBot();
+    (adapter as any).bot = bot;
+
+    await adapter.sendText('222', 'hola');
+    expect(bot.api.sendChatAction).toHaveBeenCalledWith(222, 'typing');
+    expect(bot.api.sendMessage).toHaveBeenCalledWith(222, 'hola', { parse_mode: 'Markdown' });
+  }, 10000);
+
+  it('still sends the message even if the typing indicator call fails', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    const bot = mockSendableBot();
+    bot.api.sendChatAction.mockRejectedValue(new Error('rate limited'));
+    (adapter as any).bot = bot;
+
+    await adapter.sendText('222', 'hola');
+    expect(bot.api.sendMessage).toHaveBeenCalledWith(222, 'hola', { parse_mode: 'Markdown' });
+  }, 10000);
+});
+
+describe('TelegramAdapter.normalize — contact sharing (2026-07-24 KYC feedback)', () => {
+  const adapter = new TelegramAdapter(makeConfig());
+
+  it('a contact shared via the native request_contact button sets the contact field', async () => {
+    // makeCtx defaults from.id to 222 — a self-shared contact carries the same user_id,
+    // which is exactly what Telegram guarantees for a request_contact button tap.
+    const result = await adapter.normalize(makeCtx({
+      contact: { phone_number: '+573001234567', first_name: 'Juan', user_id: 222 },
+    }));
+    expect(result.contact).toEqual({ phoneNumber: '+573001234567', firstName: 'Juan' });
+  });
+
+  it('regression — a forwarded contact card for someone else (user_id mismatch) is not treated as identity verification', async () => {
+    const result = await adapter.normalize(makeCtx({
+      contact: { phone_number: '+573009999999', first_name: 'Otro', user_id: 999 },
+    }));
+    expect(result.contact).toBeUndefined();
+  });
+
+  it('a contact with no user_id at all (non-Telegram contact) is not treated as identity verification', async () => {
+    const result = await adapter.normalize(makeCtx({
+      contact: { phone_number: '+573009999999', first_name: 'Otro' },
+    }));
+    expect(result.contact).toBeUndefined();
+  });
+});
+
+describe('TelegramAdapter.sendContactRequest (2026-07-24 KYC feedback)', () => {
+  function mockSendableBot() {
+    return { api: { sendChatAction: jest.fn().mockResolvedValue(undefined), sendMessage: jest.fn().mockResolvedValue(undefined) } };
+  }
+
+  it('sends the prompt with a request_contact reply keyboard, not a free-form menu', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    const bot = mockSendableBot();
+    (adapter as any).bot = bot;
+
+    await adapter.sendContactRequest('222', 'Confirmemos que eres tú');
+
+    expect(bot.api.sendMessage).toHaveBeenCalledWith(
+      222,
+      'Confirmemos que eres tú',
+      expect.objectContaining({
+        parse_mode: 'Markdown',
+        reply_markup: expect.objectContaining({
+          keyboard: [[expect.objectContaining({ request_contact: true })]],
+        }),
+      }),
+    );
+  }, 10000);
+});

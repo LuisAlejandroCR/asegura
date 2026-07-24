@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Bot, Context, InputFile, webhookCallback } from 'grammy';
+import { Bot, Context, InputFile, Keyboard, webhookCallback } from 'grammy';
 import { IChannelAdapter, NormalizedMessage } from './types';
 
 @Injectable()
@@ -45,6 +45,15 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
     let text = msg?.text ?? '';
     let unsupportedInput: NormalizedMessage['unsupportedInput'];
 
+    // Only self-shared contacts count as identity verification — Telegram guarantees
+    // contact.user_id equals the sender's own id for a native request_contact button
+    // tap, but a manually forwarded contact card (someone else's, or a non-Telegram
+    // number with no user_id at all) must NOT silently pass as "the user proved it's them".
+    const senderId = msg?.from?.id ?? ctx.from?.id;
+    const contact = (msg?.contact && msg.contact.user_id === senderId)
+      ? { phoneNumber: msg.contact.phone_number, firstName: msg.contact.first_name }
+      : undefined;
+
     if (msg?.photo || msg?.document || msg?.sticker || msg?.video || msg?.video_note) {
       unsupportedInput = 'image';
     } else if (msg?.voice) {
@@ -67,6 +76,7 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
       timestamp: msg?.date ? new Date(msg.date * 1000) : new Date(),
       metadata: { updateId: ctx.update.update_id },
       ...(unsupportedInput && { unsupportedInput }),
+      ...(contact && { contact }),
     };
   }
 
@@ -113,9 +123,28 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
     return data.text ?? '';
   }
 
+  // A brief typing indicator (2026-07-24 feedback) — instant text dumps read as an IVR
+  // menu, not a conversation. Purely pacing, no buttons/menus (AGENTS.md rule 10 intact).
+  private static readonly TYPING_DELAY_MS = 600;
+
   async sendText(userId: string, text: string): Promise<void> {
     if (!this.bot) return;
+    await this.bot.api.sendChatAction(Number(userId), 'typing').catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, TelegramAdapter.TYPING_DELAY_MS));
     await this.bot.api.sendMessage(Number(userId), text, { parse_mode: 'Markdown' });
+  }
+
+  // Telegram's native request_contact reply keyboard — a single tap shares the tapping
+  // user's own verified phone number without leaving the chat. This is an identity
+  // capability, not a conversational menu (AGENTS.md rule 10 is about avoiding
+  // multiple-choice branching for the conversation itself; this button only ever does
+  // one thing, and Telegram — not this app — guarantees whose number it shares).
+  async sendContactRequest(userId: string, text: string): Promise<void> {
+    if (!this.bot) return;
+    await this.bot.api.sendChatAction(Number(userId), 'typing').catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, TelegramAdapter.TYPING_DELAY_MS));
+    const keyboard = new Keyboard().requestContact('📱 Compartir mi contacto').resized().oneTime();
+    await this.bot.api.sendMessage(Number(userId), text, { parse_mode: 'Markdown', reply_markup: keyboard });
   }
 
   async sendDocument(userId: string, file: Buffer, filename: string): Promise<void> {

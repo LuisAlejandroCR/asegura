@@ -111,6 +111,33 @@ export class WompiWebhookController {
         await this.telegram.sendDocument(conversation.user_id, pdfBuffer, `poliza-${policy.id.slice(0, 8)}.pdf`);
       }
     }
+
+    // 2026-07-24 "restore the flow": cross-selling now happens strictly AFTER a purchase
+    // is fully paid, never mid-quote (see AgentService.deferCrossSell). If the user showed
+    // interest in a specific category earlier, follow up with THAT one by name and seed it
+    // into the fresh context so their very next message (even a bare "sí") produces a real
+    // quote immediately. Otherwise offer a generic "want something else?" prompt. Either
+    // way this starts a genuinely NEW, separate purchase — identity (cédula/nombre/correo)
+    // is kept so DATA_CAPTURE doesn't re-ask it, but every product-specific field is reset.
+    const pendingCategory = newContext.pendingCrossSell;
+    const crossSellText = pendingCategory
+      ? `¿Seguimos con el seguro de *${pendingCategory}* que mencionaste? Cuéntame y te cotizo.`
+      : '¿Quieres proteger algo más? Tengo seguros de vida, accidentes, asistencia médica y mascotas.';
+    await this.telegram.sendText(conversation.user_id, crossSellText);
+
+    const followUpContext: ConversationContext = {
+      cedula: newContext.cedula,
+      documentType: newContext.documentType,
+      nombre: newContext.nombre,
+      email: newContext.email,
+      // Phone verification (2026-07-24 KYC feedback) is a one-time identity check, not
+      // per-purchase — carried over exactly like cédula/nombre/correo so a returning
+      // customer isn't asked to re-verify on their next purchase in this conversation.
+      phoneVerified: newContext.phoneVerified,
+      verifiedPhone: newContext.verifiedPhone,
+      productCategory: pendingCategory ?? undefined,
+    };
+    await this.conversations.saveState(conversation.id, ConversationState.DISCOVERY, followUpContext);
   }
 
   private async notifyPaymentFailed(policy: Policy): Promise<void> {

@@ -19,6 +19,9 @@ interface ProcessResult {
   nextState?: ConversationState;
   context?: ConversationContext;
   document?: { buffer: Buffer; filename: string };
+  // When set, `text` is sent via the Telegram native contact-share button instead of a
+  // plain message (2026-07-24 KYC feedback — see AgentService's phone-verification gate).
+  requestContact?: boolean;
 }
 
 @Injectable()
@@ -46,16 +49,23 @@ export class AgentService {
       return;
     }
 
-    if (!msg.text) return;
+    // A contact-share (KYC) message carries no text at all — let it through instead of
+    // the usual empty-text bail, since AgentService needs to see it.
+    if (!msg.text && !msg.contact) return;
 
     this.logger.log(`Message from ${msg.userId}: "${msg.text.slice(0, 80)}"`);
 
     const conv = await this.conversations.getOrCreate(msg.userId, msg.channel);
     const lowerText = msg.text.toLowerCase().trim().replace(/[.,!?¡¿:;]+$/, '').trim();
     const rawText = msg.text.trim().replace(/[.,!?¡¿:;]+$/, '').trim();
-    const intent: InsuranceIntent = await this.nlp.extractIntent(msg.text);
+    const intent: InsuranceIntent = msg.text
+      ? await this.nlp.extractIntent(msg.text)
+      : {
+          productCategory: null, coverage: [], beneficiaries: 1, urgency: 'exploring',
+          isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null,
+        };
 
-    const result = await this.processMessage(conv.id, conv.state, conv.context, lowerText, intent, rawText);
+    const result = await this.processMessage(conv.id, conv.state, conv.context, lowerText, intent, msg.contact, rawText);
 
     // Persist state/context whenever either changes
     if (result.nextState || result.context) {
@@ -70,7 +80,9 @@ export class AgentService {
       await this.telegram.sendDocument(msg.userId, result.document.buffer, result.document.filename);
     }
 
-    if (result.texts?.length) {
+    if (result.requestContact && result.text) {
+      await this.telegram.sendContactRequest(msg.userId, result.text);
+    } else if (result.texts?.length) {
       for (const t of result.texts) {
         await this.telegram.sendText(msg.userId, t);
       }
@@ -85,6 +97,7 @@ export class AgentService {
     context: ConversationContext,
     text: string,
     intent: InsuranceIntent,
+    contact?: NormalizedMessage['contact'],
     rawText: string = text,
   ): Promise<ProcessResult> {
     if (
@@ -100,11 +113,10 @@ export class AgentService {
 
     switch (currentState) {
       case ConversationState.GREETING:
+        // GREETING's own text already folds in the authorization ask (2026-07-24 — see
+        // conversation-state.machine.ts) — sending AUTHORIZATION's text too would repeat it.
         return {
-          texts: [
-            STATE_RESPONSES[ConversationState.GREETING](context),
-            STATE_RESPONSES[ConversationState.AUTHORIZATION](context),
-          ],
+          text: STATE_RESPONSES[ConversationState.GREETING](context),
           nextState: ConversationState.AUTHORIZATION,
         };
 
@@ -135,7 +147,7 @@ export class AgentService {
         return this.handleQuotation(context, text, intent);
 
       case ConversationState.DATA_CAPTURE:
-        return this.handleDataCapture(convId, context, text, intent, rawText);
+        return this.handleDataCapture(convId, context, text, intent, rawText, contact);
 
       case ConversationState.PAYMENT:
         return this.handlePayment(convId, context, text, intent);
@@ -223,22 +235,6 @@ export class AgentService {
       };
     }
 
-    // The cross-sell offer explicitly asked "uno por uno, o los tres a la vez?" — resolve
-    // that choice before falling through to the normal single-category flow. Naming a
-    // specific category directly (handled above) already set newContext.productCategory,
-    // so this only fires while that's still unset — a genuine mode choice, not a category.
-    if (context.crossSellOffered && !newContext.productCategory) {
-      if (this.mentionsAllAtOnce(text)) {
-        return this.quoteAllPersonalCategories(context);
-      }
-      if (this.mentionsOneAtATime(text)) {
-        return {
-          text: '¿Cuál te interesa primero: vida, accidentes o asistencia médica?',
-          context: newContext,
-        };
-      }
-    }
-
     // coverage is NOT required to score a product — QuotingService.evaluateProduct only
     // needs productCategory to return a matchScore > 0; coverage is a bonus there, not a
     // gate. Requiring it here used to strand every non-mascota quote in an infinite
@@ -256,7 +252,6 @@ export class AgentService {
     const stuckWithoutCategory = !hasEnoughInfo && !!newContext.coverage?.length && !!newContext.beneficiaries;
 
     if (hasEnoughInfo || stuckWithoutCategory) {
-      newContext.crossSellOffered = false;
       const quote = this.quoting.bestQuote(newContext as AffiliateSignals);
       if (quote) {
         newContext.quoteProductId = quote.product.id;
@@ -300,87 +295,43 @@ export class AgentService {
   private handleQuotation(context: ConversationContext, text: string, intent: InsuranceIntent): ProcessResult {
     const currentProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
 
-    // Multi-product selection runs before everything else: a message combining two
-    // products ("mascotas y vida", "quiero los dos", "incluye también el de mascotas")
-    // must not be swallowed by the single-category cross-sell/switch logic below (real
-    // live-test bug: repeated requests to buy two products together were silently
-    // dropped down to whichever single category resolved last).
-    const multiSelection = this.resolveMultiProductSelection(context, text, currentProduct);
-    if (multiSelection) return multiSelection;
-
-    // Cross-sell check runs BEFORE isAffirmative: a message naming personal/human
-    // coverage ("...muéstrame ese de salud de accidentes para mí") can still contain a
-    // loose affirmative word like "quiero" with no question mark — isAffirmative would
-    // otherwise win the race and send the user straight to DATA_CAPTURE for the pet
-    // quote, silently ignoring the cross-sell request (real live-test bug).
+    // 2026-07-24 "restore the flow": a quote in progress is never interrupted by a
+    // mention of a DIFFERENT category anymore — it's deferred until after this purchase
+    // is fully paid and the policy is issued (see wompi-webhook.controller.ts
+    // notifyPoliciesIssued, which reads context.pendingCrossSell). Real live-test bug:
+    // "para mí, qué hay" / naming a different category mid-quote used to immediately
+    // replace the current quote, so an unconfirmed mascotas purchase was silently
+    // abandoned before ever reaching payment — "continue offering products when I
+    // already chose". Close one deal at a time, then offer the next.
     if (currentProduct?.category === 'mascotas' && this.mentionsPersonalCoverage(text)) {
-      // The same message that triggers cross-sell often already names a specific category
-      // (e.g. "muéstrame ese de salud de accidentes para mí" → productCategory: 'accidentes')
-      // — quote it directly instead of asking a redundant clarifying question that discards
-      // information the user already gave (real live-test complaint: "I already said salud
-      // y accidentes, why ask again?").
-      if (intent.productCategory && intent.productCategory !== 'mascotas') {
-        const personalContext: ConversationContext = {
-          ...context, productCategory: intent.productCategory, coverage: undefined, petType: undefined, petCount: undefined, shownProductIds: [],
-        };
-        const best = this.quoting.bestQuote(personalContext as AffiliateSignals);
-        if (best) {
-          // Append to (not replace) shownProductIds — real live-test bug: a later "dame
-          // esos dos" / "los dos" referencing this product AND the pet quote just shown
-          // found only this one, because the pet product's history got silently dropped.
-          const shownIds = [...new Set([...(context.shownProductIds ?? []), best.product.id])];
-          return {
-            text: this.formatQuote(best.product, best.score, personalContext),
-            nextState: ConversationState.QUOTE_PRESENTED,
-            context: { ...personalContext, quoteProductId: best.product.id, shownProductIds: shownIds },
-          };
-        }
-      }
-      return {
-        text: (
-          '¡Claro! Además de tus mascotas, tengo seguros de vida, accidentes y asistencia médica para ti.\n\n' +
-          '¿Los quieres ver uno por uno, o te muestro los tres a la vez?'
-        ),
-        nextState: ConversationState.DISCOVERY,
-        context: { ...context, productCategory: undefined, coverage: undefined, petType: undefined, petCount: undefined, crossSellOffered: true },
-      };
+      const deferred = (intent.productCategory && intent.productCategory !== 'mascotas')
+        ? intent.productCategory
+        : this.detectAllMentionedCategories(text).find((c) => c !== 'mascotas') ?? null;
+      return this.deferCrossSell(context, currentProduct, deferred);
     }
 
-    // Explicit category switch: the user directly named a different insurance category
-    // than what's currently quoted (e.g. "quiero ver seguro de vida" while looking at an
-    // asistencia quote). wantsAlternative only cycles within the SAME category, so this
-    // used to fall through to the neutral re-display branch below and just repeat the
-    // unchanged quote no matter what category the user asked for next (real live-test bug).
-    //
-    // Requires the raw text to actually name that category (detectAllMentionedCategories),
-    // not just intent.productCategory being set — real live-test bug: a plain confirmation
-    // like "Sí, quiero esa." sometimes got a spurious productCategory from the LLM despite
-    // naming nothing, hijacking a clear purchase confirmation into an unwanted category
-    // switch and never reaching DATA_CAPTURE ("after confirm, keeps offering more
-    // insurance").
     if (
       intent.productCategory &&
       currentProduct &&
       intent.productCategory !== currentProduct.category &&
       this.detectAllMentionedCategories(text).includes(intent.productCategory)
     ) {
-      const switchedContext: ConversationContext = {
-        ...context, productCategory: intent.productCategory, coverage: undefined, shownProductIds: [],
-      };
-      const best = this.quoting.bestQuote(switchedContext as AffiliateSignals);
-      if (best) {
-        // Append to (not replace) shownProductIds so a later "los dos"/"dame esos dos"
-        // referencing both this product and the previously quoted one still finds both.
-        const shownIds = [...new Set([...(context.shownProductIds ?? []), best.product.id])];
-        return {
-          text: this.formatQuote(best.product, best.score, switchedContext),
-          nextState: ConversationState.QUOTE_PRESENTED,
-          context: { ...switchedContext, quoteProductId: best.product.id, shownProductIds: shownIds },
-        };
-      }
+      return this.deferCrossSell(context, currentProduct, intent.productCategory);
     }
 
     if (intent.isAffirmative) {
+      // 2026-07-24 KYC feedback: "know the user is real" before collecting cédula/nombre/
+      // correo — Telegram's native request_contact button verifies the phone in one tap,
+      // no separate SMS/Twilio provider. Fires once per conversation; a returning customer
+      // on a second purchase (phoneVerified already true) skips straight to the real prompt.
+      if (!context.phoneVerified) {
+        return {
+          text: 'Antes de continuar, confirmemos que eres tú — toca el botón para compartir tu número de Telegram (ya verificado, no necesitas escribir nada) 👇',
+          nextState: ConversationState.DATA_CAPTURE,
+          context: { ...context, awaitingPhoneVerification: true },
+          requestContact: true,
+        };
+      }
       return {
         text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](context),
         nextState: ConversationState.DATA_CAPTURE,
@@ -453,136 +404,33 @@ export class AgentService {
     return [...new Set(categories)];
   }
 
-  private mentionsBothOrAll(text: string): boolean {
-    const phrases = ['los dos', 'las dos', 'ambos', 'ambas', 'esos dos', 'esas dos', 'todos', 'todas'];
-    return phrases.some((p) => text.includes(p));
-  }
-
-  private mentionsInclusion(text: string): boolean {
-    const phrases = ['incluye', 'incluir', 'agrega', 'agregar', 'también', 'tambien', 'y el de', 'y la de'];
-    return phrases.some((p) => text.includes(p));
-  }
-
-  // Resolves a message that wants 2+ products in one purchase, from any of three
-  // phrasings: naming multiple categories directly, an additive "incluye también X" on
-  // top of what's currently shown, or a referential "los dos"/"todos" pointing at
-  // everything shown so far. Returns null when none apply, so the caller falls through
-  // to the normal single-product flow unchanged.
-  private resolveMultiProductSelection(
-    context: ConversationContext,
-    text: string,
-    currentProduct?: InsuranceProduct,
-  ): ProcessResult | null {
-    const shown = context.shownProductIds?.length
-      ? context.shownProductIds
-      : (context.quoteProductId ? [context.quoteProductId] : []);
-
-    // Case 1: referential "los dos" / "ambos" / "todos" — combine everything shown so far.
-    if (this.mentionsBothOrAll(text) && shown.length >= 2) {
-      const products = shown
-        .map((id) => PRODUCTS.find((p) => p.id === id))
-        .filter((p): p is InsuranceProduct => !!p);
-      if (products.length >= 2) return this.buildMultiQuote(context, products);
-    }
-
-    const mentionedCategories = this.detectAllMentionedCategories(text);
-
-    // Case 2: 2+ distinct categories named directly in the same message.
-    if (mentionedCategories.length >= 2) {
-      const products = mentionedCategories
-        .map((category) => this.quoting.bestQuote({ ...context, productCategory: category } as AffiliateSignals)?.product)
-        .filter((p): p is InsuranceProduct => !!p);
-      if (products.length >= 2) return this.buildMultiQuote(context, products);
-    }
-
-    // Case 3: additive "incluye también X" — combine the product already on screen
-    // (used directly, not re-queried) with exactly one newly named category.
-    if (
-      currentProduct &&
-      this.mentionsInclusion(text) &&
-      mentionedCategories.length === 1 &&
-      mentionedCategories[0] !== currentProduct.category
-    ) {
-      const added = this.quoting.bestQuote({ ...context, productCategory: mentionedCategories[0] } as AffiliateSignals)?.product;
-      if (added) return this.buildMultiQuote(context, [currentProduct, added]);
-    }
-
-    return null;
-  }
-
-  // buildMultiQuote sets productCategory to the FIRST selected product's category, so a
-  // strict `productCategory === 'mascotas'` check would skip per-pet data collection
-  // whenever mascotas isn't first in a multi-product purchase (e.g. "vida y mascotas").
+  // buildMultiQuote (removed 2026-07-24) used to set productCategory to the FIRST
+  // selected product's category, so a strict `productCategory === 'mascotas'` check
+  // would skip per-pet data collection whenever mascotas isn't first. Kept general in
+  // case selectedProductIds is ever populated by something other than the live agent
+  // flow (e.g. directly via DB) — the multi-policy/one-payment backend still works.
   private isPetSelected(context: ConversationContext): boolean {
     if (context.productCategory === 'mascotas') return true;
     if (!context.selectedProductIds?.length) return false;
     return context.selectedProductIds.some((id) => PRODUCTS.find((p) => p.id === id)?.category === 'mascotas');
   }
 
-  private buildMultiQuote(context: ConversationContext, products: InsuranceProduct[]): ProcessResult {
-    const total = products.reduce((sum, p) => sum + computeTotalPremium(p, context.petCount), 0);
-    const lines = products
-      .map((p) => `🛡️ *${p.name}* — $${computeTotalPremium(p, context.petCount).toLocaleString('es-CO')}/mes`)
-      .join('\n');
-
+  // Acknowledges interest in a different category without abandoning the quote already
+  // on screen — the deferred category is followed up on only once this purchase is paid
+  // and the policy is issued (see wompi-webhook.controller.ts notifyPoliciesIssued).
+  private deferCrossSell(
+    context: ConversationContext,
+    currentProduct: InsuranceProduct,
+    deferredCategory: string | null,
+  ): ProcessResult {
+    const nextStep = deferredCategory ? `el de ${deferredCategory}` : 'lo que necesites para ti';
     return {
       text: (
-        `📋 *Vas a contratar ${products.length} seguros:*\n\n${lines}\n\n` +
-        `💰 *Total: $${total.toLocaleString('es-CO')}/mes*\n\n` +
-        `¿Confirmamos la compra de los ${products.length}? Escríbeme *"sí"* para continuar.`
+        `¡Anotado! Primero cerremos tu *${currentProduct.name}* — en cuanto quede lista tu póliza, ` +
+        `seguimos con ${nextStep}.\n\n` +
+        `¿Confirmamos este? Escríbeme *"sí"* para continuar.`
       ),
-      nextState: ConversationState.QUOTE_PRESENTED,
-      context: {
-        ...context,
-        selectedProductIds: products.map((p) => p.id),
-        quoteProductId: products[0].id,
-        productCategory: products[0].category,
-        shownProductIds: products.map((p) => p.id),
-        crossSellOffered: false,
-      },
-    };
-  }
-
-  private mentionsAllAtOnce(text: string): boolean {
-    const phrases = ['todos', 'todas', 'los tres', 'las tres', 'de una vez', 'a la vez', 'al mismo tiempo', 'juntos', 'juntas'];
-    return phrases.some((p) => text.includes(p));
-  }
-
-  private mentionsOneAtATime(text: string): boolean {
-    const phrases = ['uno por uno', 'uno a la vez', 'una por una', 'una a la vez', 'de a uno', 'por separado', 'uno primero'];
-    return phrases.some((p) => text.includes(p));
-  }
-
-  // Cross-sell "todas a la vez" resolution: score vida/accidentes/asistencia independently
-  // (rather than a single bestQuote call, which only ever returns one product) and send
-  // each as its own message.
-  private quoteAllPersonalCategories(context: ConversationContext): ProcessResult {
-    const categories: NonNullable<InsuranceIntent['productCategory']>[] = ['vida', 'accidentes', 'asistencia'];
-    const quotes = categories
-      .map((category) => this.quoting.bestQuote({ ...context, productCategory: category } as AffiliateSignals))
-      .filter((q): q is NonNullable<ReturnType<QuotingService['bestQuote']>> => !!q);
-
-    if (quotes.length === 0) {
-      return {
-        text: 'No encontré opciones para ese perfil. ¿Quieres que busquemos algo diferente?',
-        context: { ...context, crossSellOffered: false },
-      };
-    }
-
-    // Append to (not replace) shownProductIds — the pet product that triggered this
-    // cross-sell offer must stay in history for a later "los dos"/"todos" reference.
-    const shownIds = [...new Set([...(context.shownProductIds ?? []), ...quotes.map((q) => q.product.id)])];
-
-    return {
-      texts: quotes.map((q) => this.formatQuote(q.product, q.score, context)),
-      nextState: ConversationState.QUOTE_PRESENTED,
-      context: {
-        ...context,
-        productCategory: quotes[0].product.category,
-        quoteProductId: quotes[0].product.id,
-        shownProductIds: shownIds,
-        crossSellOffered: false,
-      },
+      context: { ...context, pendingCrossSell: deferredCategory },
     };
   }
 
@@ -623,8 +471,36 @@ export class AgentService {
     text: string,
     intent: InsuranceIntent,
     rawText: string = text,
+    contact?: NormalizedMessage['contact'],
   ): Promise<ProcessResult> {
     const newContext: ConversationContext = { ...context };
+
+    // Step -1 — identity verification (2026-07-24 KYC feedback). Fires exactly once, set
+    // up by handleQuotation's isAffirmative branch. A contact share marks it verified and
+    // falls straight into whatever the real first question is (pets or cédula); anything
+    // else (the user typed instead of tapping the button) just re-shows the same prompt.
+    if (context.awaitingPhoneVerification && !context.phoneVerified) {
+      if (!contact) {
+        return {
+          text: 'Para continuar, toca el botón para compartir tu número de Telegram (verificado, no necesitas escribir nada) 👇',
+          requestContact: true,
+        };
+      }
+      const verifiedContext: ConversationContext = {
+        ...context,
+        phoneVerified: true,
+        verifiedPhone: contact.phoneNumber,
+        awaitingPhoneVerification: undefined,
+      };
+      const totalPets = verifiedContext.petCount ?? 1;
+      const nextPrompt = this.isPetSelected(verifiedContext)
+        ? `Para emitir la póliza necesito los datos de cada mascota (puedes contarme de todas a la vez o una por una). Mascota 1 de ${totalPets}: ¿nombre, edad y raza?`
+        : STATE_RESPONSES[ConversationState.DATA_CAPTURE](verifiedContext);
+      return {
+        text: `Identidad verificada ✅\n\n${nextPrompt}`,
+        context: verifiedContext,
+      };
+    }
 
     // Step 0 — collect per-pet details (name, age, breed) before the human's own data.
     // Accepts either one pet per message (petName/petAge/petBreed) or several at once

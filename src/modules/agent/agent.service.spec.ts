@@ -32,16 +32,17 @@ describe('AgentService — unsupported input', () => {
 // ── GREETING state ───────────────────────────────────────────────────────────
 
 describe('AgentService — GREETING', () => {
-  it('sends greeting message followed by authorization request as two separate messages', async () => {
+  // 2026-07-24 feedback: greeting + a full separate authorization paragraph read as a
+  // wall of text before the user could say anything — combined into ONE short message;
+  // the Ley 1581 disclosure is kept (legally required) but folded in, not its own message.
+  it('sends one combined greeting + authorization message, not two separate ones', async () => {
     const { service, telegram, conversations } = buildService({ state: ConversationState.GREETING });
     telegram.normalize.mockResolvedValue(makeMessage('hola'));
     await service.handleMessage({});
-    // Must send exactly 2 messages: greeting then authorization
-    expect(telegram.sendText).toHaveBeenCalledTimes(2);
-    const firstCall = telegram.sendText.mock.calls[0][1] as string;
-    const secondCall = telegram.sendText.mock.calls[1][1] as string;
-    expect(firstCall).toContain('Asegura');
-    expect(secondCall).toContain('Ley 1581');
+    expect(telegram.sendText).toHaveBeenCalledTimes(1);
+    const message = telegram.sendText.mock.calls[0][1] as string;
+    expect(message).toContain('Asegura');
+    expect(message).toContain('Ley 1581');
     // State must advance to AUTHORIZATION
     expect(conversations.saveState).toHaveBeenCalledWith(
       'conv-1', ConversationState.AUTHORIZATION, expect.anything(),
@@ -125,6 +126,88 @@ describe('AgentService — AUTHORIZATION', () => {
     telegram.normalize.mockResolvedValue(makeMessage('quizás'));
     await service.handleMessage({});
     expect(conversations.saveState).not.toHaveBeenCalled(); // stays in AUTHORIZATION
+  });
+});
+
+// ── KYC — phone verification via Telegram's native contact-share button ───────
+// 2026-07-24 feedback: "simple KYC to know the user is real... Telegram autocomplete as
+// autoconfirmation and avoid user leave the chat" — confirmed approach is Telegram's
+// native request_contact button (no SMS/Twilio provider), fired once at the very start
+// of DATA_CAPTURE, before any other question.
+
+describe('AgentService — KYC phone verification gate', () => {
+  it('"sí" in QUOTE_PRESENTED requests phone verification instead of the first data-capture question when not yet verified', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    expect(telegram.sendContactRequest).toHaveBeenCalledTimes(1);
+    expect(telegram.sendText).not.toHaveBeenCalled();
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE, expect.objectContaining({ awaitingPhoneVerification: true }),
+    );
+  });
+
+  it('skips phone verification when already verified from an earlier purchase in the same conversation', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id, phoneVerified: true, verifiedPhone: '+573001234567' },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    expect(telegram.sendContactRequest).not.toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/documento de identidad|cédula/);
+  });
+
+  it('sharing contact while awaiting verification marks phoneVerified and immediately asks the real first question', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { awaitingPhoneVerification: true },
+    });
+    telegram.normalize.mockResolvedValue({
+      ...makeMessage(''),
+      contact: { phoneNumber: '+573001234567', firstName: 'Juan' },
+    });
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({
+        phoneVerified: true,
+        verifiedPhone: '+573001234567',
+        awaitingPhoneVerification: undefined,
+      }),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/documento de identidad|cédula/);
+  });
+
+  it('re-prompts with the contact button (does not silently advance) if the user types instead of sharing', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { awaitingPhoneVerification: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('hola'));
+    await service.handleMessage({});
+    expect(telegram.sendContactRequest).toHaveBeenCalledTimes(1);
+    expect(conversations.saveState).not.toHaveBeenCalled();
+  });
+
+  it('mascotas purchase: after phone verification, asks for the first pet before cédula', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { awaitingPhoneVerification: true, productCategory: 'mascotas', petCount: 2 },
+    });
+    telegram.normalize.mockResolvedValue({
+      ...makeMessage(''),
+      contact: { phoneNumber: '+573001234567', firstName: 'Juan' },
+    });
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('1 de 2');
+    expect(sentText).not.toContain('dígitos');
   });
 });
 
@@ -859,11 +942,14 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
 // ── QUOTE_PRESENTED — cross-sell for the human owner ──────────────────────────
 
 describe('AgentService — QUOTE_PRESENTED cross-sell for personal coverage', () => {
-  it('regression — asking about coverage "para mí" during a pet quote offers to shop for the human, not a repeat of the pet quote', async () => {
-    // Real live-test bug: "Me interesan mascotas y para mí ¿qué hay?" and "¿Me interesa
-    // ese de mascotas? ¿Para mí qué hay?" both got no real answer — the pet quote's own
-    // text promises "Para ti también tenemos seguros... cuéntame si los quieres ver" but
-    // no code path ever followed up on that promise.
+  it('regression — asking about coverage "para mí" during a pet quote defers it instead of abandoning the pending purchase', async () => {
+    // 2026-07-24 "restore the flow": a quote in progress must never be abandoned for a
+    // cross-sell mention — real live-test bug, repeated across many live sessions: "para
+    // mí, qué hay" during an UNCONFIRMED mascotas quote used to immediately replace it
+    // with a different product, so the mascotas purchase was silently dropped before
+    // ever reaching payment ("continue offering products when I already chose"). Now it
+    // acknowledges, keeps the pet quote pending, and defers the follow-up until after
+    // this purchase is paid (see wompi-webhook.controller.ts).
     const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
     const { service, telegram, conversations } = buildService({
       state: ConversationState.QUOTE_PRESENTED,
@@ -873,12 +959,13 @@ describe('AgentService — QUOTE_PRESENTED cross-sell for personal coverage', ()
     telegram.normalize.mockResolvedValue(makeMessage('Me interesan mascotas y para mí ¿qué hay?'));
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    expect(sentText).not.toContain(petProduct.name);
-    expect(sentText.toLowerCase()).toMatch(/vida|accidentes|asistencia/);
-    // Redirects to DISCOVERY to shop for the human's own product, keeping the pet quote intact
-    expect(conversations.saveState).toHaveBeenCalledWith(
-      'conv-1', ConversationState.DISCOVERY, expect.objectContaining({ quoteProductId: petProduct.id }),
-    );
+    expect(sentText).toContain(petProduct.name);
+    expect(sentText.toLowerCase()).toMatch(/confirmamos|sí/);
+    // Stays on the pet quote — the purchase in progress is never interrupted
+    const saveCall = conversations.saveState.mock.calls[0];
+    expect(saveCall?.[1]).toBe(ConversationState.QUOTE_PRESENTED);
+    expect(saveCall?.[2].quoteProductId).toBe(petProduct.id);
+    expect(saveCall?.[2]).toHaveProperty('pendingCrossSell');
   });
 
   it('does not trigger cross-sell when the current quote is not a pet product', async () => {
@@ -914,78 +1001,64 @@ describe('AgentService — QUOTE_PRESENTED cross-sell for personal coverage', ()
     expect(sentText.toLowerCase()).toMatch(/vida|accidentes|asistencia/);
   });
 
-  it('regression — quotes the named category immediately instead of re-asking when the cross-sell message already names one', async () => {
-    // Real live-test complaint: "Quiero ser mascotas, muéstrame ese de salud de
-    // accidentes para mí." both triggers cross-sell (mentionsPersonalCoverage) AND
-    // already names a specific category ('accidentes', per Groq's extraction) — but the
-    // cross-sell branch unconditionally asked "¿Cuál te interesa?" and discarded
-    // intent.productCategory entirely. User: "why continue not understanding my last
-    // request? I said 'salud y accidentes'".
+  it('regression — remembers the named category as the deferred follow-up instead of losing it', async () => {
+    // The cross-sell message often already names a specific category (e.g. "muéstrame
+    // ese de salud de accidentes para mí" → 'accidentes') — that information must not be
+    // thrown away just because it's deferred; it becomes context.pendingCrossSell so the
+    // post-purchase follow-up offers THAT category specifically, not a generic "algo más?".
     const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
-    const accidentesProduct = PRODUCTS.find(p => p.category === 'accidentes')!;
     const { service, telegram, quoting, conversations } = buildService({
       state: ConversationState.QUOTE_PRESENTED,
       context: { quoteProductId: petProduct.id, productCategory: 'mascotas', petCount: 3 },
       intent: makeIntent({ isAffirmative: true, isNegative: false, wantsAlternative: false, productCategory: 'accidentes' }),
     });
-    quoting.bestQuote.mockReturnValue({
-      product: accidentesProduct,
-      score: { reasons: [], matchScore: 40, monthlyPremium: accidentesProduct.basePremium, priority: 'medium', productId: accidentesProduct.id },
-    });
     telegram.normalize.mockResolvedValue(makeMessage('Quiero ser mascotas, muéstrame ese de salud de accidentes para mí.'));
     await service.handleMessage({});
+    expect(quoting.bestQuote).not.toHaveBeenCalled();
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    expect(sentText).toContain(accidentesProduct.name);
-    expect(sentText).not.toContain('¿Cuál te interesa');
+    expect(sentText).toContain(petProduct.name);
     const saveCall = conversations.saveState.mock.calls[0];
     expect(saveCall?.[1]).toBe(ConversationState.QUOTE_PRESENTED);
+    expect(saveCall?.[2].quoteProductId).toBe(petProduct.id);
+    expect(saveCall?.[2].pendingCrossSell).toBe('accidentes');
   });
 });
 
-describe('AgentService — QUOTE_PRESENTED explicit category switch', () => {
-  it('regression — naming a different category by name switches the quote instead of repeating the current one', async () => {
-    // Real live-test bug: while viewing an "asistencia" quote, "muéstrame seguro de
-    // vida" / "quiero ver seguro de vida" fell through to the neutral re-display branch
-    // (only an exact "otra opción"/wantsAlternative cycled within the SAME category) —
-    // the same asistencia quote kept repeating verbatim no matter what category the
-    // user explicitly named next.
+describe('AgentService — QUOTE_PRESENTED explicit category mention defers, does not abandon the quote', () => {
+  it('regression — naming a different category by name defers it instead of replacing the pending quote', async () => {
+    // 2026-07-24 "restore the flow": while viewing an "asistencia" quote, "quiero ver
+    // seguro de vida" used to immediately REPLACE it — the asistencia purchase was
+    // abandoned mid-flow, before ever reaching payment. Now it's deferred: the current
+    // quote stays pending, and the named category becomes the post-purchase follow-up.
     const asistenciaProduct = PRODUCTS.find(p => p.category === 'asistencia')!;
-    const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
     const { service, telegram, conversations, quoting } = buildService({
       state: ConversationState.QUOTE_PRESENTED,
       context: { quoteProductId: asistenciaProduct.id, productCategory: 'asistencia' },
       intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: 'vida' }),
     });
-    quoting.bestQuote.mockReturnValue({
-      product: vidaProduct,
-      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
-    });
     telegram.normalize.mockResolvedValue(makeMessage('Quiero ver seguro de vida.'));
     await service.handleMessage({});
+    expect(quoting.bestQuote).not.toHaveBeenCalled();
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    expect(sentText).toContain(vidaProduct.name);
-    expect(sentText).not.toContain(asistenciaProduct.name);
-    expect(conversations.saveState).toHaveBeenCalledWith(
-      'conv-1', ConversationState.QUOTE_PRESENTED, expect.objectContaining({ quoteProductId: vidaProduct.id }),
-    );
+    expect(sentText).toContain(asistenciaProduct.name);
+    const saveCall = conversations.saveState.mock.calls[0];
+    expect(saveCall?.[1]).toBe(ConversationState.QUOTE_PRESENTED);
+    expect(saveCall?.[2].quoteProductId).toBe(asistenciaProduct.id);
+    expect(saveCall?.[2].pendingCrossSell).toBe('vida');
   });
 
-  it('regression — category switch takes priority even when isAffirmative is true', async () => {
+  it('regression — defers even when isAffirmative is also true (a category name is not a confirmation)', async () => {
     const asistenciaProduct = PRODUCTS.find(p => p.category === 'asistencia')!;
-    const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
     const { service, telegram, quoting } = buildService({
       state: ConversationState.QUOTE_PRESENTED,
       context: { quoteProductId: asistenciaProduct.id, productCategory: 'asistencia' },
       intent: makeIntent({ isAffirmative: true, isNegative: false, wantsAlternative: false, productCategory: 'vida' }),
     });
-    quoting.bestQuote.mockReturnValue({
-      product: vidaProduct,
-      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
-    });
     telegram.normalize.mockResolvedValue(makeMessage('Quiero ver seguro de vida.'));
     await service.handleMessage({});
+    expect(quoting.bestQuote).not.toHaveBeenCalled();
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    expect(sentText).toContain(vidaProduct.name);
+    expect(sentText).toContain(asistenciaProduct.name);
   });
 
   it('does not switch when the named category matches the currently quoted product', async () => {
@@ -1011,7 +1084,10 @@ describe('AgentService — QUOTE_PRESENTED explicit category switch', () => {
     const asistenciaProduct = PRODUCTS.find(p => p.category === 'asistencia')!;
     const { service, telegram, quoting } = buildService({
       state: ConversationState.QUOTE_PRESENTED,
-      context: { quoteProductId: asistenciaProduct.id, productCategory: 'asistencia' },
+      // phoneVerified: true — this test is about the category-hijack bug, not KYC; the
+      // phone-verification gate itself is covered by 'AgentService — KYC phone
+      // verification gate' above.
+      context: { quoteProductId: asistenciaProduct.id, productCategory: 'asistencia', phoneVerified: true },
       intent: makeIntent({ isAffirmative: true, isNegative: false, wantsAlternative: false, productCategory: 'vida' }),
     });
     telegram.normalize.mockResolvedValue(makeMessage('Sí, quiero esa.'));
