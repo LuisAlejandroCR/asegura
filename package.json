@@ -5,6 +5,7 @@
   "scripts": {
     "build": "node ./node_modules/@nestjs/cli/bin/nest.js build",
     "dev": "node ./node_modules/@nestjs/cli/bin/nest.js start --watch",
+    "start": "node dist/main",
     "start:prod": "node dist/main",
     "test": "node ./node_modules/.bin/jest",
     "test:watch": "node ./node_modules/.bin/jest --watch",
