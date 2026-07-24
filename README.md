@@ -87,14 +87,14 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 
 | Canal | Estado |
 |-------|--------|
-| Telegram (`t.me/AseguraBot`) | ✓ Disponible |
+| Telegram (`t.me/asegura_bot`) | ✓ Disponible |
 | WhatsApp Business | Próximamente |
 
 ---
 
 ## Demo
 
-▶ **Escríbele al agente:** `t.me/AseguraBot`
+▶ **Escríbele al agente:** `t.me/asegura_bot`
 
 ▶ **Pitch web:** `https://asegura-app.vercel.app/`
 
@@ -104,7 +104,7 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 
 El PDF de cada póliza incluye un código QR que enlaza a su registro de auditoría — escaneable desde cualquier celular.
 
-**Próximamente:** registro inmutable en Celo Mainnet vía el contrato `AseguraLedger.sol` (código fuente disponible en `contracts/`, sin custodia de fondos, solo registro de eventos). Esta integración está construida y probada pero no forma parte del flujo activo todavía.
+**Próximamente:** registro inmutable en Celo Mainnet vía el contrato `AseguraLedger.sol` (sin custodia de fondos, solo registro de eventos). Esta integración está construida y probada pero no forma parte del flujo activo todavía.
 
 ---
 
