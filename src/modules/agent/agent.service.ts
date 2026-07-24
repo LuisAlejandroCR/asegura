@@ -223,7 +223,12 @@ export class AgentService {
       };
     }
 
-    const hasEnoughInfo = newContext.productCategory && newContext.coverage?.length;
+    // coverage is NOT required to score a product — QuotingService.evaluateProduct only
+    // needs productCategory to return a matchScore > 0; coverage is a bonus there, not a
+    // gate. Requiring it here used to strand every non-mascota quote in an infinite
+    // DISCOVERY loop whenever GroqNlpService.fallbackIntent() ran (it never fills
+    // coverage at all — real live-test bug, e.g. "vida, accidentes y asistencia médica").
+    const hasEnoughInfo = !!newContext.productCategory;
     if (hasEnoughInfo) {
       const quote = this.quoting.bestQuote(newContext as AffiliateSignals);
       if (quote) {

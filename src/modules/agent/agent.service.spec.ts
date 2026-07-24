@@ -1258,6 +1258,32 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).not.toMatch(/no logré entender|no te entendí|no entendí bien/i);
   });
+
+  it('regression — quotes a named category even when coverage is empty (fallback NLP never fills coverage)', async () => {
+    // Real live-test bug: GroqNlpService.fallbackIntent() (used whenever Groq is
+    // unreachable, e.g. LLM_API_KEY unset) always returns coverage: [] — it has no
+    // keyword extraction for coverage at all. hasEnoughInfo required BOTH productCategory
+    // AND coverage.length, so a clear category signal ("vida, accidentes y asistencia
+    // médica") got stuck re-asking the same generic DISCOVERY question forever, even
+    // though QuotingService.evaluateProduct only needs productCategory to score a
+    // product > 0 — coverage is a scoring bonus there, never a hard requirement.
+    const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+    const { service, telegram, quoting, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ productCategory: 'vida', coverage: [] }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: vidaProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('vida, accidentes y asistencia médica'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(vidaProduct.name);
+    const saveCall = conversations.saveState.mock.calls[0];
+    expect(saveCall?.[1]).toBe(ConversationState.QUOTE_PRESENTED);
+  });
 });
 
 // ── DISCOVERY — lost-context resilience ──────────────────────────────────────
