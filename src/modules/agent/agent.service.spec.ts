@@ -81,6 +81,33 @@ function buildService(overrides: {
   return { service, nlp, telegram, conversations, quoting, policy, wompi, blockchain };
 }
 
+// ── Unsupported input (images, long audio) ────────────────────────────────────
+
+describe('AgentService — unsupported input', () => {
+  it('regression — an image gets an informative message instead of being silently ignored', async () => {
+    const { service, telegram, nlp } = buildService({ state: ConversationState.DISCOVERY });
+    telegram.normalize.mockResolvedValue({ ...makeMessage(''), unsupportedInput: 'image' });
+    await service.handleMessage({});
+    expect(telegram.sendText).toHaveBeenCalledWith('u1', expect.stringContaining('imágenes'));
+    expect(nlp.extractIntent).not.toHaveBeenCalled();
+  });
+
+  it('regression — a too-long voice note gets an informative message instead of being silently ignored', async () => {
+    const { service, telegram, nlp } = buildService({ state: ConversationState.DISCOVERY });
+    telegram.normalize.mockResolvedValue({ ...makeMessage(''), unsupportedInput: 'audio_too_long' });
+    await service.handleMessage({});
+    expect(telegram.sendText).toHaveBeenCalledWith('u1', expect.stringContaining('cortos'));
+    expect(nlp.extractIntent).not.toHaveBeenCalled();
+  });
+
+  it('does not persist any state change for unsupported input', async () => {
+    const { service, telegram, conversations } = buildService({ state: ConversationState.DISCOVERY });
+    telegram.normalize.mockResolvedValue({ ...makeMessage(''), unsupportedInput: 'image' });
+    await service.handleMessage({});
+    expect(conversations.saveState).not.toHaveBeenCalled();
+  });
+});
+
 // ── GREETING state ───────────────────────────────────────────────────────────
 
 describe('AgentService — GREETING', () => {
@@ -220,6 +247,66 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     );
   });
 
+  it('regression — a bare number defaults documentType to CC (backward compatible)', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {},
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('12345678'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE, expect.objectContaining({ cedula: '12345678', documentType: 'CC' }),
+    );
+  });
+
+  it('detects "CE" (cédula de extranjería) from the message', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {},
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('CE 123456789'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE, expect.objectContaining({ cedula: '123456789', documentType: 'CE' }),
+    );
+  });
+
+  it('detects "tarjeta de identidad" (TI) from the message', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {},
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('mi tarjeta de identidad es 1002345678'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE, expect.objectContaining({ cedula: '1002345678', documentType: 'TI' }),
+    );
+  });
+
+  it('detects "cédula de extranjería" (spelled out) as CE', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {},
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('mi cédula de extranjería es 987654321'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE, expect.objectContaining({ cedula: '987654321', documentType: 'CE' }),
+    );
+  });
+
+  it('detects "NUIP" from the message', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {},
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('NUIP 1122334455'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE, expect.objectContaining({ cedula: '1122334455', documentType: 'NUIP' }),
+    );
+  });
+
   it('regression — context.cedula persists when capturing nombre', async () => {
     // Bug: returning {text, context: newContext} without cedula dropped it
     const { service, telegram, conversations } = buildService({
@@ -247,7 +334,10 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     );
   });
 
-  it('"no" at confirmation resets DATA_CAPTURE fields', async () => {
+  it('regression — bare "no" at confirmation asks WHICH field is wrong instead of resetting everything', async () => {
+    // Real live-test bug: bare "no" immediately wiped cédula+nombre+email and forced a
+    // full restart. The user's very next message (a filler word, not a cédula) then got
+    // misread as a cédula attempt and failed validation. Ask first, reset only on answer.
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DATA_CAPTURE,
       context: { cedula: '12345678', nombre: 'Juan', email: 'j@test.com' },
@@ -256,8 +346,50 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     await service.handleMessage({});
     expect(conversations.saveState).toHaveBeenCalledWith(
       'conv-1', ConversationState.DATA_CAPTURE,
-      expect.objectContaining({ cedula: undefined, nombre: undefined, email: undefined }),
+      expect.objectContaining({ cedula: '12345678', nombre: 'Juan', email: 'j@test.com', awaitingCorrectionField: true }),
     );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toMatch(/cédula|nombre|correo/i);
+  });
+
+  it('answering "nombre" after the which-field question resets only nombre', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan', email: 'j@test.com', awaitingCorrectionField: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('el nombre'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ cedula: '12345678', nombre: undefined, email: 'j@test.com', awaitingCorrectionField: undefined }),
+    );
+  });
+
+  it('answering "correo" after the which-field question resets only email', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan', email: 'j@test.com', awaitingCorrectionField: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('el correo'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ cedula: '12345678', nombre: 'Juan', email: undefined, awaitingCorrectionField: undefined }),
+    );
+  });
+
+  it('re-asks when the which-field answer does not name a recognizable field', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan', email: 'j@test.com', awaitingCorrectionField: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('mmh no sé'));
+    await service.handleMessage({});
+    expect(conversations.saveState).not.toHaveBeenCalledWith(
+      expect.anything(), expect.anything(), expect.objectContaining({ cedula: undefined }),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toMatch(/cédula|nombre|correo/i);
   });
 
   it('regression — correcting just the name only resets nombre, not cedula/email too', async () => {
@@ -316,6 +448,37 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     await service.handleMessage({});
     expect(telegram.sendDocument).not.toHaveBeenCalled();
   });
+
+  it('regression — "sí" at confirmation generates the payment link immediately, no extra "listo?" question', async () => {
+    // User feedback: "¿Listo para generar tu link de pago?" was an unnecessary second
+    // confirmation — the user already said "sí" to the purchase summary. Generate and
+    // send the real Wompi link right away; this should just be informative, not another ask.
+    const { service, telegram, wompi } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com', quoteProductId: PRODUCTS[0].id },
+      intent: makeIntent({ isAffirmative: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    expect(wompi.createPaymentLink).toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('checkout.wompi.co');
+    expect(sentText).not.toContain('¿Listo para generar');
+  });
+
+  it('persists checkoutUrl and wompi_link_id in the same turn as the DATA_CAPTURE confirmation', async () => {
+    const { service, telegram, conversations, policy } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com', policyId: 'pol-1', quoteProductId: PRODUCTS[0].id },
+      intent: makeIntent({ isAffirmative: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.PAYMENT, expect.objectContaining({ checkoutUrl: 'https://checkout.wompi.co/l/test' }),
+    );
+    expect(policy.updateStatus).toHaveBeenCalledWith('pol-1', 'pending_payment', expect.objectContaining({ wompi_link_id: 'link-test' }));
+  });
 });
 
 // ── DATA_CAPTURE — per-pet detail collection (name, age, breed) ──────────────
@@ -344,7 +507,7 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
     await service.handleMessage({});
     expect(conversations.saveState).toHaveBeenCalledWith(
       'conv-1', ConversationState.DATA_CAPTURE,
-      expect.objectContaining({ pets: [{ name: 'Max', age: '3 años', breed: 'labrador' }] }),
+      expect.objectContaining({ pets: [{ name: 'Max', age: '3 años', breed: 'Labrador' }] }),
     );
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain('2 de 2');
@@ -360,8 +523,8 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
       intent: makeIntent({
         productCategory: 'mascotas',
         pets: [
-          { name: 'Rocky', age: '5 años', breed: 'labrador' },
-          { name: 'Luna', age: '3 años', breed: 'siamés' },
+          { name: 'Rocky', age: '5 años', breed: 'Labrador' },
+          { name: 'Luna', age: '3 años', breed: 'Siamés' },
         ],
       }),
     });
@@ -371,14 +534,15 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
       'conv-1', ConversationState.DATA_CAPTURE,
       expect.objectContaining({
         pets: [
-          { name: 'Rocky', age: '5 años', breed: 'labrador' },
-          { name: 'Luna', age: '3 años', breed: 'siamés' },
+          { name: 'Rocky', age: '5 años', breed: 'Labrador' },
+          { name: 'Luna', age: '3 años', breed: 'Siamés' },
         ],
       }),
     );
-    // All pets collected in one turn — proceeds straight to cédula
+    // All pets collected in one turn — shows the confirmation summary next
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    expect(sentText).toContain('dígitos');
+    expect(sentText).toContain('Rocky');
+    expect(sentText).toContain('Luna');
   });
 
   it('absorbs as many pets as fit when the message describes more than petCount', async () => {
@@ -388,19 +552,19 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
       intent: makeIntent({
         productCategory: 'mascotas',
         pets: [
-          { name: 'Rocky', age: '5 años', breed: 'labrador' },
-          { name: 'Luna', age: '3 años', breed: 'siamés' },
+          { name: 'Rocky', age: '5 años', breed: 'Labrador' },
+          { name: 'Luna', age: '3 años', breed: 'Siamés' },
         ],
       }),
     });
     await service.handleMessage({});
     expect(conversations.saveState).toHaveBeenCalledWith(
       'conv-1', ConversationState.DATA_CAPTURE,
-      expect.objectContaining({ pets: [{ name: 'Rocky', age: '5 años', breed: 'labrador' }] }),
+      expect.objectContaining({ pets: [{ name: 'Rocky', age: '5 años', breed: 'Labrador' }] }),
     );
   });
 
-  it('proceeds to cédula once all pets are collected', async () => {
+  it('shows a confirmation summary (not cédula yet) once all pets are collected', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DATA_CAPTURE,
       context: { productCategory: 'mascotas', petCount: 1, pets: [] },
@@ -409,11 +573,97 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
     telegram.normalize.mockResolvedValue(makeMessage('se llama Rocky, tiene 5 años, es criollo'));
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    expect(sentText).toContain('dígitos'); // now asks for cédula
+    expect(sentText).toContain('Rocky');
+    expect(sentText).toContain('5 años');
+    expect(sentText).not.toContain('dígitos'); // does not ask for cédula yet
     expect(conversations.saveState).toHaveBeenCalledWith(
       'conv-1', ConversationState.DATA_CAPTURE,
-      expect.objectContaining({ pets: [{ name: 'Rocky', age: '5 años', breed: 'criollo' }] }),
+      expect.objectContaining({
+        pets: [{ name: 'Rocky', age: '5 años', breed: 'Criollo' }],
+        petsAwaitingConfirmation: true,
+      }),
     );
+  });
+
+  it('regression — a mis-transcribed breed ("caken") is normalized to the closest known breed when captured', async () => {
+    const { service, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { productCategory: 'mascotas', petCount: 1, pets: [] },
+      intent: makeIntent({ productCategory: 'mascotas', petName: 'Maylo', petAge: '10 años', petBreed: 'caken' }),
+    });
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.pets?.[0].breed.toLowerCase()).toContain('cocker');
+  });
+
+  it('"sí" at the pets confirmation proceeds to asking for cédula', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        productCategory: 'mascotas', petCount: 1,
+        pets: [{ name: 'Rocky', age: '5 años', breed: 'Criollo' }],
+        petsAwaitingConfirmation: true,
+      },
+      intent: makeIntent({ isAffirmative: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('dígitos');
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ petsAwaitingConfirmation: undefined }),
+    );
+  });
+
+  it('regression — correcting one pet\'s field by name only updates that pet, not the whole list', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        productCategory: 'mascotas', petCount: 2,
+        pets: [
+          { name: 'Rocky', age: '5 años', breed: 'Doberman' },
+          { name: 'Bruna', age: '10 años', breed: 'Criollo' },
+        ],
+        petsAwaitingConfirmation: true,
+      },
+      intent: makeIntent({ isAffirmative: false, petName: 'Bruna', petAge: '8 años' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Bruna tiene 8 años, no 10'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({
+        pets: [
+          { name: 'Rocky', age: '5 años', breed: 'Doberman' },
+          { name: 'Bruna', age: '8 años', breed: 'Criollo' },
+        ],
+        petsAwaitingConfirmation: true,
+      }),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('8 años');
+  });
+
+  it('asks for clarification when a correction at pets confirmation does not name a known pet', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        productCategory: 'mascotas', petCount: 1,
+        pets: [{ name: 'Rocky', age: '5 años', breed: 'Doberman' }],
+        petsAwaitingConfirmation: true,
+      },
+      intent: makeIntent({ isAffirmative: false, petName: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('mmh no está bien'));
+    await service.handleMessage({});
+    // pets stays unchanged — nothing was actually corrected, just re-prompted
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    if (savedContext) {
+      expect(savedContext.pets).toEqual([{ name: 'Rocky', age: '5 años', breed: 'Doberman' }]);
+    }
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/cuál mascota|nombre de la mascota/);
   });
 
   it('defaults age/breed to "no especificada" when the user only gives a name', async () => {

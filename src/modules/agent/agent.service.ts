@@ -3,7 +3,7 @@ import { INlpProvider, InsuranceIntent } from '../nlp/types';
 import { TelegramAdapter } from '../channel/telegram-adapter.service';
 import { NormalizedMessage } from '../channel/types';
 import { ConversationService } from './conversation.service';
-import { ConversationState, ConversationContext } from './types';
+import { ConversationState, ConversationContext, PetDetail, DocumentType } from './types';
 import { STATE_RESPONSES } from './conversation-state.machine';
 import { QuotingService } from '../quoting/quoting.service';
 import { PolicyService } from '../policy/policy.service';
@@ -11,6 +11,7 @@ import { WompiService } from '../payments/wompi.service';
 import { AffiliateSignals, InsuranceProduct } from '../quoting/types';
 import { PRODUCTS } from '../quoting/products.data';
 import { computeTotalPremium } from '../quoting/pricing';
+import { matchBreed } from './breed-matcher';
 
 interface ProcessResult {
   text?: string;
@@ -36,6 +37,15 @@ export class AgentService {
 
   async handleMessage(raw: unknown): Promise<void> {
     const msg: NormalizedMessage = await this.telegram.normalize(raw);
+
+    if (msg.unsupportedInput) {
+      const text = msg.unsupportedInput === 'audio_too_long'
+        ? 'Solo puedo procesar audios cortos. Intenta de nuevo.'
+        : 'No puedo leer imágenes, solo audio o texto. Intenta de nuevo.';
+      await this.telegram.sendText(msg.userId, text);
+      return;
+    }
+
     if (!msg.text) return;
 
     this.logger.log(`Message from ${msg.userId}: "${msg.text.slice(0, 80)}"`);
@@ -326,6 +336,26 @@ export class AgentService {
     return personalPhrases.some((p) => text.includes(p)) || humanCategories.some((c) => text.includes(c));
   }
 
+  private formatPetsSummary(pets: PetDetail[]): string {
+    const lines = pets.map((p, i) => `${i + 1}. ${p.name} — ${p.age} — ${p.breed}`).join('\n');
+    return (
+      `📋 *Resumen de tus mascotas:*\n\n${lines}\n\n` +
+      `¿Todo correcto? Escríbeme *"sí"* para continuar, o dime qué corregir (ej: "Bruna tiene 8 años").`
+    );
+  }
+
+  // Not everyone has a CC (cédula de ciudadanía) — CE (extranjería), TI (tarjeta de
+  // identidad, minors), NIP/NUIP also identify a real person. Defaults to CC, the most
+  // common case, when no other type is named — matches prior behavior for plain numbers.
+  private detectDocumentType(text: string): DocumentType {
+    if (text.includes('extranjer')) return 'CE';
+    if (text.includes('tarjeta de identidad') || /\bti\b/.test(text)) return 'TI';
+    if (/\bnuip\b/.test(text)) return 'NUIP';
+    if (/\bnip\b/.test(text)) return 'NIP';
+    if (/\bce\b/.test(text)) return 'CE';
+    return 'CC';
+  }
+
   // ── Data capture ─────────────────────────────────────────────────────────────
 
   private async handleDataCapture(
@@ -356,7 +386,9 @@ export class AgentService {
             updatedPets.push({
               name: p.name,
               age: p.age ?? 'no especificada',
-              breed: p.breed ?? 'no especificada',
+              // Voice transcription regularly mangles breed names (e.g. "Cocker" ->
+              // "caken") — normalize against a dictionary of common breeds.
+              breed: matchBreed(p.breed),
             });
           }
           if (updatedPets.length < totalPets) {
@@ -365,13 +397,12 @@ export class AgentService {
               context: { ...context, pets: updatedPets },
             };
           }
-          // All pets collected — ask for cédula on the NEXT turn. Falling through to
-          // Step 1 in this same call would validate the pet-description text (not a
-          // cédula) against the cédula regex and fail, silently discarding these pets
-          // since that error branch doesn't return an updated context.
-          const petsCompleteContext = { ...context, pets: updatedPets };
+          // All pets collected — show a confirmation summary before moving to cédula,
+          // so the user can catch a wrong field (e.g. a mis-transcribed age or breed)
+          // without redoing the whole per-pet loop.
+          const petsCompleteContext = { ...context, pets: updatedPets, petsAwaitingConfirmation: true };
           return {
-            text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](petsCompleteContext),
+            text: this.formatPetsSummary(updatedPets),
             context: petsCompleteContext,
           };
         } else {
@@ -387,12 +418,58 @@ export class AgentService {
       }
     }
 
-    // Step 1 — collect cédula
-    if (!context.cedula) {
-      if (!/^\d{6,10}$/.test(text)) {
-        return { text: 'La cédula debe tener entre 6 y 10 dígitos. Intenta de nuevo.' };
+    // Handle the pets confirmation summary — "sí" proceeds, a correction naming a pet
+    // updates just that pet's field instead of restarting the whole per-pet loop.
+    if (context.petsAwaitingConfirmation) {
+      if (intent.isAffirmative) {
+        const confirmedContext = { ...context, petsAwaitingConfirmation: undefined };
+        return {
+          text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](confirmedContext),
+          context: confirmedContext,
+        };
       }
-      newContext.cedula = text;
+
+      const hasUpdateData = !!(intent.petName || intent.petAge || intent.petBreed);
+      const pets = context.pets ?? [];
+      let targetIndex = -1;
+      if (hasUpdateData && intent.petName) {
+        targetIndex = pets.findIndex((p) => p.name.toLowerCase() === intent.petName!.toLowerCase());
+      }
+      if (hasUpdateData && targetIndex === -1 && pets.length === 1) {
+        targetIndex = 0;
+      }
+
+      if (!hasUpdateData || targetIndex === -1) {
+        return {
+          text: '¿Cuál mascota quieres corregir? Dime su nombre y el dato correcto (ej: "Bruna tiene 8 años").',
+          context,
+        };
+      }
+
+      const updatedPets = [...pets];
+      const current = updatedPets[targetIndex];
+      updatedPets[targetIndex] = {
+        name: intent.petName ?? current.name,
+        age: intent.petAge ?? current.age,
+        breed: intent.petBreed ? matchBreed(intent.petBreed) : current.breed,
+      };
+
+      return {
+        text: this.formatPetsSummary(updatedPets),
+        context: { ...context, pets: updatedPets },
+      };
+    }
+
+    // Step 1 — collect número de documento. Not everyone has a CC (cédula de
+    // ciudadanía) — detect CE/TI/NIP/NUIP from keywords and extract the digit run
+    // regardless of a spoken-out prefix ("CE 123456789", "mi tarjeta de identidad es...").
+    if (!context.cedula) {
+      const digitsMatch = text.match(/\b\d{6,10}\b/);
+      if (!digitsMatch) {
+        return { text: 'El número de documento debe tener entre 6 y 10 dígitos. Intenta de nuevo.' };
+      }
+      newContext.cedula = digitsMatch[0];
+      newContext.documentType = this.detectDocumentType(text);
       return {
         text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext),
         context: newContext,
@@ -417,18 +494,48 @@ export class AgentService {
       };
     }
 
-    // Step 4 — confirmation ("sí" → create pending policy record, move to payment)
-    // No PDF is sent here — the only PDF the user receives is generated and sent by
-    // wompi-webhook.controller.ts once Wompi confirms the payment as APPROVED.
+    // Answering a pending "¿qué dato quieres corregir?" — reset only the named field
+    // instead of the blanket cédula+nombre+correo reset this replaced.
+    if (context.awaitingCorrectionField) {
+      const mentionsCedula = text.includes('cédula') || text.includes('cedula');
+      const mentionsNombre = text.includes('nombre');
+      const mentionsCorreo = text.includes('correo') || text.includes('email');
+
+      if (mentionsCedula) {
+        return {
+          text: 'Escríbeme tu cédula de nuevo (solo dígitos, sin puntos ni espacios).',
+          context: { ...context, cedula: undefined, awaitingCorrectionField: undefined },
+        };
+      }
+      if (mentionsNombre) {
+        return {
+          text: '¿Cuál es tu nombre completo?',
+          context: { ...context, nombre: undefined, awaitingCorrectionField: undefined },
+        };
+      }
+      if (mentionsCorreo) {
+        return {
+          text: '¿Cuál es tu correo electrónico? Ahí recibirás la póliza.',
+          context: { ...context, email: undefined, awaitingCorrectionField: undefined },
+        };
+      }
+      return {
+        text: 'No identifiqué cuál dato corregir. Dime: cédula, nombre o correo.',
+        context,
+      };
+    }
+
+    // Step 4 — confirmation ("sí" → create pending policy record, generate the payment
+    // link immediately). No extra "¿listo para generar tu link?" question — the user
+    // already confirmed by saying "sí" here; asking again is redundant friction, and the
+    // message is informative, not another prompt. No PDF is sent here — the only PDF the
+    // user receives is generated and sent by wompi-webhook.controller.ts once Wompi
+    // reports the transaction as APPROVED.
     if (intent.isAffirmative) {
       const { policyId } = await this.policy.issue(convId, newContext);
       newContext.policyId = policyId;
 
-      return {
-        text: STATE_RESPONSES[ConversationState.PAYMENT](newContext),
-        nextState: ConversationState.PAYMENT,
-        context: newContext,
-      };
+      return this.createPaymentLinkFlow(convId, newContext);
     }
 
     const correctionTriggered = intent.isNegative ||
@@ -465,10 +572,11 @@ export class AgentService {
         };
       }
 
+      // No specific field named — ask which one instead of blanket-resetting all three
+      // (the old behavior forced redoing cédula+nombre+correo for a one-field typo).
       return {
-        text: '¿Qué dato quieres corregir? Escríbeme tu cédula de nuevo y empezamos.',
-        nextState: ConversationState.DATA_CAPTURE,
-        context: { ...context, cedula: undefined, nombre: undefined, email: undefined },
+        text: '¿Qué dato quieres corregir — cédula, nombre o correo?',
+        context: { ...context, awaitingCorrectionField: true },
       };
     }
 
@@ -476,6 +584,52 @@ export class AgentService {
     // acknowledge instead of silently repeating the same summary card, which reads as
     // the agent ignoring the user.
     return { text: `No logré entender eso. ${STATE_RESPONSES[ConversationState.DATA_CAPTURE](context)}` };
+  }
+
+  // Creates the Wompi payment link and returns the message showing it — shared by the
+  // DATA_CAPTURE confirmation (generates the link immediately, no extra "listo?" ask)
+  // and handlePayment's isConfirm branch (used for retries after a decline/manual-link
+  // failure, where the conversation is already sitting in PAYMENT with no checkoutUrl).
+  private async createPaymentLinkFlow(convId: string, context: ConversationContext): Promise<ProcessResult> {
+    const quoteProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
+    const amountCOP = quoteProduct ? computeTotalPremium(quoteProduct, context.petCount) : 20000;
+
+    try {
+      const { checkoutUrl, paymentLinkId } = await this.wompi.createPaymentLink({
+        policyId: context.policyId ?? convId,
+        productName: quoteProduct?.name ?? 'Seguro Colsubsidio',
+        amountCOP,
+        expiresInMinutes: 30,
+      });
+
+      // Persist immediately — the webhook can only find this policy via payment_link_id
+      // (Wompi's Payment Links API has no "reference" create-parameter).
+      if (context.policyId) {
+        await this.policy.updateStatus(context.policyId, 'pending_payment', { wompi_link_id: paymentLinkId });
+      }
+
+      const amountStr = `$${amountCOP.toLocaleString('es-CO')}`;
+      const msg = (
+        `🔒 Tu pago es 100% seguro a través de Wompi — plataforma oficial de Bancolombia.\n\n` +
+        `🔗 [Pagar ${amountStr} — Link seguro Wompi](${checkoutUrl})\n\n` +
+        `Acepta tarjeta débito/crédito, Nequi y PSE.\n\n` +
+        `⏱️ El link vence en 30 minutos.\n\n` +
+        `En cuanto tu pago sea confirmado, te aviso aquí automáticamente con tu póliza.`
+      );
+
+      return { text: msg, nextState: ConversationState.PAYMENT, context: { ...context, checkoutUrl } };
+    } catch (error) {
+      this.logger.error(`Failed to create payment link: ${error}`);
+      return {
+        text: (
+          `El monto a pagar es *$${amountCOP.toLocaleString('es-CO')}*.\n\n` +
+          `Por ahora no puedo generar el link de pago automático. Realiza la transferencia a la cuenta indicada por tu asesor y comparte el comprobante aquí.` +
+          `\n\n¿Ya realizaste el pago? Escríbeme "sí" cuando esté listo.`
+        ),
+        nextState: ConversationState.PAYMENT,
+        context,
+      };
+    }
   }
 
   // ── Payment ─────────────────────────────────────────────────────────────────
@@ -509,44 +663,7 @@ export class AgentService {
     }
 
     if (isConfirm) {
-      const quoteProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
-      const amountCOP = quoteProduct ? computeTotalPremium(quoteProduct, context.petCount) : 20000;
-
-      try {
-        const { checkoutUrl, paymentLinkId } = await this.wompi.createPaymentLink({
-          policyId: context.policyId ?? convId,
-          productName: quoteProduct?.name ?? 'Seguro Colsubsidio',
-          amountCOP,
-          expiresInMinutes: 30,
-        });
-
-        // Persist immediately — the webhook can only find this policy via payment_link_id
-        // (Wompi's Payment Links API has no "reference" create-parameter).
-        if (context.policyId) {
-          await this.policy.updateStatus(context.policyId, 'pending_payment', { wompi_link_id: paymentLinkId });
-        }
-
-        const amountStr = `$${amountCOP.toLocaleString('es-CO')}`;
-        const msg = (
-          `Para completar tu compra, paga aquí:\n\n` +
-          `🔗 [Pagar ${amountStr} — Link seguro Wompi](${checkoutUrl})\n\n` +
-          `El link es seguro (Wompi + Bancolombia). Acepta tarjeta de crédito, débito, Nequi y PSE.\n\n` +
-          `⏱️ El link vence en 30 minutos.\n\n` +
-          `En cuanto tu pago sea confirmado, te aviso aquí automáticamente con tu póliza.`
-        );
-
-        return { text: msg, context: { ...context, checkoutUrl } };
-      } catch (error) {
-        this.logger.error(`Failed to create payment link: ${error}`);
-        return {
-          text: (
-            `El monto a pagar es *$${amountCOP.toLocaleString('es-CO')}*.\n\n` +
-            `Por ahora no puedo generar el link de pago automático. Realiza la transferencia a la cuenta indicada por tu asesor y comparte el comprobante aquí.` +
-            `\n\n¿Ya realizaste el pago? Escríbeme "sí" cuando esté listo.`
-          ),
-          context,
-        };
-      }
+      return this.createPaymentLinkFlow(convId, context);
     }
 
     if (intent.isNegative) {
