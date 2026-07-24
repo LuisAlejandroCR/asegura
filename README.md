@@ -96,7 +96,7 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 
 ▶ **Escríbele al agente:** `t.me/AseguraBot`
 
-▶ **Pitch web:** `useasegura.app`
+▶ **Pitch web:** `[useasegura.app](https://asegura-app.vercel.app/)`
 
 ---
 
