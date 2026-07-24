@@ -1,69 +1,78 @@
+/* ── Tokens — Colsubsidio brand + Choco-inspired smooth palette ──────── */
 :root {
-  --bg: #FAFBFC;
-  --surface: #FFFFFF;
-  --surface-2: #F0F3F6;
-  --border: #D0D7DE;
-  --text: #1F2328;
-  --text-2: #57606A;
-  --text-3: #8C959F;
-  --primary: #0969DA;
-  --primary-dim: #E8F0FB;
+  color-scheme: light;
+
+  /* Colsubsidio brand */
+  --yellow: #FFD000;
+  --blue: #0067B1;
+  --grafito: #575756;
+
+  /* Surfaces — warm off-white like Choco */
+  --bg: #FDF8EE;
+  --bg-surface: #F5EDD8;
+  --bg-muted: #EDE3CC;
+  --bg-card: #FFFFFF;
+  --bg-deep: #0C1B2A;
+
+  /* Borders */
+  --border: rgba(87, 87, 86, 0.1);
+  --border-mid: rgba(87, 87, 86, 0.16);
+  --border-strong: rgba(87, 87, 86, 0.24);
+
+  /* Text */
+  --text: #1A1A1A;
+  --text-muted: #4A4A4A;
+  --text-dim: #8A8A8A;
+
+  /* Accent — blue as primary, yellow as warm accent */
+  --accent: #0067B1;
+  --accent-warm: #FFD000;
+  --accent-light: #E8F4FD;
+  --accent-deep: #004A80;
+
+  /* CTA */
+  --cta-bg: #0C1B2A;
+  --cta-fg: #FDF8EE;
+
+  /* Semantic */
   --green: #1A7F37;
-  --green-dim: #DAFBE1;
-  --red: #CF222E;
-  --red-dim: #FFEBE9;
-  --yellow: #9A6700;
-  --yellow-dim: #FFF8C5;
-  --code-bg: #F4F6F8;
-  --r: 8px;
+  --green-bg: rgba(26, 127, 55, 0.08);
+  --green-border: rgba(26, 127, 55, 0.24);
+
+  /* Typography */
+  --font: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Radii — Choco-smooth */
+  --r-xs: 8px;
+  --r-sm: 14px;
+  --r: 22px;
+  --r-lg: 30px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.1), 0 8px 20px rgba(0, 0, 0, 0.06);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0D1117;
-    --surface: #161B22;
-    --surface-2: #21262D;
-    --border: #30363D;
-    --text: #E6EDF3;
-    --text-2: #8B949E;
-    --text-3: #484F58;
-    --primary: #58A6FF;
-    --primary-dim: #0C2D6B;
-    --green: #3FB950;
-    --green-dim: #0D3A17;
-    --red: #FF7B72;
-    --red-dim: #3D0B0B;
-    --yellow: #D29922;
-    --yellow-dim: #3A2700;
-    --code-bg: #1C2128;
-  }
-}
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/* ── Reset ───────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
 
 body {
-  background: var(--bg);
+  margin: 0;
+  font-family: var(--font);
   color: var(--text);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 15px;
-  line-height: 1.65;
+  min-height: 100dvh;
+  background:
+    radial-gradient(ellipse at 15% 20%, rgba(0, 103, 177, 0.04) 0%, transparent 40%),
+    radial-gradient(ellipse at 85% 75%, rgba(255, 208, 0, 0.06) 0%, transparent 35%),
+    var(--bg);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  color: var(--primary);
-  text-decoration: none;
-}
-
-a:hover {
-  text-decoration: underline;
-}
-
-img {
-  max-width: 100%;
-  height: auto;
-}
+a { color: inherit; text-decoration: none; }
+p { margin: 0; }
+h1, h2, h3, h4 { margin: 0; }
+img { display: block; max-width: 100%; height: auto; }
+ul { margin: 0; padding: 0; }
