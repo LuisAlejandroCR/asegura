@@ -49,7 +49,13 @@ export class QuotingService {
       reasons.push(`Para ${signals.petType}s`);
     }
 
-    if (signals.beneficiaries && product.eligibility.family) {
+    // beneficiaries > 1 only — Groq's own JSON schema shows "beneficiaries": 1 as an
+    // EXAMPLE value in the prompt, so the LLM often defaults to 1 even when the message
+    // carries no real signal about family size. Showing "Cubre a 1 personas" (also
+    // ungrammatical: singular count, plural noun) as a "personalized" reason for every
+    // single-person quote is a trivially-true, non-distinguishing fact that undermines
+    // the actual personalization pitch — real bug observed in an external test session.
+    if (signals.beneficiaries && signals.beneficiaries > 1 && product.eligibility.family) {
       matchScore += 20;
       reasons.push(`Cubre a ${signals.beneficiaries} personas`);
     }

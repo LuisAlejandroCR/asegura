@@ -198,6 +198,30 @@ describe('QuotingService — budget scoring from RANGO_SALARIAL', () => {
   });
 });
 
+// ── beneficiaries reason text (2026-07-24, findings from an external test session) ──
+// Real observed bug: "Te lo recomiendo porque: Cubre a 1 personas." — ungrammatical
+// (singular "1" with plural "personas"), and Groq's own JSON schema shows
+// "beneficiaries": 1 as an EXAMPLE value in the prompt, so the LLM often defaults to 1
+// even when the user's message carries no real signal about family size at all. Showing
+// this reason for beneficiaries=1 makes every quote look "personalized" with a
+// trivially-true, non-distinguishing fact, undermining the actual personalization pitch.
+
+describe('QuotingService — "Cubre a N personas" reason text', () => {
+  const service = makeService();
+
+  it('regression — does not show the reason at all for beneficiaries=1 (no real family signal)', () => {
+    const scores = service.score({ productCategory: 'asistencia', beneficiaries: 1 });
+    const familyProduct = scores.find((s) => s.productId === 'asistencias-medicas')!;
+    expect(familyProduct.reasons.some((r) => r.includes('Cubre a'))).toBe(false);
+  });
+
+  it('shows a grammatically correct reason for a genuine multi-person signal', () => {
+    const scores = service.score({ productCategory: 'asistencia', beneficiaries: 4 });
+    const familyProduct = scores.find((s) => s.productId === 'asistencias-medicas')!;
+    expect(familyProduct.reasons.some((r) => r.includes('Cubre a 4 personas'))).toBe(true);
+  });
+});
+
 describe('QuotingService — category cross-sell map (locked-in current behavior)', () => {
   const service = makeService();
 
