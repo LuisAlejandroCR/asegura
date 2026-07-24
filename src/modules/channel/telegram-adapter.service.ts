@@ -21,7 +21,7 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
 
   onApplicationBootstrap() {
     if (this.enabled && this.bot && this.config.get<string>('TELEGRAM_WEBHOOK_SECRET')) {
-      const host = this.config.get<string>('HOST', '');
+      const host = this.config.get<string>('PUBLIC_URL', '');
       if (host) {
         const secret = this.config.getOrThrow<string>('TELEGRAM_WEBHOOK_SECRET');
         this.logger.log(`Telegram ready`); // webhook set in main.ts

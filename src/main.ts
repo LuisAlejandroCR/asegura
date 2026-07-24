@@ -62,7 +62,7 @@ async function bootstrap() {
       await agent.handleMessage(ctx);
     });
 
-    const host = config.get<string>('HOST', '');
+    const host = config.get<string>('PUBLIC_URL', '');
     if (host) {
       const secret = config.getOrThrow<string>('TELEGRAM_WEBHOOK_SECRET');
       await telegram.setWebhook(`${host}/webhook/telegram`, secret);

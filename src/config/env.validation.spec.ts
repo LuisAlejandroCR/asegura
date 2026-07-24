@@ -76,29 +76,31 @@ describe('env.validation — Wompi cross-field requirement', () => {
 });
 
 describe('env.validation — Telegram webhook mode requirement', () => {
-  // Regression: main.ts calls config.getOrThrow('TELEGRAM_WEBHOOK_SECRET') when HOST is
-  // set (webhook mode) — that throw happens deep inside the unawaited bootstrap() call
-  // with no .catch(), so a Railway deploy with HOST + TELEGRAM_BOT_TOKEN set but
-  // TELEGRAM_WEBHOOK_SECRET forgotten crashes silently before the app ever binds to a
-  // port. This must fail fast at startup with a clear message instead.
-  it('exits when HOST is set but TELEGRAM_WEBHOOK_SECRET is missing', () => {
+  // Regression: main.ts calls config.getOrThrow('TELEGRAM_WEBHOOK_SECRET') when
+  // PUBLIC_URL is set (webhook mode) — that throw happens deep inside the unawaited
+  // bootstrap() call with no .catch(), so a Railway deploy with PUBLIC_URL +
+  // TELEGRAM_BOT_TOKEN set but TELEGRAM_WEBHOOK_SECRET forgotten crashes silently before
+  // the app ever binds to a port. This must fail fast at startup with a clear message
+  // instead. (Renamed from HOST to PUBLIC_URL — too generic a name, easy to confuse with
+  // a bind-address convention used elsewhere.)
+  it('exits when PUBLIC_URL is set but TELEGRAM_WEBHOOK_SECRET is missing', () => {
     const { exitSpy, restore } = withMockedExit();
-    validate(baseConfig({ HOST: 'https://asegura-production.up.railway.app' }));
+    validate(baseConfig({ PUBLIC_URL: 'https://asegura-production.up.railway.app' }));
     expect(exitSpy).toHaveBeenCalledWith(1);
     restore();
   });
 
-  it('passes when HOST is set and TELEGRAM_WEBHOOK_SECRET is also set', () => {
+  it('passes when PUBLIC_URL is set and TELEGRAM_WEBHOOK_SECRET is also set', () => {
     const { exitSpy, restore } = withMockedExit();
     validate(baseConfig({
-      HOST: 'https://asegura-production.up.railway.app',
+      PUBLIC_URL: 'https://asegura-production.up.railway.app',
       TELEGRAM_WEBHOOK_SECRET: 'a-random-secret',
     }));
     expect(exitSpy).not.toHaveBeenCalled();
     restore();
   });
 
-  it('passes when HOST is not set (polling mode, no secret required)', () => {
+  it('passes when PUBLIC_URL is not set (polling mode, no secret required)', () => {
     const { exitSpy, restore } = withMockedExit();
     validate(baseConfig());
     expect(exitSpy).not.toHaveBeenCalled();

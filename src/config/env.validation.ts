@@ -52,7 +52,7 @@ class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
-  HOST: string;
+  PUBLIC_URL: string;
 
   @IsString()
   @IsOptional()
@@ -122,13 +122,15 @@ function crossFieldErrors(validated: EnvironmentVariables): string[] {
     }
   }
 
-  // Regression: main.ts calls config.getOrThrow('TELEGRAM_WEBHOOK_SECRET') as soon as HOST
-  // is set (webhook mode) — that throw happened deep inside the unawaited bootstrap() call
-  // with no .catch(), so HOST set without TELEGRAM_WEBHOOK_SECRET crashed the process
-  // silently before it ever bound to a port. Caught here instead, at startup, with a
-  // message that actually explains what's missing.
-  if (validated.HOST && !validated.TELEGRAM_WEBHOOK_SECRET) {
-    errors.push('HOST is set (webhook mode) but TELEGRAM_WEBHOOK_SECRET is missing — required to verify incoming Telegram requests.');
+  // Regression: main.ts calls config.getOrThrow('TELEGRAM_WEBHOOK_SECRET') as soon as
+  // PUBLIC_URL is set (webhook mode) — that throw happened deep inside the unawaited
+  // bootstrap() call with no .catch(), so PUBLIC_URL set without TELEGRAM_WEBHOOK_SECRET
+  // crashed the process silently before it ever bound to a port. Caught here instead, at
+  // startup, with a message that actually explains what's missing. (Renamed from HOST —
+  // that name is too generic and easy to confuse with a bind-address/host convention;
+  // this variable is the app's public base URL, used only to build the webhook URL.)
+  if (validated.PUBLIC_URL && !validated.TELEGRAM_WEBHOOK_SECRET) {
+    errors.push('PUBLIC_URL is set (webhook mode) but TELEGRAM_WEBHOOK_SECRET is missing — required to verify incoming Telegram requests.');
   }
 
   return errors;
