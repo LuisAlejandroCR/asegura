@@ -73,7 +73,14 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
   private async transcribeVoice(fileId: string): Promise<string> {
     if (!this.bot) return '';
     const llmKey = this.config.get<string>('LLM_API_KEY');
-    if (!llmKey) return '';
+    if (!llmKey) {
+      // Regression: this used to return '' with no log at all — indistinguishable in
+      // every log line from "the user sent a silent voice note". Voice was completely
+      // (and invisibly) disabled by a missing env var — the exact live-test symptom
+      // "voice still not identified", with nothing in the logs pointing at the cause.
+      this.logger.warn('LLM_API_KEY not set — voice transcription disabled');
+      return '';
+    }
     const token = this.config.get<string>('TELEGRAM_BOT_TOKEN') ?? '';
 
     const fileInfo = await this.bot.api.getFile(fileId);

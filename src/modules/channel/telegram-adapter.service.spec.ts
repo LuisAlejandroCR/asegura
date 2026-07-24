@@ -105,6 +105,29 @@ describe('TelegramAdapter — transcribeVoice error handling', () => {
     errorSpy.mockRestore();
   });
 
+  // Regression: transcribeVoice() returned '' immediately when LLM_API_KEY was unset,
+  // with zero logging — indistinguishable from "user sent a silent voice note" in every
+  // log and every downstream conversation. This is the exact live-test symptom "voice
+  // still not identified": whoever operates the bot had no way to tell, from logs alone,
+  // that voice was completely disabled by a missing env var (same var also breaks NLP,
+  // but that path at least logs a warning on failure).
+  it('regression — missing LLM_API_KEY is logged as a warning, not silently swallowed', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const config = {
+      get: jest.fn((key: string, def?: unknown) => {
+        const values: Record<string, string> = { TELEGRAM_BOT_TOKEN: 'bot-token' }; // no LLM_API_KEY
+        return values[key] ?? def;
+      }),
+    } as any;
+    const adapter = new TelegramAdapter(config);
+    mockBotWithFile(adapter);
+
+    const result = await adapter.normalize(makeCtx({ voice: { file_id: 'voice-1', duration: 10 } }));
+    expect(result.text).toBe('');
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('LLM_API_KEY'));
+    warnSpy.mockRestore();
+  });
+
   it('returns the transcribed text on a successful 2xx Groq response', async () => {
     global.fetch = jest.fn()
       .mockResolvedValueOnce({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) })
