@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS policies (
   conversation_id  uuid        REFERENCES conversations(id),
   product_id       text        NOT NULL,
   cedula           text        NOT NULL,
+  -- Colombian ID type: CC (default), CE, TI, NIP, NUIP — not everyone has a CC
+  document_type    text,
   nombre           text        NOT NULL,
   email            text,
   monthly_premium  numeric     NOT NULL DEFAULT 0,
@@ -25,6 +27,7 @@ CREATE TABLE IF NOT EXISTS policies (
 -- Safe to re-run: adds these columns if this migration already ran before they existed.
 ALTER TABLE policies ADD COLUMN IF NOT EXISTS pet_count integer;
 ALTER TABLE policies ADD COLUMN IF NOT EXISTS pets jsonb;
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS document_type text;
 
 CREATE INDEX IF NOT EXISTS policies_conversation_id_idx ON policies (conversation_id);
 

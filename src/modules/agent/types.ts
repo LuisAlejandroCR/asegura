@@ -18,6 +18,11 @@ interface PetDetail {
   breed: string;
 }
 
+// Colombian ID document types — not everyone has a CC (cédula de ciudadanía):
+// CE = cédula de extranjería, TI = tarjeta de identidad (minors), NIP/NUIP = the
+// numbering schemes used for newborns/special cases.
+type DocumentType = 'CC' | 'CE' | 'TI' | 'NIP' | 'NUIP';
+
 interface ConversationContext {
   autorizado?: boolean;
   productCategory?: string | null;
@@ -29,9 +34,17 @@ interface ConversationContext {
   shownProductIds?: string[];
   petCount?: number | null;
   pets?: PetDetail[];
+  // Set once all pets are collected and the summary is shown, awaiting "sí" or a
+  // per-pet correction, before moving on to the human's own cédula/nombre/correo.
+  petsAwaitingConfirmation?: boolean;
   cedula?: string;
+  documentType?: DocumentType;
   nombre?: string;
   email?: string;
+  // Set when the user rejected the DATA_CAPTURE summary without naming which field is
+  // wrong — the next message is interpreted as naming it, so only that field resets
+  // instead of forcing cédula+nombre+correo to be redone from scratch.
+  awaitingCorrectionField?: boolean;
   policyId?: string;
   checkoutUrl?: string;
   celoscanUrl?: string;
@@ -47,4 +60,4 @@ interface Conversation {
   updated_at: string;
 }
 
-export { ConversationState, ConversationContext, Conversation, PetDetail };
+export { ConversationState, ConversationContext, Conversation, PetDetail, DocumentType };

@@ -66,14 +66,14 @@ export const STATE_RESPONSES: ResponsesMap = {
 
   [ConversationState.DATA_CAPTURE]: (ctx) => {
     const c = translate(ctx);
-    if (!c.cedula) return 'Para emitir la póliza necesito tu número de cédula (solo dígitos, sin puntos ni espacios).';
+    if (!c.cedula) return 'Para emitir la póliza necesito tu número de documento de identidad (cédula de ciudadanía, cédula de extranjería, tarjeta de identidad, NIP o NUIP) — solo dígitos, sin puntos ni espacios.';
     if (!c.nombre) return '¿Cuál es tu nombre completo?';
     if (!c.email) return '¿Cuál es tu correo electrónico? Ahí recibirás la póliza.';
     const product = PRODUCTS.find((p) => p.id === c.quoteProductId);
     return (
       `📱 *Resumen de tu compra:*\n\n` +
       `🛡️ ${product?.name ?? c.productCategory ?? 'Seguro'} Colsubsidio\n` +
-      `👤 ${c.nombre} — CC ${c.cedula}\n` +
+      `👤 ${c.nombre} — ${c.documentType ?? 'CC'} ${c.cedula}\n` +
       `📧 ${c.email}\n\n` +
       `¿Todo correcto? Escríbeme *"sí"* para continuar al pago.`
     );

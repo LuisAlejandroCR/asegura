@@ -92,6 +92,13 @@ describe('PdfService — petCount pricing display', () => {
     const buffer = await service.generate(baseData({ pets: [] }));
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
   });
+
+  it('still generates a valid PDF when documentType is provided (CE, TI, NIP, NUIP)', async () => {
+    for (const documentType of ['CC', 'CE', 'TI', 'NIP', 'NUIP']) {
+      const buffer = await service.generate(baseData({ documentType }));
+      expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
+    }
+  });
 });
 
 // ── resolveAuditUrl — QR target logic ─────────────────────────────────────────

@@ -55,6 +55,26 @@ describe('STATE_RESPONSES — DATA_CAPTURE progressive flow', () => {
     expect(response).toContain('Asistencia veterinaria');
     expect(response).not.toContain('mascotas Colsubsidio');
   });
+
+  it('regression — confirmation summary shows the real document type, not a hardcoded "CC"', () => {
+    // Not everyone has a CC (cédula de ciudadanía) — a CE/TI/NIP/NUIP holder shouldn't
+    // see their document mislabeled on the purchase summary.
+    const ctx: ConversationContext = {
+      cedula: '987654321', documentType: 'CE', nombre: 'Juan Pérez', email: 'juan@email.com',
+    };
+    const response = STATE_RESPONSES[ConversationState.DATA_CAPTURE](ctx);
+    expect(response).toContain('CE 987654321');
+  });
+
+  it('defaults to "CC" in the summary when documentType is not set (backward compatible)', () => {
+    const ctx: ConversationContext = { cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@email.com' };
+    const response = STATE_RESPONSES[ConversationState.DATA_CAPTURE](ctx);
+    expect(response).toContain('CC 12345678');
+  });
+
+  it('the initial prompt asks for "documento de identidad" generically, not just "cédula"', () => {
+    expect(STATE_RESPONSES[ConversationState.DATA_CAPTURE](empty)).toContain('documento de identidad');
+  });
 });
 
 describe('STATE_RESPONSES — POLICY_ISSUED Celoscan link', () => {

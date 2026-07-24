@@ -38,7 +38,7 @@ function makeEvent(overrides: {
 function makePolicy(overrides: Partial<Policy> = {}): Policy {
   return {
     id: 'pol-1', conversation_id: 'conv-1', product_id: 'asistencia-veterinaria',
-    cedula: '123456789', nombre: 'Juan Pérez', email: 'juan@test.com',
+    cedula: '123456789', document_type: null, nombre: 'Juan Pérez', email: 'juan@test.com',
     monthly_premium: 14500, pet_count: null, pets: null, status: 'pending_payment',
     wompi_link_id: 'link-abc', celo_tx_hash: null,
     created_at: '2026-07-23T00:00:00Z', updated_at: '2026-07-23T00:00:00Z',

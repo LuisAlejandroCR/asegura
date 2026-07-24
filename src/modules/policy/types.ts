@@ -9,6 +9,7 @@ interface Policy {
   conversation_id: string | null;
   product_id: string;
   cedula: string;
+  document_type: string | null;
   nombre: string;
   email: string | null;
   monthly_premium: number;

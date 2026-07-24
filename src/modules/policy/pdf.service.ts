@@ -11,6 +11,9 @@ interface PolicyPdfData {
   coverages: string[];
   nombre: string;
   cedula: string;
+  // Colombian ID type — CC (cédula de ciudadanía) is the default; CE, TI, NIP, NUIP also
+  // identify a real person and shouldn't be mislabeled on the printed certificate.
+  documentType?: string;
   email?: string;
   monthlyPremium: number;
   issuedAt: Date;
@@ -150,7 +153,7 @@ export class PdfService {
     doc.fontSize(10).font('Helvetica');
     const lines = [
       `Nombre: ${data.nombre}`,
-      `Cédula: ${data.cedula}`,
+      `Documento: ${data.documentType ?? 'CC'} ${data.cedula}`,
       ...(data.email ? [`Correo: ${data.email}`] : []),
       `Aseguradora: ${data.insurer}`,
       `Fecha de emisión: ${data.issuedAt.toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}`,

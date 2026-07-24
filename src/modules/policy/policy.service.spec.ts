@@ -76,6 +76,22 @@ describe('PolicyService.issue', () => {
     await service.issue('conv-1', { quoteProductId: 'asistencia-veterinaria', cedula: '123456789', nombre: 'Juan Pérez' } as any);
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ pets: null }));
   });
+
+  it('regression — stores the document type (CE, TI, NIP, NUIP), not just CC', async () => {
+    const { supabase, insert } = makeInsertSupabaseMock({ data: { id: 'pol-1' } });
+    const service = new PolicyService(supabase, makePdfMock());
+    await service.issue('conv-1', {
+      quoteProductId: 'asistencia-veterinaria', cedula: '987654321', documentType: 'CE', nombre: 'Juan Pérez',
+    } as any);
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ document_type: 'CE' }));
+  });
+
+  it('defaults document_type to null when not set (backward compatible)', async () => {
+    const { supabase, insert } = makeInsertSupabaseMock({ data: { id: 'pol-1' } });
+    const service = new PolicyService(supabase, makePdfMock());
+    await service.issue('conv-1', { quoteProductId: 'asistencia-veterinaria', cedula: '123456789', nombre: 'Juan Pérez' } as any);
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ document_type: null }));
+  });
 });
 
 describe('PolicyService.findById', () => {
@@ -134,7 +150,7 @@ describe('PolicyService.findByWompiLinkId', () => {
 describe('PolicyService.generateFinalPdf', () => {
   const policy = {
     id: 'pol-1', conversation_id: 'conv-1', product_id: 'asistencia-veterinaria',
-    cedula: '123456789', nombre: 'Juan Pérez', email: 'juan@test.com',
+    cedula: '123456789', document_type: null, nombre: 'Juan Pérez', email: 'juan@test.com',
     monthly_premium: 14500, status: 'active',
     wompi_link_id: 'txn-1', celo_tx_hash: '0xabc', pet_count: null, pets: null,
     created_at: '2026-07-23T00:00:00Z', updated_at: '2026-07-23T00:00:00Z',
@@ -158,6 +174,13 @@ describe('PolicyService.generateFinalPdf', () => {
     const service = new PolicyService(makeSupabaseMock(), pdf);
     await service.generateFinalPdf({ ...policy, pet_count: 3, monthly_premium: 43500 }, 'https://celoscan.io/tx/0xabc');
     expect(pdf.generate).toHaveBeenCalledWith(expect.objectContaining({ petCount: 3 }));
+  });
+
+  it('regression — passes the stored document_type through to the final PDF', async () => {
+    const pdf = makePdfMock();
+    const service = new PolicyService(makeSupabaseMock(), pdf);
+    await service.generateFinalPdf({ ...policy, document_type: 'TI' }, 'https://celoscan.io/tx/0xabc');
+    expect(pdf.generate).toHaveBeenCalledWith(expect.objectContaining({ documentType: 'TI' }));
   });
 
   it('regression — passes the stored per-pet details through to the final PDF', async () => {
