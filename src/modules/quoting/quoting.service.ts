@@ -82,25 +82,40 @@ export class QuotingService {
     };
   }
 
-  // Maps RANGO_SALARIAL from the affiliate xlsx to an approximate monthly discretionary budget for insurance
+  // Maps RANGO_SALARIAL from the affiliate xlsx to an approximate monthly discretionary
+  // budget for insurance. Normalized (trim/case/accents) because the xlsx is an external
+  // file Colsubsidio regenerates — a stray whitespace or casing difference must not
+  // silently drop this scoring boost with no error or fallback signal.
   private budgetFromSalary(rango?: string): number | null {
     if (!rango) return null;
     const map: Record<string, number> = {
-      'Hasta 2 SMLV': 20000,
-      'Entre 2 y 4 SMLV': 40000,
-      'Entre 4 y 6 SMLV': 60000,
-      'Entre 6 y 8 SMLV': 80000,
-      'Entre 8 y 10 SMLV': 100000,
-      'Más de 10 SMLV': 150000,
+      'hasta 2 smlv': 20000,
+      'entre 2 y 4 smlv': 40000,
+      'entre 4 y 6 smlv': 60000,
+      'entre 6 y 8 smlv': 80000,
+      'entre 8 y 10 smlv': 100000,
+      'mas de 10 smlv': 150000,
     };
-    return map[rango] ?? null;
+    return map[this.normalizeRango(rango)] ?? null;
+  }
+
+  private normalizeRango(rango: string): string {
+    return rango
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '');
   }
 
   private isRelatedCategory(a: string, b: string): boolean {
     const related: Record<string, string[]> = {
       vida: ['vida', 'accidentes'],
       accidentes: ['accidentes', 'vida'],
-      asistencia: ['asistencia', 'vida'],
+      // 'hogar' has no dedicated product in the real catalog (rule: only real
+      // colsubsidio.com/seguros prices) — asistencias-multiples explicitly covers
+      // "asistencia en el hogar", so a hogar signal cross-sells into asistencia products
+      // instead of hitting a structural dead end.
+      asistencia: ['asistencia', 'vida', 'hogar'],
       mascotas: ['mascotas'],
     };
     return related[a]?.includes(b) ?? false;

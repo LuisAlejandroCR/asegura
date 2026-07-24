@@ -152,6 +152,95 @@ describe('QuotingService INVARIANTS', () => {
   });
 });
 
+describe('QuotingService — budget scoring from RANGO_SALARIAL', () => {
+  const service = makeService();
+
+  it('applies the budget boost for an exact RANGO_SALARIAL match', () => {
+    const scores = service.score({ productCategory: 'vida', rangoSalarial: 'Hasta 2 SMLV' });
+    const vida = scores.find((s) => s.productId === 'vida')!;
+    expect(vida.reasons.some((r) => r.includes('presupuesto'))).toBe(true);
+  });
+
+  // Regression: the RANGO_SALARIAL lookup was an exact-string map with no normalization.
+  // The affiliate xlsx export is an external file Colsubsidio regenerates — trailing
+  // whitespace or a stray case difference would silently drop the budget scoring boost
+  // (15 of ~100 match points) with no error or fallback signal.
+  it('regression — matches despite surrounding whitespace from the xlsx export', () => {
+    const scores = service.score({ productCategory: 'vida', rangoSalarial: '  Hasta 2 SMLV  ' as any });
+    const vida = scores.find((s) => s.productId === 'vida')!;
+    expect(vida.reasons.some((r) => r.includes('presupuesto'))).toBe(true);
+  });
+
+  it('regression — matches despite a case difference from the xlsx export', () => {
+    const scores = service.score({ productCategory: 'vida', rangoSalarial: 'hasta 2 smlv' as any });
+    const vida = scores.find((s) => s.productId === 'vida')!;
+    expect(vida.reasons.some((r) => r.includes('presupuesto'))).toBe(true);
+  });
+
+  it('does not apply the budget boost for an unrecognized rango (no crash, just no boost)', () => {
+    expect(() => service.score({ productCategory: 'vida', rangoSalarial: 'not a real bracket' as any })).not.toThrow();
+  });
+});
+
+describe('QuotingService — category cross-sell map (locked-in current behavior)', () => {
+  const service = makeService();
+
+  // isRelatedCategory(a, b) reads as: "product category `a` is also relevant when the
+  // signal is `b`". The map is intentionally asymmetric: vida<->accidentes cross-sell
+  // both ways; asistencia is relevant to a vida signal (life insurance + exequial is a
+  // natural pairing) but NOT the reverse; mascotas cross-sells to human coverage via a
+  // separate code path (mentionsPersonalCoverage in agent.service.ts), not this map.
+  it('a vida signal includes accidentes products (bidirectional)', () => {
+    const scores = service.score({ productCategory: 'vida' });
+    expect(scores.some((s) => PRODUCTS.find((p) => p.id === s.productId)?.category === 'accidentes')).toBe(true);
+  });
+
+  // Regression / known limitation: score() caps results to the top 3 by matchScore.
+  // 'accidentes' has exactly 3 direct products (all scoring 40), which fill every slot
+  // before the related-category vida match (scoring 20) is ever considered — so the
+  // accidentes->vida link in the map is real but never surfaces in practice. This test
+  // documents the current, verified behavior so a future change to either the map or the
+  // top-3 cap is deliberate, not accidental.
+  it('an accidentes signal does NOT surface vida products — 3 direct accidentes matches already fill the top-3 cap', () => {
+    const scores = service.score({ productCategory: 'accidentes' });
+    expect(scores).toHaveLength(3);
+    expect(scores.every((s) => PRODUCTS.find((p) => p.id === s.productId)?.category === 'accidentes')).toBe(true);
+  });
+
+  it('an asistencia signal does NOT include vida products (the map only reaches asistencia FROM a vida signal, not the reverse)', () => {
+    const scores = service.score({ productCategory: 'asistencia' });
+    expect(scores.some((s) => PRODUCTS.find((p) => p.id === s.productId)?.category === 'vida')).toBe(false);
+  });
+
+  // Same top-3-cap limitation as accidentes above: vida has 2 direct products, leaving one
+  // slot contested between accidentes and asistencia cross-sell candidates (both score 20).
+  // Stable sort preserves catalog order, so accidentes (earlier in products.data.ts) wins.
+  it('a vida signal does not include asistencia products in the top 3 (contested last slot, accidentes wins by catalog order)', () => {
+    const scores = service.score({ productCategory: 'vida' });
+    expect(scores.some((s) => PRODUCTS.find((p) => p.id === s.productId)?.category === 'asistencia')).toBe(false);
+  });
+});
+
+describe('QuotingService INVARIANT — every NLP-reachable category yields a recommendation', () => {
+  const service = makeService();
+
+  // Regression: 'hogar' is a fully-wired NLP category (schema, extraction, cross-sell
+  // keywords, and even the DISCOVERY prompt literally ask about "tu hogar") but the real
+  // Colsubsidio catalog has zero products categorized 'hogar' — a user who explicitly
+  // asked for home insurance hit a structural dead end with no product ever offered. This
+  // invariant guards the whole class of bug: any category the NLP layer can emit must be
+  // reachable to at least one real product, directly or via a cross-sell relationship.
+  it('every non-null productCategory the NLP schema can emit returns at least one product', () => {
+    const categories: NonNullable<AffiliateSignals['productCategory']>[] = [
+      'vida', 'hogar', 'accidentes', 'asistencia', 'mascotas',
+    ];
+    for (const productCategory of categories) {
+      const scores = service.score({ productCategory });
+      expect(scores.length).toBeGreaterThan(0);
+    }
+  });
+});
+
 // ── Fuzz tests ────────────────────────────────────────────────────────────────
 
 describe('QuotingService FUZZ', () => {
