@@ -99,13 +99,36 @@ class EnvironmentVariables {
   ADMIN_CHAT_ID: string;
 }
 
+// Groups of env vars that must be configured all-or-nothing. Each is independently
+// @IsOptional() above so the feature can be entirely disabled, but a PARTIAL group (e.g.
+// a typo'd Railway var name) used to boot successfully and only fail at the first real
+// request, at runtime, instead of at startup where an operator would actually notice.
+const ALL_OR_NOTHING_GROUPS: { label: string; keys: (keyof EnvironmentVariables)[] }[] = [
+  { label: 'Wompi', keys: ['WOMPI_ENVIRONMENT', 'WOMPI_PRIVATE_KEY', 'WOMPI_EVENTS_SECRET'] },
+  { label: 'Celo', keys: ['CELO_RPC_URL', 'OPERATOR_PRIVATE_KEY', 'POLICY_LEDGER_ADDRESS'] },
+];
+
+function crossFieldErrors(validated: EnvironmentVariables): string[] {
+  const errors: string[] = [];
+  for (const group of ALL_OR_NOTHING_GROUPS) {
+    const set = group.keys.filter((key) => !!validated[key]);
+    if (set.length > 0 && set.length < group.keys.length) {
+      const missing = group.keys.filter((key) => !validated[key]);
+      errors.push(`${group.label} config is partial — set all of [${group.keys.join(', ')}] or none. Missing: ${missing.join(', ')}`);
+    }
+  }
+  return errors;
+}
+
 export function validate(config: Record<string, unknown>) {
   const validated = plainToInstance(EnvironmentVariables, config, {
     enableImplicitConversion: true,
   });
   const errors = validateSync(validated, { skipMissingProperties: false });
-  if (errors.length > 0) {
-    Logger.error(`Config validation failed:\n${errors.toString()}`);
+  const groupErrors = crossFieldErrors(validated);
+
+  if (errors.length > 0 || groupErrors.length > 0) {
+    Logger.error(`Config validation failed:\n${[...errors.map(String), ...groupErrors].join('\n')}`);
     process.exit(1);
   }
   return validated;
