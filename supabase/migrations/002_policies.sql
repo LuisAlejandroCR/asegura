@@ -24,10 +24,26 @@ CREATE TABLE IF NOT EXISTS policies (
   updated_at       timestamptz NOT NULL DEFAULT now()
 );
 
--- Safe to re-run: adds these columns if this migration already ran before they existed.
+-- Safe to re-run regardless of the table's actual current shape: CREATE TABLE IF NOT
+-- EXISTS is a no-op when the table already exists (e.g. the ad-hoc Sprint 4 table), so
+-- every column needs its own defensive ADD COLUMN IF NOT EXISTS — not just the ones
+-- added after the fact. Real bug: 'cedula' was missing from the live table because only
+-- pet_count/pets/document_type had this safety net, and PostgREST reported "Could not
+-- find the 'cedula' column of 'policies' in the schema cache" on every policy insert.
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS conversation_id uuid REFERENCES conversations(id);
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS product_id text;
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS cedula text;
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS document_type text;
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS nombre text;
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS email text;
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS monthly_premium numeric NOT NULL DEFAULT 0;
 ALTER TABLE policies ADD COLUMN IF NOT EXISTS pet_count integer;
 ALTER TABLE policies ADD COLUMN IF NOT EXISTS pets jsonb;
-ALTER TABLE policies ADD COLUMN IF NOT EXISTS document_type text;
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending_payment';
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS wompi_link_id text;
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS celo_tx_hash text;
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE policies ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
 
 CREATE INDEX IF NOT EXISTS policies_conversation_id_idx ON policies (conversation_id);
 
