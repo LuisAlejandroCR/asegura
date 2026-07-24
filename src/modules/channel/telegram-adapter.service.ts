@@ -94,6 +94,13 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
       body: form,
     });
 
+    if (!res.ok) {
+      // A non-2xx response with a valid-JSON error body would otherwise fall through to
+      // `data.text ?? ''`, indistinguishable from "the user said nothing" — throwing here
+      // routes it through normalize()'s existing catch, so the failure is at least logged.
+      throw new Error(`Groq transcription failed: ${res.status} ${await res.text()}`);
+    }
+
     const data = (await res.json()) as { text?: string };
     this.logger.log(`Voice transcribed: "${(data.text ?? '').slice(0, 80)}"`);
     return data.text ?? '';

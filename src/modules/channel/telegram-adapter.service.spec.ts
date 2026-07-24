@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { TelegramAdapter } from './telegram-adapter.service';
 
 function makeConfig(overrides: Record<string, string> = {}) {
@@ -60,5 +61,59 @@ describe('TelegramAdapter.normalize — unsupported media', () => {
     const result = await adapter.normalize(makeCtx({ text: 'hola' }));
     expect(result.unsupportedInput).toBeUndefined();
     expect(result.text).toBe('hola');
+  });
+});
+
+describe('TelegramAdapter — transcribeVoice error handling', () => {
+  const originalFetch = global.fetch;
+  afterEach(() => { global.fetch = originalFetch; });
+
+  function makeEnabledConfig() {
+    return {
+      get: jest.fn((key: string, def?: unknown) => {
+        const values: Record<string, string> = {
+          TELEGRAM_BOT_TOKEN: 'bot-token',
+          LLM_API_KEY: 'llm-key',
+        };
+        return values[key] ?? def;
+      }),
+    } as any;
+  }
+
+  function mockBotWithFile(adapter: TelegramAdapter) {
+    (adapter as any).bot = { api: { getFile: jest.fn().mockResolvedValue({ file_path: 'voice/file123.oga' }) } };
+  }
+
+  // Regression: a non-2xx response from Groq's transcription endpoint (rate limit, bad
+  // audio format, auth failure) was never checked — if the error body happened to be
+  // valid JSON without a `text` field, transcribeVoice silently returned '' as if the
+  // user had said nothing, with NO log at all distinguishing "transcription failed" from
+  // "user was silent". It must still degrade gracefully (empty text, no crash) but the
+  // failure has to be visible to whoever operates the bot.
+  it('regression — a non-2xx Groq response is logged as an error, not silently swallowed', async () => {
+    const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) }) // telegram file download
+      .mockResolvedValueOnce({ ok: false, status: 429, text: async () => 'rate limited' }) as any; // groq transcription
+
+    const adapter = new TelegramAdapter(makeEnabledConfig());
+    mockBotWithFile(adapter);
+
+    const result = await adapter.normalize(makeCtx({ voice: { file_id: 'voice-1', duration: 10 } }));
+    expect(result.text).toBe('');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('429'));
+    errorSpy.mockRestore();
+  });
+
+  it('returns the transcribed text on a successful 2xx Groq response', async () => {
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ text: 'hola quiero un seguro' }) }) as any;
+
+    const adapter = new TelegramAdapter(makeEnabledConfig());
+    mockBotWithFile(adapter);
+
+    const result = await adapter.normalize(makeCtx({ voice: { file_id: 'voice-1', duration: 10 } }));
+    expect(result.text).toBe('hola quiero un seguro');
   });
 });
