@@ -15,10 +15,14 @@ interface PolicyPdfData {
   // identify a real person and shouldn't be mislabeled on the printed certificate.
   documentType?: string;
   email?: string;
+  // The final, already-computed TOTAL locked in at issuance (see PolicyService.issue()
+  // / computeTotalPremium) — NOT a per-unit price. For a multi-pet policy this is
+  // basePremium × petCount, already multiplied; buildPremiumLines derives the per-pet
+  // display by dividing back down, it must never multiply this value again.
   monthlyPremium: number;
   issuedAt: Date;
-  // Number of pets covered — mascotas products are priced per pet (monthlyPremium is
-  // the per-unit price); when set and > 1, the premium box shows the multiplied total.
+  // Number of pets covered — mascotas products are priced per pet; when set and > 1,
+  // the premium box shows both the per-pet price (monthlyPremium / petCount) and the total.
   petCount?: number | null;
   // Per-pet identity (name, age, breed) — shown as a table when present, matching how
   // real pet-insurance certificates name each covered animal individually.
@@ -180,18 +184,22 @@ export class PdfService {
     doc.y = Math.max(lineY, startY + boxHeight) + 20;
   }
 
-  // Mirrors formatQuote()'s chat pricing display so the PDF and the chat quote always
-  // agree: monthlyPremium is the per-unit (per-pet) price; the total is derived here.
-  private buildPremiumLines(monthlyPremium: number, petCount?: number | null): { primary: string; total: string | null } {
-    const amount = `$${monthlyPremium.toLocaleString('es-CO')}`;
+  // Real bug found 2026-07-24: this used to treat its input as a PER-UNIT price and
+  // multiply it by petCount — but PolicyService.issue() stores monthly_premium as the
+  // ALREADY-multiplied total locked in at issuance (computeTotalPremium(product,
+  // petCount)), and generateFinalPdf forwards that same total straight through. Any real
+  // multi-pet policy's certificate showed a fabricated, doubly-multiplied total (e.g. a
+  // real $43.500 charge printed as $130.500). totalPremium here IS the final locked-in
+  // total; the per-pet line is derived by dividing back down, never multiplying again.
+  private buildPremiumLines(totalPremium: number, petCount?: number | null): { primary: string; total: string | null } {
     if (petCount && petCount > 1) {
-      const totalAmount = monthlyPremium * petCount;
+      const perPet = totalPremium / petCount;
       return {
-        primary: `${amount} por mascota`,
-        total: `Total para ${petCount} mascotas: $${totalAmount.toLocaleString('es-CO')}`,
+        primary: `$${perPet.toLocaleString('es-CO')} por mascota`,
+        total: `Total para ${petCount} mascotas: $${totalPremium.toLocaleString('es-CO')}`,
       };
     }
-    return { primary: amount, total: null };
+    return { primary: `$${totalPremium.toLocaleString('es-CO')}`, total: null };
   }
 
   // ── Pets table ─────────────────────────────────────────────────────────────
