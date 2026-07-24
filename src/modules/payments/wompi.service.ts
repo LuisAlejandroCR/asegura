@@ -1,7 +1,7 @@
 // wompi.service.ts: Wompi payment links and webhook validation
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'crypto';
+import { createHash, timingSafeEqual } from 'crypto';
 import { CreatePaymentLinkParams, CreatePaymentLinkResult, WompiWebhookEvent, WompiTransactionResult } from './types';
 
 @Injectable()
@@ -94,7 +94,15 @@ export class WompiService {
       .update(`${concatenated}${timestamp}${this.eventsSecret}`)
       .digest('hex');
 
-    return expectedChecksum === event.signature?.checksum;
+    const actualChecksum = event.signature?.checksum;
+    return typeof actualChecksum === 'string' && this.secureCompare(expectedChecksum, actualChecksum);
+  }
+
+  private secureCompare(a: string, b: string): boolean {
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+    if (bufA.length !== bufB.length) return false;
+    return timingSafeEqual(bufA, bufB);
   }
 
   private resolveProperty(data: unknown, dottedPath: string): string {

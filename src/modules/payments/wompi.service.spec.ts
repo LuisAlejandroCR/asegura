@@ -120,6 +120,25 @@ describe('WompiService — validateWebhookSignature', () => {
     const event = makeEvent({ secret: 'wrong_secret' });
     expect(service.validateWebhookSignature(event)).toBe(false);
   });
+
+  // Regression: checksum comparison uses crypto.timingSafeEqual, which throws on a
+  // buffer-length mismatch rather than comparing — a naive fix could crash on a short
+  // or long tampered checksum instead of just failing validation.
+  it('returns false (not throws) for a checksum shorter than a real sha256 digest', () => {
+    const service = new WompiService(makeConfig());
+    const event = makeEvent();
+    event.signature.checksum = 'ab';
+    expect(() => service.validateWebhookSignature(event)).not.toThrow();
+    expect(service.validateWebhookSignature(event)).toBe(false);
+  });
+
+  it('returns false (not throws) for a checksum longer than a real sha256 digest', () => {
+    const service = new WompiService(makeConfig());
+    const event = makeEvent();
+    event.signature.checksum = event.signature.checksum + 'extra-characters-here';
+    expect(() => service.validateWebhookSignature(event)).not.toThrow();
+    expect(service.validateWebhookSignature(event)).toBe(false);
+  });
 });
 
 describe('WompiService — validateWebhookSignature reads properties dynamically', () => {
