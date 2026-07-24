@@ -1284,6 +1284,33 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
     const saveCall = conversations.saveState.mock.calls[0];
     expect(saveCall?.[1]).toBe(ConversationState.QUOTE_PRESENTED);
   });
+
+  it('regression — attempts a quote instead of looping forever on the unanswerable "ages" question', async () => {
+    // Real live-test bug: once coverage and beneficiaries are both known (usually from a
+    // spurious Groq default — its schema example shows "beneficiaries": 1) but
+    // productCategory was never extracted, STATE_RESPONSES[DISCOVERY] asks "¿En qué rango
+    // de edades están?" forever — no field in the intent schema captures a human
+    // beneficiary's age (only petAge, for pets), and QuotingService never uses ages at
+    // all, so this question can NEVER be answered. Live conversation looped 4+ turns on
+    // exactly this ("todos", pet ages, "yo tengo 33", family ages) with productCategory
+    // stuck at null the entire time.
+    const anyProduct = PRODUCTS[0];
+    const { service, telegram, quoting, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { coverage: ['todos'], beneficiaries: 1 },
+      intent: makeIntent({ productCategory: null, coverage: [], beneficiaries: 1 }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: anyProduct,
+      score: { reasons: [], matchScore: 20, monthlyPremium: anyProduct.basePremium, priority: 'low', productId: anyProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Un perrito tiene 7 años, otro 3 y la gatita tiene 10, yo tengo 33.'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('rango de edades');
+    const saveCall = conversations.saveState.mock.calls[0];
+    expect(saveCall?.[1]).toBe(ConversationState.QUOTE_PRESENTED);
+  });
 });
 
 // ── DISCOVERY — lost-context resilience ──────────────────────────────────────

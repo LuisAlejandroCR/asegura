@@ -229,7 +229,17 @@ export class AgentService {
     // DISCOVERY loop whenever GroqNlpService.fallbackIntent() ran (it never fills
     // coverage at all — real live-test bug, e.g. "vida, accidentes y asistencia médica").
     const hasEnoughInfo = !!newContext.productCategory;
-    if (hasEnoughInfo) {
+
+    // Dead-end guard: STATE_RESPONSES[DISCOVERY]'s third tier ("¿En qué rango de edades
+    // están?") fires once coverage AND beneficiaries are both known — but no field in the
+    // NLP intent schema captures a human beneficiary's age (only petAge, for pets), and
+    // QuotingService never uses ages at all. If productCategory still never got extracted
+    // by this point, that question is permanently unanswerable — every reply loops back to
+    // it forever (real live-test bug: repeated indefinitely across "todos", ages, etc. with
+    // productCategory never set). Attempt a best-effort quote instead of asking it.
+    const stuckWithoutCategory = !hasEnoughInfo && !!newContext.coverage?.length && !!newContext.beneficiaries;
+
+    if (hasEnoughInfo || stuckWithoutCategory) {
       const quote = this.quoting.bestQuote(newContext as AffiliateSignals);
       if (quote) {
         newContext.quoteProductId = quote.product.id;
