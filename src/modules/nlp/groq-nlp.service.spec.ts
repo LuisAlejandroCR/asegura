@@ -89,6 +89,16 @@ describe('GroqNlpService.postProcess — pet type detection', () => {
     expect(postProcess(service, intent, 'somos dos perros, una gatica y yo').petType).toBe('mixto');
   });
 
+  // Real live-test bug (2026-07-24): "Somos dos perritos, una gata y yo." — hasDog only
+  // checked 'perro'/'perra'/'canino', missing the extremely common "perrito"/"perritos"
+  // diminutive (affectionate, everyday Spanish for dogs, especially in casual voice
+  // messages). This silently classified a mixed household as 'gato' only, dropping both
+  // dogs from the quote.
+  it('regression — recognizes the "perrito"/"perritos" diminutive as a dog, not just "perro"/"perra"', () => {
+    const intent = baseMascotas('gato');
+    expect(postProcess(service, intent, 'somos dos perritos, una gata y yo').petType).toBe('mixto');
+  });
+
   it('does not override petType when category is not mascotas', () => {
     const intent: InsuranceIntent = { productCategory: 'vida', petType: null, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null };
     expect(postProcess(service, intent, 'mi gato y mi perro').petType).toBeNull();
@@ -149,12 +159,41 @@ describe('GroqNlpService.fallbackIntent — intent extraction', () => {
     expect(fallback(service, 'mi michi y mi canino').petType).toBe('mixto');
   });
 
+  it('regression — detects mixto in fallback for the "perrito"/"perritos" diminutive', () => {
+    expect(fallback(service, 'somos dos perritos, una gata y yo').petType).toBe('mixto');
+  });
+
   it('returns null productCategory for unrelated text', () => {
     expect(fallback(service, 'hola buenos días').productCategory).toBeNull();
   });
 
   it('sets abandonIntent for "después"', () => {
     expect(fallback(service, 'lo veo después').abandonIntent).toBe(true);
+  });
+
+  // Real lesson from a second live-test conversation (2026-07-24): a user genuinely
+  // asking for help ("no lo sé, qué me ofreces?") could be misread as wanting to abandon
+  // the conversation entirely — abandonIntent used to fire on ANY message merely
+  // containing "no" as a substring, immediately routing to ABANDONED (see
+  // processMessage's very first check) and skipping the isNegative-driven "show
+  // alternatives" flow that already exists in each state handler for genuine product
+  // rejections. abandonIntent should only fire for a clear, deliberate exit signal.
+  it('regression — "no lo sé, qué me ofreces?" (asking for help) is not treated as abandonment', () => {
+    expect(fallback(service, 'no lo sé, qué me ofreces?').abandonIntent).toBe(false);
+  });
+
+  it('regression — rejecting a specific option ("no me interesa") is not treated as abandoning the whole conversation', () => {
+    // This is a rejection of ONE option — isNegative (handled separately, shows the
+    // next alternative) is the right signal, not abandonIntent (ends the conversation).
+    expect(fallback(service, 'no me interesa').abandonIntent).toBe(false);
+  });
+
+  it('regression — a name containing "no" as a substring (e.g. "Bruno") does not trigger abandonIntent', () => {
+    expect(fallback(service, 'se llama Bruno, tiene 3 años').abandonIntent).toBe(false);
+  });
+
+  it('still sets abandonIntent for a clear, deliberate exit phrase ("cancelar")', () => {
+    expect(fallback(service, 'quiero cancelar todo').abandonIntent).toBe(true);
   });
 });
 
@@ -292,6 +331,7 @@ describe('GroqNlpService.postProcess — petResolution extraction', () => {
     ['mi lomito', 'perro'],
     ['mi perrita', 'perro'],
     ['el canino', 'perro'],
+    ['mi perrito', 'perro'],
   ])('"%s" → petResolution perro', (text, expected) => {
     expect(postProcess(service, baseMascotas(), text).petResolution).toBe(expected);
   });
@@ -411,6 +451,27 @@ describe('GroqNlpService.postProcess — isAffirmative question-mark guardrail',
   it('does not override isAffirmative when there is no question mark', () => {
     expect(postProcess(service, affirmativeIntent(), 'sí, me interesa').isAffirmative).toBe(true);
   });
+
+  // Real live-test bug (2026-07-24): during a pet-details correction loop, "¿Sí está
+  // bien?" and "sí?" got forced to isAffirmative=false by this same guardrail — but
+  // these are genuine confirmations phrased as a tag question (a common Spanish
+  // pattern), not a follow-up question like "¿me interesan los descuentos?". The user
+  // could never confirm and leave the correction loop, and the corrupted pet data
+  // (a duplicated pet, a missing one) made it all the way into the final, paid policy.
+  it('regression — a standalone "sí" is NOT overridden even with a trailing question mark ("sí?")', () => {
+    expect(postProcess(service, affirmativeIntent(), 'sí?').isAffirmative).toBe(true);
+  });
+
+  it('regression — "¿Sí está bien?" (confirmation tag question) stays affirmative', () => {
+    expect(postProcess(service, affirmativeIntent(), '¿Sí está bien?').isAffirmative).toBe(true);
+  });
+
+  it('still overrides when the question has no standalone sí/si word, even if it contains "si" as a substring', () => {
+    // "asistencia" contains "si" as a substring but not as its own word — must not
+    // accidentally exempt an unrelated question from the guardrail.
+    const result = postProcess(service, affirmativeIntent(), '¿la asistencia veterinaria qué cubre?');
+    expect(result.isAffirmative).toBe(false);
+  });
 });
 
 describe('GroqNlpService.fallbackIntent — isAffirmative question-mark guardrail', () => {
@@ -422,6 +483,10 @@ describe('GroqNlpService.fallbackIntent — isAffirmative question-mark guardrai
 
   it('still marks isAffirmative true for plain confirmations without a question mark', () => {
     expect(fallback(service, 'sí, me interesa').isAffirmative).toBe(true);
+  });
+
+  it('regression — "¿Sí está bien?" stays affirmative in the fallback path too', () => {
+    expect(fallback(service, '¿Sí está bien?').isAffirmative).toBe(true);
   });
 });
 
@@ -475,10 +540,35 @@ describe('GroqNlpService.postProcess — deterministic petCount extraction', () 
     expect(postProcess(service, intent, 'un gato y dos perros').petCount).toBe(3);
   });
 
-  it('recognizes "un"/"una" as 1', () => {
+  // Regression: postProcess mutates the intent object it's given (returns the same
+  // reference), so reusing ONE intent object across two assertions in the same test lets
+  // the second assertion coincidentally pass on the STALE value left by the first,
+  // masking a real extraction failure. "una gata" never actually matched the old
+  // masculine-only "gatos?" pattern — the second assertion below only ever passed
+  // because the first call had already set petCount to 1. Each case now gets its own
+  // fresh intent object.
+  it('recognizes "un" as 1', () => {
     const intent = { ...baseMascotas(), petCount: null };
     expect(postProcess(service, intent, 'tengo un perro').petCount).toBe(1);
+  });
+
+  it('regression — recognizes "una" + a feminine noun ("gata") as 1, not just masculine "gato"', () => {
+    const intent = { ...baseMascotas(), petCount: null };
     expect(postProcess(service, intent, 'tengo una gata').petCount).toBe(1);
+  });
+
+  // Real live-test bug (2026-07-24): "Somos dos perritos, una gata y yo." — neither
+  // "perritos" (diminutive) nor "gata" (feminine) matched the old masculine/canonical-only
+  // pattern, so this exact live message got NO deterministic count at all, falling back
+  // fully to the LLM's unvalidated guess.
+  it('regression — sums diminutive/feminine pet nouns together ("dos perritos, una gata" → 3)', () => {
+    const intent = { ...baseMascotas(), petCount: null };
+    expect(postProcess(service, intent, 'somos dos perritos, una gata y yo').petCount).toBe(3);
+  });
+
+  it('recognizes the "gatico"/"gatica" Colombian diminutive variant too', () => {
+    const intent = { ...baseMascotas(), petCount: null };
+    expect(postProcess(service, intent, 'tengo dos gaticas').petCount).toBe(2);
   });
 
   it('leaves the LLM value untouched when the text has no explicit count phrase', () => {

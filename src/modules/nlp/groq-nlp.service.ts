@@ -68,6 +68,13 @@ isAffirmative: true cuando el usuario expresa acuerdo, confirmación, interés p
 isNegative: true cuando el usuario expresa rechazo, deseo de cambiar, o desinterés (ej: "no", "paso", "otro", "otra", "diferente", "no me interesa", "quizás después", "ninguno")
 Ambos pueden ser false si el mensaje es neutral o informativo.
 
+abandonIntent: true SOLO cuando el usuario expresa una intención clara y deliberada de
+terminar TODA la conversación (ej: "cancelar", "olvídalo", "ya no quiero nada", "salir",
+"déjalo así", "lo veo después/luego"). NUNCA lo actives solo porque el mensaje contiene la
+palabra "no" — "no me interesa este" (rechaza UNA opción, usa isNegative en su lugar),
+"no lo sé, ¿qué me ofreces?" (pide ayuda) y "se llama Bruno" (un nombre) NO son abandono.
+Ante la duda, abandonIntent es false.
+
 wantsAlternative: true cuando el usuario quiere ver otra opción de seguro distinta (ej: "otro", "muéstrame más", "diferente", "hay otra opción", "cambia", "siguiente cotización", "no ese, otro")
 petCount: número total de mascotas mencionadas explícitamente (ej: "un gato y dos perros" → 3; "mi perro" → 1; si no especifica → null).
 petResolution: cuando el usuario responde a la pregunta "¿para el gato o los perros?":
@@ -118,7 +125,11 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     // petResolution) — missing here silently overrode a correct mixto classification back
     // to a single species, dropping a pet entirely from a multi-pet quote (real bug).
     const hasCat = lower.includes('gato') || lower.includes('gata') || lower.includes('gatic') || lower.includes('michi') || lower.includes('felino') || lower.includes('minino');
-    const hasDog = lower.includes('perro') || lower.includes('perra') || lower.includes('canino');
+    // "perrit" covers perrito/perrita/perritos/perritas — the extremely common
+    // affectionate diminutive for dogs, especially in casual voice messages. Real
+    // live-test bug: "Somos dos perritos, una gata y yo." matched no dog keyword at all
+    // (not a substring of "perro"), silently classifying a mixed household as cats-only.
+    const hasDog = lower.includes('perro') || lower.includes('perra') || lower.includes('canino') || lower.includes('perrit');
 
     // petType from keywords: runs when Groq already classified this as mascotas, OR when
     // Groq returned productCategory=null (ambiguous) and the text itself names a pet.
@@ -150,11 +161,19 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       }
     }
 
-    // Guardrail: a message containing a question mark is asking something, not confirming.
-    // Substring keyword matching (e.g. "me interesan" contains "me interesa") can make the LLM
-    // or fallback classify a genuine follow-up question as isAffirmative=true, fast-forwarding
-    // straight to purchase confirmation when the user hadn't actually confirmed anything.
-    if (intent.isAffirmative && (text.includes('?') || text.includes('¿'))) {
+    // Guardrail: a message containing a question mark is usually asking something, not
+    // confirming. Substring keyword matching (e.g. "me interesan" contains "me interesa")
+    // can make the LLM or fallback classify a genuine follow-up question as
+    // isAffirmative=true, fast-forwarding straight to purchase confirmation when the user
+    // hadn't actually confirmed anything.
+    //
+    // Real live-test bug (2026-07-24): this blanket rule also caught "¿Sí está bien?" and
+    // "sí?" during a pet-details correction loop — Spanish routinely tags a confirmation
+    // with a question mark ("sí?", "¿verdad?"), and this isn't the same thing as an
+    // open-ended follow-up question. A message with its own standalone "sí"/"si" word is
+    // exempted; "me interesan" still gets caught because "si" only appears as a substring
+    // of "interesan", never as its own word.
+    if (intent.isAffirmative && (text.includes('?') || text.includes('¿')) && !GroqNlpService.hasStandaloneSi(text)) {
       intent.isAffirmative = false;
     }
 
@@ -179,8 +198,21 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10,
   };
 
+  // A standalone "sí"/"si" word means the question mark is a confirmation tag ("¿sí?",
+  // "sí está bien?"), not a real question — "asistencia" must not match. Plain \b doesn't
+  // work here: JS regex's \w (and therefore \b) isn't accent-aware, so "í" breaks a
+  // trailing \b. Checking neighboring characters aren't Latin letters instead.
+  private static hasStandaloneSi(text: string): boolean {
+    return /(^|[^a-záéíóúñ])s[íi]($|[^a-záéíóúñ])/i.test(text);
+  }
+
+  // Real live-test bug (2026-07-24): "Somos dos perritos, una gata y yo." matched
+  // nothing — the noun alternation only covered the masculine/canonical "perro(s)" and
+  // "gato(s)" forms, missing the feminine ("perra", "gata") and the extremely common
+  // diminutives ("perrito", "gatico"/"gatica" — a Colombian variant). This exact message
+  // got no deterministic count at all, falling back fully to the LLM's unvalidated guess.
   private extractPetCountFromText(lower: string): number | null {
-    const pattern = /\b(\d+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+(mascotas?|perros?|gatos?)\b/g;
+    const pattern = /\b(\d+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+(mascotas?|perr(?:os?|itos?|itas?|as?)|gat(?:os?|itos?|itas?|icos?|icas?|as?))\b/g;
     let total = 0;
     let found = false;
     let match: RegExpExecArray | null;
@@ -214,7 +246,7 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     let petType: InsuranceIntent['petType'] = null;
     if (category === 'mascotas') {
       const hasCat = lower.includes('gato') || lower.includes('gata') || lower.includes('gatic') || lower.includes('michi') || lower.includes('felino') || lower.includes('minino');
-      const hasDog = lower.includes('perro') || lower.includes('canino');
+      const hasDog = lower.includes('perro') || lower.includes('canino') || lower.includes('perrit');
       if (hasCat && hasDog) petType = 'mixto';
       else if (hasCat) petType = 'gato';
       else if (hasDog) petType = 'perro';
@@ -227,10 +259,11 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       coverage: [],
       beneficiaries: 1,
       urgency: lower.includes('urgente') || lower.includes('ya') ? 'immediate' : 'exploring',
-      abandonIntent: lower.includes('no') || lower.includes('después') || lower.includes('luego'),
+      abandonIntent: this.isAbandonText(lower),
       priceObjection: lower.includes('caro') || lower.includes('precio'),
       // A question mark means the user is asking, not confirming — see postProcess for context.
-      isAffirmative: this.isAffirmativeText(lower) && !lower.includes('?') && !lower.includes('¿'),
+      isAffirmative: this.isAffirmativeText(lower)
+        && (!lower.includes('?') && !lower.includes('¿') || GroqNlpService.hasStandaloneSi(lower)),
       isNegative: this.isNegativeText(lower),
       wantsAlternative: this.wantsAlternativeText(lower),
       petResolution: this.extractPetResolution(lower),
@@ -264,6 +297,22 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     return affirmatives.some((a) => lower.includes(a));
   }
 
+  // A deliberate, explicit signal to leave/stop the WHOLE conversation — real live-test
+  // bug (2026-07-24): this used to be any message merely containing the substring "no"
+  // ANYWHERE (matching "no lo sé, qué me ofreces?" — a request for help — "Bruno", and
+  // any other unrelated text), which immediately ended the conversation via
+  // processMessage's abandonIntent check, before the user ever got to say what they
+  // wanted. Rejecting one specific product already has its own signal (isNegative /
+  // wantsAlternative, handled per-state to show the next alternative) — abandonIntent
+  // must be reserved for an unambiguous "I'm done", not overload plain "no".
+  private isAbandonText(lower: string): boolean {
+    const exitPhrases = [
+      'cancelar', 'olvídalo', 'olvidalo', 'ya no quiero', 'no quiero más', 'no quiero mas',
+      'salir', 'después', 'luego',
+    ];
+    return exitPhrases.some((p) => lower.includes(p));
+  }
+
   private isNegativeText(lower: string): boolean {
     const negatives = ['no', 'paso', 'otro', 'otra', 'diferente', 'no me interesa',
       'ninguno', 'ninguna', 'después', 'luego'];
@@ -279,7 +328,7 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
 
   private extractPetResolution(lower: string): 'gato' | 'perro' | 'all' | null {
     const hasCat = lower.includes('gato') || lower.includes('michi') || lower.includes('felino') || lower.includes('gatita') || lower.includes('minino');
-    const hasDog = lower.includes('perro') || lower.includes('canino') || lower.includes('lomito') || lower.includes('peludo') || lower.includes('perrita');
+    const hasDog = lower.includes('perro') || lower.includes('canino') || lower.includes('lomito') || lower.includes('peludo') || lower.includes('perrit');
     const hasAll = lower.includes('todos') || lower.includes('ambos') || lower.includes('los dos') || lower.includes('las dos') || lower.includes('para todos');
 
     if (hasCat && !hasDog) return 'gato';
