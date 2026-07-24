@@ -235,6 +235,25 @@ export class AgentService {
       };
     }
 
+    // Must know the species before quoting mascotas — the real catalog has cat-only and
+    // dog-only products (medicina-prepagada-gatos / medicina-prepagada-perros) alongside
+    // a generic one; quoting blind risks missing the more specific, better-matching
+    // product and skips exactly the per-profile personalization judges look for. Real
+    // live-test gap: "Tengo dos mascotas y yo." went straight to a quote without the
+    // agent ever learning cat/dog/mixed.
+    //
+    // Gated on `!newContext.coverage?.length` too, reusing the same "coverage already set
+    // means pet resolution already happened" signal used elsewhere in this method — the
+    // mixto clarification's "para todos" answer deliberately resolves petType back to
+    // null (quote generically, don't filter by species) and always sets coverage, so
+    // this must not re-ask in that case or after the coverage-survived-a-restart path.
+    if (newContext.productCategory === 'mascotas' && !newContext.petType && !newContext.coverage?.length) {
+      return {
+        text: '¿Tus mascotas son gatos, perros, o tienes de ambos? Así te muestro la cobertura correcta.',
+        context: newContext,
+      };
+    }
+
     // coverage is NOT required to score a product — QuotingService.evaluateProduct only
     // needs productCategory to return a matchScore > 0; coverage is a bonus there, not a
     // gate. Requiring it here used to strand every non-mascota quote in an infinite
@@ -437,6 +456,11 @@ export class AgentService {
   // Common backchannel/acknowledgment words a voice transcription can produce in
   // response to the bot's OWN previous message — never a real person's full name.
   private static readonly FILLER_WORDS = ['gracias', 'ok', 'okay', 'vale', 'listo', 'dale', 'bueno', 'ya'];
+
+  // Single source for the Wompi payment link's expiry — was duplicated as two separate
+  // literal `30`s (the API call and the user-facing message text), risking drift if one
+  // changed without the other.
+  private static readonly PAYMENT_LINK_EXPIRY_MINUTES = 30;
 
   private isFillerWord(text: string): boolean {
     const normalized = text.trim().toLowerCase().replace(/[.,!¡¿?]/g, '');
@@ -755,9 +779,24 @@ export class AgentService {
     const products = productIds
       .map((id) => PRODUCTS.find((p) => p.id === id))
       .filter((p): p is InsuranceProduct => !!p);
-    const amountCOP = products.length
-      ? products.reduce((sum, p) => sum + computeTotalPremium(p, context.petCount), 0)
-      : 20000;
+
+    if (products.length === 0) {
+      // Real gap found in a hardcoded-values audit: this used to silently fall back to
+      // charging an arbitrary flat $20.000 COP via Wompi when no product could be
+      // resolved (e.g. a stale/invalid quoteProductId) — a real customer could be
+      // charged an amount unrelated to anything they were ever quoted. Abort instead: no
+      // policy is issued in this state either, so there is nothing legitimate to charge
+      // for. Reset back to DISCOVERY so the user can restart cleanly rather than getting
+      // stuck confirming a purchase that no longer resolves to anything.
+      this.logger.error(`createPaymentLinkFlow: no resolvable product for conversation ${convId} — aborting payment link creation`);
+      return {
+        text: 'Tuve un problema retomando tu cotización. Escríbeme de nuevo qué seguro te interesa y lo resolvemos.',
+        nextState: ConversationState.DISCOVERY,
+        context: { ...context, quoteProductId: undefined, selectedProductIds: undefined, policyId: undefined, policyIds: undefined },
+      };
+    }
+
+    const amountCOP = products.reduce((sum, p) => sum + computeTotalPremium(p, context.petCount), 0);
     const productName = products.length > 1
       ? `${products.length} seguros Colsubsidio`
       : (products[0]?.name ?? 'Seguro Colsubsidio');
@@ -767,7 +806,7 @@ export class AgentService {
         policyId: context.policyId ?? convId,
         productName,
         amountCOP,
-        expiresInMinutes: 30,
+        expiresInMinutes: AgentService.PAYMENT_LINK_EXPIRY_MINUTES,
       });
 
       // Persist immediately on EVERY policy in this purchase — the webhook can only find
@@ -783,7 +822,7 @@ export class AgentService {
         `🔒 Tu pago es 100% seguro a través de Wompi — plataforma oficial de Bancolombia.\n\n` +
         `🔗 [Pagar ${amountStr} — Link seguro Wompi](${checkoutUrl})\n\n` +
         `Acepta tarjeta débito/crédito, Nequi y PSE.\n\n` +
-        `⏱️ El link vence en 30 minutos.\n\n` +
+        `⏱️ El link vence en ${AgentService.PAYMENT_LINK_EXPIRY_MINUTES} minutos.\n\n` +
         `En cuanto tu pago sea confirmado, te aviso aquí automáticamente con tu póliza.`
       );
 

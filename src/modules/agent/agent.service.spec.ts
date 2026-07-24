@@ -536,6 +536,26 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     expect(sentText).not.toContain('¿Listo para generar');
   });
 
+  it('regression — aborts instead of charging a hardcoded fallback amount when no product resolves', async () => {
+    // Real gap found in a hardcoded-values audit: createPaymentLinkFlow used to fall
+    // back to a flat, arbitrary $20.000 COP charge via Wompi whenever no product could
+    // be resolved (e.g. a stale/invalid quoteProductId survived into DATA_CAPTURE with
+    // no matching catalog entry) — a customer could be charged an amount unrelated to
+    // anything they were ever quoted. Must abort — no policy is issued in this state
+    // either, so there is nothing legitimate to charge for.
+    const { service, telegram, wompi, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com' }, // no quoteProductId at all
+      intent: makeIntent({ isAffirmative: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    expect(wompi.createPaymentLink).not.toHaveBeenCalled();
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DISCOVERY, expect.anything(),
+    );
+  });
+
   it('persists checkoutUrl and wompi_link_id in the same turn as the DATA_CAPTURE confirmation', async () => {
     const { service, telegram, conversations, policy } = buildService({
       state: ConversationState.DATA_CAPTURE,
@@ -1216,10 +1236,13 @@ describe('AgentService — DISCOVERY productCategory inference', () => {
 // ── DISCOVERY — pet count + quote clarity ────────────────────────────────────
 
 describe('AgentService — DISCOVERY pet count and quote pricing', () => {
+  // petType: 'perro' below — these 3 tests are about petCount/pricing propagation, not
+  // species resolution, so species is already known going in. The "species unknown"
+  // case (which used to quote blind) is its own describe block below.
   it('petCount from intent is saved to context', async () => {
     const { service, conversations, telegram, quoting } = buildService({
       state: ConversationState.DISCOVERY,
-      context: { petType: null, coverage: ['medicina veterinaria'], productCategory: 'mascotas' },
+      context: { petType: 'perro', coverage: ['medicina veterinaria'], productCategory: 'mascotas' },
       intent: makeIntent({ productCategory: 'mascotas', petCount: 3 }),
     });
     const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
@@ -1233,7 +1256,7 @@ describe('AgentService — DISCOVERY pet count and quote pricing', () => {
   it('quote for pet product always labels price as "por mascota"', async () => {
     const { service, telegram, quoting } = buildService({
       state: ConversationState.DISCOVERY,
-      context: { petType: null, coverage: ['medicina veterinaria'], productCategory: 'mascotas', petCount: 3 },
+      context: { petType: 'perro', coverage: ['medicina veterinaria'], productCategory: 'mascotas', petCount: 3 },
       intent: makeIntent({ productCategory: 'mascotas' }),
     });
     const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
@@ -1247,7 +1270,7 @@ describe('AgentService — DISCOVERY pet count and quote pricing', () => {
   it('quote for pet product with petCount=3 shows total monthly price', async () => {
     const { service, telegram, quoting } = buildService({
       state: ConversationState.DISCOVERY,
-      context: { petType: null, coverage: ['medicina veterinaria'], productCategory: 'mascotas', petCount: 3 },
+      context: { petType: 'perro', coverage: ['medicina veterinaria'], productCategory: 'mascotas', petCount: 3 },
       intent: makeIntent({ productCategory: 'mascotas' }),
     });
     const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!; // basePremium: 14500
@@ -1271,6 +1294,54 @@ describe('AgentService — DISCOVERY pet count and quote pricing', () => {
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText.toLowerCase()).toMatch(/mascota|para ti|también/);
+  });
+});
+
+// ── DISCOVERY — must know species before quoting mascotas ────────────────────
+// Real live-test gap: "Tengo dos mascotas y yo." went straight to a quote without the
+// agent ever learning cat/dog/mixed. The real catalog has species-restricted products
+// (medicina-prepagada-gatos / medicina-prepagada-perros) alongside a generic one —
+// quoting blind risks missing the more specific, better-matching product and skips the
+// per-profile personalization judges look for ("¿por qué este seguro para esta persona?").
+
+describe('AgentService — DISCOVERY asks species before quoting mascotas', () => {
+  it('regression — "Tengo dos mascotas y yo" asks cat/dog/mixed instead of quoting blind', async () => {
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ productCategory: 'mascotas', petType: null, petCount: 2 }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('tengo dos mascotas y yo'));
+    await service.handleMessage({});
+    expect(quoting.bestQuote).not.toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/gatos.*perros|perros.*gatos/);
+  });
+
+  it('does not ask again once species is already known', async () => {
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { petType: 'perro', productCategory: 'mascotas' },
+      intent: makeIntent({ productCategory: 'mascotas' }),
+    });
+    const petProduct = PRODUCTS.find(p => p.id === 'medicina-prepagada-perros')!;
+    quoting.bestQuote.mockReturnValue({ product: petProduct, score: { reasons: [], matchScore: 60, monthlyPremium: petProduct.basePremium, priority: 'high', productId: petProduct.id } });
+    telegram.normalize.mockResolvedValue(makeMessage('cuánto cuesta'));
+    await service.handleMessage({});
+    expect(quoting.bestQuote).toHaveBeenCalled();
+  });
+
+  it('does not block the existing mixto (which-pet) clarification, which already implies species is known', async () => {
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ productCategory: 'mascotas', petType: 'mixto' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('tengo un gato y un perro'));
+    await service.handleMessage({});
+    expect(quoting.bestQuote).not.toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('¿Para cuál');
   });
 });
 
