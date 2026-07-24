@@ -158,7 +158,38 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       intent.isAffirmative = false;
     }
 
+    // Real live-test bug: "Tengo dos mascotas y yo." was quoted and charged for 3
+    // mascotas — petCount had no deterministic cross-check, unlike petType/petResolution
+    // above, so an 8B model's miscount went straight through to the price
+    // (computeTotalPremium multiplies basePremium by petCount). An explicit, unambiguous
+    // count in the raw text always wins over whatever the LLM returned, same override
+    // policy as petType/petResolution.
+    const explicitPetCount = this.extractPetCountFromText(lower);
+    if (explicitPetCount !== null) intent.petCount = explicitPetCount;
+
     return intent;
+  }
+
+  // Sums every "<number> mascota(s)/perro(s)/gato(s)" phrase found — "un gato y dos
+  // perros" must total 3, not just match the first phrase found (see Groq's own JSON
+  // schema example in the system prompt above). Returns null when no explicit count
+  // phrase is present at all, so callers can tell "no signal" apart from "zero pets".
+  private static readonly PET_NUMBER_WORDS: Record<string, number> = {
+    un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5,
+    seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10,
+  };
+
+  private extractPetCountFromText(lower: string): number | null {
+    const pattern = /\b(\d+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+(mascotas?|perros?|gatos?)\b/g;
+    let total = 0;
+    let found = false;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(lower)) !== null) {
+      found = true;
+      const raw = match[1];
+      total += /^\d+$/.test(raw) ? parseInt(raw, 10) : GroqNlpService.PET_NUMBER_WORDS[raw];
+    }
+    return found ? total : null;
   }
 
   private fallbackIntent(text: string): InsuranceIntent {
@@ -192,6 +223,7 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     return {
       productCategory: category,
       petType,
+      petCount: this.extractPetCountFromText(lower),
       coverage: [],
       beneficiaries: 1,
       urgency: lower.includes('urgente') || lower.includes('ya') ? 'immediate' : 'exploring',

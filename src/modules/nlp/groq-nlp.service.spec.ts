@@ -443,3 +443,62 @@ describe('GroqNlpService.fallbackIntent — Colombian slang affirmatives', () =>
     expect(fallback(service, text).isAffirmative).toBe(true);
   });
 });
+
+// ── Deterministic petCount extraction (2026-07-24 regression) ──────────────────
+// Real live-test bug: "Tengo dos mascotas y yo." was quoted and charged for 3 mascotas,
+// not 2 — petCount had zero deterministic validation, unlike petType/petResolution
+// (both cross-checked against the raw text regardless of what the LLM returned).
+// petCount directly multiplies the price (computeTotalPremium), so trusting an 8B
+// model's free-form count has real financial impact. Same override policy as petType:
+// an explicit, unambiguous count in the text always wins over whatever the LLM said.
+
+describe('GroqNlpService.postProcess — deterministic petCount extraction', () => {
+  const service = makeService();
+
+  it('regression — overrides an LLM-hallucinated count when the text explicitly states a different one', () => {
+    const intent = { ...baseMascotas(), petCount: 3 };
+    expect(postProcess(service, intent, 'tengo dos mascotas y yo').petCount).toBe(2);
+  });
+
+  it('sets petCount from an explicit word-number when the LLM returned null', () => {
+    const intent = { ...baseMascotas(), petCount: null };
+    expect(postProcess(service, intent, 'tengo dos mascotas').petCount).toBe(2);
+  });
+
+  it('recognizes digit form ("4 mascotas")', () => {
+    const intent = { ...baseMascotas(), petCount: null };
+    expect(postProcess(service, intent, 'tengo 4 mascotas').petCount).toBe(4);
+  });
+
+  it('sums mixed species mentioned together ("un gato y dos perros" → 3)', () => {
+    const intent = { ...baseMascotas(), petCount: null };
+    expect(postProcess(service, intent, 'un gato y dos perros').petCount).toBe(3);
+  });
+
+  it('recognizes "un"/"una" as 1', () => {
+    const intent = { ...baseMascotas(), petCount: null };
+    expect(postProcess(service, intent, 'tengo un perro').petCount).toBe(1);
+    expect(postProcess(service, intent, 'tengo una gata').petCount).toBe(1);
+  });
+
+  it('leaves the LLM value untouched when the text has no explicit count phrase', () => {
+    const intent = { ...baseMascotas(), petCount: 1 };
+    expect(postProcess(service, intent, 'mi perro está bien').petCount).toBe(1);
+  });
+});
+
+describe('GroqNlpService.fallbackIntent — deterministic petCount extraction', () => {
+  const service = makeService();
+
+  it('regression — the fallback path never set petCount at all before this fix', () => {
+    expect(fallback(service, 'tengo dos gatos').petCount).toBe(2);
+  });
+
+  it('sums mixed species in the fallback path too', () => {
+    expect(fallback(service, 'un gato y dos perros').petCount).toBe(3);
+  });
+
+  it('returns null when no explicit count is stated', () => {
+    expect(fallback(service, 'mi perro está bien').petCount).toBeNull();
+  });
+});
