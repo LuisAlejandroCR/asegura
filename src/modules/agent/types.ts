@@ -45,6 +45,10 @@ interface ConversationContext {
   // wrong — the next message is interpreted as naming it, so only that field resets
   // instead of forcing cédula+nombre+correo to be redone from scratch.
   awaitingCorrectionField?: boolean;
+  // Set when the cross-sell offer (vida/accidentes/asistencia, after a pet purchase) was
+  // just presented and is explicitly waiting for the user to pick a mode — "uno por uno"
+  // or "todas a la vez" — before a specific category is named.
+  crossSellOffered?: boolean;
   policyId?: string;
   checkoutUrl?: string;
 }

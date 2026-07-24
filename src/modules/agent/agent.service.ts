@@ -223,6 +223,22 @@ export class AgentService {
       };
     }
 
+    // The cross-sell offer explicitly asked "uno por uno, o los tres a la vez?" — resolve
+    // that choice before falling through to the normal single-category flow. Naming a
+    // specific category directly (handled above) already set newContext.productCategory,
+    // so this only fires while that's still unset — a genuine mode choice, not a category.
+    if (context.crossSellOffered && !newContext.productCategory) {
+      if (this.mentionsAllAtOnce(text)) {
+        return this.quoteAllPersonalCategories(context);
+      }
+      if (this.mentionsOneAtATime(text)) {
+        return {
+          text: '¿Cuál te interesa primero: vida, accidentes o asistencia médica?',
+          context: newContext,
+        };
+      }
+    }
+
     // coverage is NOT required to score a product — QuotingService.evaluateProduct only
     // needs productCategory to return a matchScore > 0; coverage is a bonus there, not a
     // gate. Requiring it here used to strand every non-mascota quote in an infinite
@@ -240,6 +256,7 @@ export class AgentService {
     const stuckWithoutCategory = !hasEnoughInfo && !!newContext.coverage?.length && !!newContext.beneficiaries;
 
     if (hasEnoughInfo || stuckWithoutCategory) {
+      newContext.crossSellOffered = false;
       const quote = this.quoting.bestQuote(newContext as AffiliateSignals);
       if (quote) {
         newContext.quoteProductId = quote.product.id;
@@ -307,11 +324,11 @@ export class AgentService {
       }
       return {
         text: (
-          '¡Claro! Además de tus mascotas, puedo cotizarte algo para ti — vida, accidentes o asistencia médica.\n\n' +
-          '¿Cuál te interesa, o cuéntame qué es lo que más te preocupa proteger?'
+          '¡Claro! Además de tus mascotas, tengo seguros de vida, accidentes y asistencia médica para ti.\n\n' +
+          '¿Los quieres ver uno por uno, o te muestro los tres a la vez?'
         ),
         nextState: ConversationState.DISCOVERY,
-        context: { ...context, productCategory: undefined, coverage: undefined, petType: undefined, petCount: undefined, shownProductIds: [] },
+        context: { ...context, productCategory: undefined, coverage: undefined, petType: undefined, petCount: undefined, shownProductIds: [], crossSellOffered: true },
       };
     }
 
@@ -386,6 +403,45 @@ export class AgentService {
     const personalPhrases = ['para mí', 'para mi', 'y yo'];
     const humanCategories = ['vida', 'accidentes', 'accidente', 'salud', 'hogar'];
     return personalPhrases.some((p) => text.includes(p)) || humanCategories.some((c) => text.includes(c));
+  }
+
+  private mentionsAllAtOnce(text: string): boolean {
+    const phrases = ['todos', 'todas', 'los tres', 'las tres', 'de una vez', 'a la vez', 'al mismo tiempo', 'juntos', 'juntas'];
+    return phrases.some((p) => text.includes(p));
+  }
+
+  private mentionsOneAtATime(text: string): boolean {
+    const phrases = ['uno por uno', 'uno a la vez', 'una por una', 'una a la vez', 'de a uno', 'por separado', 'uno primero'];
+    return phrases.some((p) => text.includes(p));
+  }
+
+  // Cross-sell "todas a la vez" resolution: score vida/accidentes/asistencia independently
+  // (rather than a single bestQuote call, which only ever returns one product) and send
+  // each as its own message.
+  private quoteAllPersonalCategories(context: ConversationContext): ProcessResult {
+    const categories: NonNullable<InsuranceIntent['productCategory']>[] = ['vida', 'accidentes', 'asistencia'];
+    const quotes = categories
+      .map((category) => this.quoting.bestQuote({ ...context, productCategory: category } as AffiliateSignals))
+      .filter((q): q is NonNullable<ReturnType<QuotingService['bestQuote']>> => !!q);
+
+    if (quotes.length === 0) {
+      return {
+        text: 'No encontré opciones para ese perfil. ¿Quieres que busquemos algo diferente?',
+        context: { ...context, crossSellOffered: false },
+      };
+    }
+
+    return {
+      texts: quotes.map((q) => this.formatQuote(q.product, q.score, context)),
+      nextState: ConversationState.QUOTE_PRESENTED,
+      context: {
+        ...context,
+        productCategory: quotes[0].product.category,
+        quoteProductId: quotes[0].product.id,
+        shownProductIds: quotes.map((q) => q.product.id),
+        crossSellOffered: false,
+      },
+    };
   }
 
   // Common backchannel/acknowledgment words a voice transcription can produce in
