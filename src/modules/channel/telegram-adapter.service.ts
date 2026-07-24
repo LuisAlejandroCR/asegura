@@ -33,17 +33,29 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
     return this.bot;
   }
 
+  // Voice notes longer than this aren't worth transcribing — a quick insurance chat
+  // answer is never this long, and it avoids paying for a large Whisper API call just
+  // to reject it anyway.
+  private static readonly MAX_VOICE_DURATION_SECONDS = 60;
+
   async normalize(raw: unknown): Promise<NormalizedMessage> {
     const ctx = raw as Context;
     const msg = ctx.message ?? ctx.editedMessage;
 
     let text = msg?.text ?? '';
+    let unsupportedInput: NormalizedMessage['unsupportedInput'];
 
-    if (!text && msg?.voice) {
-      try {
-        text = await this.transcribeVoice(msg.voice.file_id);
-      } catch (err) {
-        this.logger.error(`Voice transcription failed: ${err}`);
+    if (msg?.photo || msg?.document || msg?.sticker || msg?.video || msg?.video_note) {
+      unsupportedInput = 'image';
+    } else if (msg?.voice) {
+      if (msg.voice.duration > TelegramAdapter.MAX_VOICE_DURATION_SECONDS) {
+        unsupportedInput = 'audio_too_long';
+      } else if (!text) {
+        try {
+          text = await this.transcribeVoice(msg.voice.file_id);
+        } catch (err) {
+          this.logger.error(`Voice transcription failed: ${err}`);
+        }
       }
     }
 
@@ -54,6 +66,7 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
       text,
       timestamp: msg?.date ? new Date(msg.date * 1000) : new Date(),
       metadata: { updateId: ctx.update.update_id },
+      ...(unsupportedInput && { unsupportedInput }),
     };
   }
 
