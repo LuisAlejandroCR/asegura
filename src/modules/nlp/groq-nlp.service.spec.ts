@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { GroqNlpService } from './groq-nlp.service';
 import { InsuranceIntent } from './types';
 
@@ -6,6 +7,30 @@ const mockConfig = { get: jest.fn((_key: string, def?: unknown) => def ?? '') } 
 function makeService(): GroqNlpService {
   return new GroqNlpService(mockConfig);
 }
+
+// Regression: WompiService and TelegramAdapter both warn at boot when their required env
+// vars are missing — GroqNlpService was the only one of the three optional integrations
+// that stayed completely silent either way. That gap directly caused a real live-test
+// confusion: after adding LLM_API_KEY to Railway and redeploying, there was no boot-log
+// line confirming it (or denying it) the way Wompi's "disabled" warning does — the only
+// way to check was hitting /health. Bringing this in line with the other two integrations.
+describe('GroqNlpService — boot-time configuration warning', () => {
+  it('regression — warns when LLM_API_KEY is missing, matching WompiService/TelegramAdapter behavior', () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const config = { get: jest.fn((_key: string, def?: unknown) => def ?? '') } as any;
+    new GroqNlpService(config);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('LLM_API_KEY'));
+    warnSpy.mockRestore();
+  });
+
+  it('does not warn when LLM_API_KEY is set', () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const config = { get: jest.fn((key: string, def?: unknown) => (key === 'LLM_API_KEY' ? 'gsk_test' : def ?? '')) } as any;
+    new GroqNlpService(config);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+});
 
 function baseMascotas(petType: InsuranceIntent['petType'] = null): InsuranceIntent {
   return { productCategory: 'mascotas', petType, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null };
