@@ -298,6 +298,14 @@ export class AgentService {
   private handleQuotation(context: ConversationContext, text: string, intent: InsuranceIntent): ProcessResult {
     const currentProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
 
+    // Multi-product selection runs before everything else: a message combining two
+    // products ("mascotas y vida", "quiero los dos", "incluye también el de mascotas")
+    // must not be swallowed by the single-category cross-sell/switch logic below (real
+    // live-test bug: repeated requests to buy two products together were silently
+    // dropped down to whichever single category resolved last).
+    const multiSelection = this.resolveMultiProductSelection(context, text, currentProduct);
+    if (multiSelection) return multiSelection;
+
     // Cross-sell check runs BEFORE isAffirmative: a message naming personal/human
     // coverage ("...muéstrame ese de salud de accidentes para mí") can still contain a
     // loose affirmative word like "quiero" with no question mark — isAffirmative would
@@ -405,6 +413,115 @@ export class AgentService {
     return personalPhrases.some((p) => text.includes(p)) || humanCategories.some((c) => text.includes(c));
   }
 
+  // Scans the raw text for EVERY category keyword group present, not just the first
+  // match (unlike GroqNlpService.fallbackIntent, which breaks on the first hit) — needed
+  // to detect messages naming two products at once, e.g. "mascotas y vida". Mascota
+  // keywords are checked first and "asistencia veterinaria" is stripped before the
+  // asistencia check so a pet-related "asistencia" doesn't also register as the
+  // unrelated personal "asistencia médica" category.
+  private detectAllMentionedCategories(text: string): NonNullable<InsuranceIntent['productCategory']>[] {
+    const categories: NonNullable<InsuranceIntent['productCategory']>[] = [];
+    if (['mascota', 'perro', 'gato', 'michi', 'veterinar'].some((k) => text.includes(k))) {
+      categories.push('mascotas');
+    }
+    const withoutVetAsistencia = text.replace(/asistencia\s+veterinaria/g, '');
+    if (['asistencia', 'salud'].some((k) => withoutVetAsistencia.includes(k))) categories.push('asistencia');
+    if (text.includes('vida')) categories.push('vida');
+    if (text.includes('accidente')) categories.push('accidentes');
+    if (text.includes('hogar')) categories.push('hogar');
+    return [...new Set(categories)];
+  }
+
+  private mentionsBothOrAll(text: string): boolean {
+    const phrases = ['los dos', 'las dos', 'ambos', 'ambas', 'esos dos', 'esas dos', 'todos', 'todas'];
+    return phrases.some((p) => text.includes(p));
+  }
+
+  private mentionsInclusion(text: string): boolean {
+    const phrases = ['incluye', 'incluir', 'agrega', 'agregar', 'también', 'tambien', 'y el de', 'y la de'];
+    return phrases.some((p) => text.includes(p));
+  }
+
+  // Resolves a message that wants 2+ products in one purchase, from any of three
+  // phrasings: naming multiple categories directly, an additive "incluye también X" on
+  // top of what's currently shown, or a referential "los dos"/"todos" pointing at
+  // everything shown so far. Returns null when none apply, so the caller falls through
+  // to the normal single-product flow unchanged.
+  private resolveMultiProductSelection(
+    context: ConversationContext,
+    text: string,
+    currentProduct?: InsuranceProduct,
+  ): ProcessResult | null {
+    const shown = context.shownProductIds?.length
+      ? context.shownProductIds
+      : (context.quoteProductId ? [context.quoteProductId] : []);
+
+    // Case 1: referential "los dos" / "ambos" / "todos" — combine everything shown so far.
+    if (this.mentionsBothOrAll(text) && shown.length >= 2) {
+      const products = shown
+        .map((id) => PRODUCTS.find((p) => p.id === id))
+        .filter((p): p is InsuranceProduct => !!p);
+      if (products.length >= 2) return this.buildMultiQuote(context, products);
+    }
+
+    const mentionedCategories = this.detectAllMentionedCategories(text);
+
+    // Case 2: 2+ distinct categories named directly in the same message.
+    if (mentionedCategories.length >= 2) {
+      const products = mentionedCategories
+        .map((category) => this.quoting.bestQuote({ ...context, productCategory: category } as AffiliateSignals)?.product)
+        .filter((p): p is InsuranceProduct => !!p);
+      if (products.length >= 2) return this.buildMultiQuote(context, products);
+    }
+
+    // Case 3: additive "incluye también X" — combine the product already on screen
+    // (used directly, not re-queried) with exactly one newly named category.
+    if (
+      currentProduct &&
+      this.mentionsInclusion(text) &&
+      mentionedCategories.length === 1 &&
+      mentionedCategories[0] !== currentProduct.category
+    ) {
+      const added = this.quoting.bestQuote({ ...context, productCategory: mentionedCategories[0] } as AffiliateSignals)?.product;
+      if (added) return this.buildMultiQuote(context, [currentProduct, added]);
+    }
+
+    return null;
+  }
+
+  // buildMultiQuote sets productCategory to the FIRST selected product's category, so a
+  // strict `productCategory === 'mascotas'` check would skip per-pet data collection
+  // whenever mascotas isn't first in a multi-product purchase (e.g. "vida y mascotas").
+  private isPetSelected(context: ConversationContext): boolean {
+    if (context.productCategory === 'mascotas') return true;
+    if (!context.selectedProductIds?.length) return false;
+    return context.selectedProductIds.some((id) => PRODUCTS.find((p) => p.id === id)?.category === 'mascotas');
+  }
+
+  private buildMultiQuote(context: ConversationContext, products: InsuranceProduct[]): ProcessResult {
+    const total = products.reduce((sum, p) => sum + computeTotalPremium(p, context.petCount), 0);
+    const lines = products
+      .map((p) => `🛡️ *${p.name}* — $${computeTotalPremium(p, context.petCount).toLocaleString('es-CO')}/mes`)
+      .join('\n');
+
+    return {
+      text: (
+        `📋 *Vas a contratar ${products.length} seguros:*\n\n${lines}\n\n` +
+        `💰 *Total: $${total.toLocaleString('es-CO')}/mes*\n\n` +
+        `¿Confirmamos la compra de los ${products.length}? Escríbeme *"sí"* para continuar.`
+      ),
+      nextState: ConversationState.QUOTE_PRESENTED,
+      context: {
+        ...context,
+        selectedProductIds: products.map((p) => p.id),
+        quoteProductId: products[0].id,
+        productCategory: products[0].category,
+        shownProductIds: products.map((p) => p.id),
+        crossSellOffered: false,
+      },
+    };
+  }
+
   private mentionsAllAtOnce(text: string): boolean {
     const phrases = ['todos', 'todas', 'los tres', 'las tres', 'de una vez', 'a la vez', 'al mismo tiempo', 'juntos', 'juntas'];
     return phrases.some((p) => text.includes(p));
@@ -487,7 +604,7 @@ export class AgentService {
     // Step 0 — collect per-pet details (name, age, breed) before the human's own data.
     // Accepts either one pet per message (petName/petAge/petBreed) or several at once
     // (pets[]) — the user can describe all their pets in one turn if they want to.
-    if (context.productCategory === 'mascotas') {
+    if (this.isPetSelected(context)) {
       const totalPets = context.petCount ?? 1;
       const pets = context.pets ?? [];
       if (pets.length < totalPets) {
@@ -660,8 +777,19 @@ export class AgentService {
     // user receives is generated and sent by wompi-webhook.controller.ts once Wompi
     // reports the transaction as APPROVED.
     if (intent.isAffirmative) {
-      const { policyId } = await this.policy.issue(convId, newContext);
-      newContext.policyId = policyId;
+      // Multi-product purchase — issue one policy per selected product; they'll share a
+      // single combined Wompi payment link, created next in createPaymentLinkFlow.
+      const productIds = newContext.selectedProductIds?.length
+        ? newContext.selectedProductIds
+        : (newContext.quoteProductId ? [newContext.quoteProductId] : []);
+
+      const policyIds: string[] = [];
+      for (const productId of productIds) {
+        const { policyId } = await this.policy.issue(convId, { ...newContext, quoteProductId: productId });
+        policyIds.push(policyId);
+      }
+      newContext.policyId = policyIds[0];
+      newContext.policyIds = policyIds;
 
       return this.createPaymentLinkFlow(convId, newContext);
     }
@@ -720,21 +848,33 @@ export class AgentService {
   // and handlePayment's isConfirm branch (used for retries after a decline/manual-link
   // failure, where the conversation is already sitting in PAYMENT with no checkoutUrl).
   private async createPaymentLinkFlow(convId: string, context: ConversationContext): Promise<ProcessResult> {
-    const quoteProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
-    const amountCOP = quoteProduct ? computeTotalPremium(quoteProduct, context.petCount) : 20000;
+    const productIds = context.selectedProductIds?.length
+      ? context.selectedProductIds
+      : (context.quoteProductId ? [context.quoteProductId] : []);
+    const products = productIds
+      .map((id) => PRODUCTS.find((p) => p.id === id))
+      .filter((p): p is InsuranceProduct => !!p);
+    const amountCOP = products.length
+      ? products.reduce((sum, p) => sum + computeTotalPremium(p, context.petCount), 0)
+      : 20000;
+    const productName = products.length > 1
+      ? `${products.length} seguros Colsubsidio`
+      : (products[0]?.name ?? 'Seguro Colsubsidio');
 
     try {
       const { checkoutUrl, paymentLinkId } = await this.wompi.createPaymentLink({
         policyId: context.policyId ?? convId,
-        productName: quoteProduct?.name ?? 'Seguro Colsubsidio',
+        productName,
         amountCOP,
         expiresInMinutes: 30,
       });
 
-      // Persist immediately — the webhook can only find this policy via payment_link_id
-      // (Wompi's Payment Links API has no "reference" create-parameter).
-      if (context.policyId) {
-        await this.policy.updateStatus(context.policyId, 'pending_payment', { wompi_link_id: paymentLinkId });
+      // Persist immediately on EVERY policy in this purchase — the webhook can only find
+      // them via payment_link_id (Wompi's Payment Links API has no "reference"
+      // create-parameter), and a multi-product purchase shares one link across all of them.
+      const policyIds = context.policyIds?.length ? context.policyIds : (context.policyId ? [context.policyId] : []);
+      for (const id of policyIds) {
+        await this.policy.updateStatus(id, 'pending_payment', { wompi_link_id: paymentLinkId });
       }
 
       const amountStr = `$${amountCOP.toLocaleString('es-CO')}`;

@@ -55,7 +55,7 @@ function makeConversation(overrides: Partial<{ id: string; user_id: string; chan
   };
 }
 
-function buildController(overrides: { policy?: Policy | null } = {}) {
+function buildController(overrides: { policies?: Policy[] } = {}) {
   const wompi = {
     validateWebhookSignature: jest.fn().mockReturnValue(true),
     extractTransactionData: jest.fn((event: WompiWebhookEvent) => ({
@@ -69,7 +69,7 @@ function buildController(overrides: { policy?: Policy | null } = {}) {
     })),
   };
   const policyService = {
-    findByWompiLinkId: jest.fn().mockResolvedValue(overrides.policy === undefined ? makePolicy() : overrides.policy),
+    findAllByWompiLinkId: jest.fn().mockResolvedValue(overrides.policies ?? [makePolicy()]),
     updateStatus: jest.fn().mockResolvedValue(undefined),
     generateFinalPdf: jest.fn().mockResolvedValue(Buffer.from('%PDF-fake')),
   };
@@ -102,17 +102,17 @@ describe('WompiWebhookController — policy resolution (payment_link_id, not ref
     const { controller, policyService } = buildController();
     const result = await controller.handleWebhook(makeEvent({ paymentLinkId: null as any }));
     expect(result.status).toBe('ignored');
-    expect(policyService.findByWompiLinkId).not.toHaveBeenCalled();
+    expect(policyService.findAllByWompiLinkId).not.toHaveBeenCalled();
   });
 
   it('looks up the policy by payment_link_id, not by the transaction reference', async () => {
     const { controller, policyService } = buildController();
     await controller.handleWebhook(makeEvent({ paymentLinkId: 'link-xyz' }));
-    expect(policyService.findByWompiLinkId).toHaveBeenCalledWith('link-xyz');
+    expect(policyService.findAllByWompiLinkId).toHaveBeenCalledWith('link-xyz');
   });
 
   it('ignores gracefully when no policy matches the payment_link_id', async () => {
-    const { controller } = buildController({ policy: null });
+    const { controller } = buildController({ policies: [] });
     const result = await controller.handleWebhook(makeEvent());
     expect(result.status).toBe('ignored');
   });
@@ -120,7 +120,7 @@ describe('WompiWebhookController — policy resolution (payment_link_id, not ref
 
 describe('WompiWebhookController — idempotency', () => {
   it.each(['paid', 'active'])('skips reprocessing when policy.status is already "%s"', async (status) => {
-    const { controller, telegram } = buildController({ policy: makePolicy({ status }) });
+    const { controller, telegram } = buildController({ policies: [makePolicy({ status })] });
     const result = await controller.handleWebhook(makeEvent());
     expect(result.status).toBe('already_processed');
     expect(telegram.sendText).not.toHaveBeenCalled();
@@ -139,7 +139,7 @@ describe('WompiWebhookController — malformed payload', () => {
       event: 'ping', timestamp: 123, signature: { checksum: 'x', properties: [] }, data: {},
     } as any;
     await expect(controller.handleWebhook(malformed)).resolves.toEqual({ status: 'ignored', reason: 'malformed_payload' });
-    expect(policyService.findByWompiLinkId).not.toHaveBeenCalled();
+    expect(policyService.findAllByWompiLinkId).not.toHaveBeenCalled();
   });
 
   it('returns ignored/malformed_payload when transaction.status is missing', async () => {
@@ -149,7 +149,7 @@ describe('WompiWebhookController — malformed payload', () => {
       data: { transaction: { id: 'txn-1', payment_link_id: 'link-abc' } },
     } as any;
     await expect(controller.handleWebhook(malformed)).resolves.toEqual({ status: 'ignored', reason: 'malformed_payload' });
-    expect(policyService.findByWompiLinkId).not.toHaveBeenCalled();
+    expect(policyService.findAllByWompiLinkId).not.toHaveBeenCalled();
   });
 });
 
@@ -178,7 +178,7 @@ describe('WompiWebhookController — APPROVED payment', () => {
   });
 
   it('does not throw when the policy has no linked conversation', async () => {
-    const { controller } = buildController({ policy: makePolicy({ conversation_id: null }) });
+    const { controller } = buildController({ policies: [makePolicy({ conversation_id: null })] });
     await expect(controller.handleWebhook(makeEvent())).resolves.toBeDefined();
   });
 
@@ -193,6 +193,95 @@ describe('WompiWebhookController — APPROVED payment', () => {
     policyService.generateFinalPdf.mockResolvedValue(null);
     await expect(controller.handleWebhook(makeEvent())).resolves.toBeDefined();
     expect(telegram.sendDocument).not.toHaveBeenCalled();
+  });
+});
+
+describe('WompiWebhookController — multi-product purchase (one payment, several policies)', () => {
+  // Real feature: "quiero los dos" issues one policy per product, all sharing one
+  // combined Wompi payment link — the webhook must settle every one of them, not just
+  // the first match.
+  it('updates every policy sharing the payment link to paid then active', async () => {
+    const policies = [
+      makePolicy({ id: 'pol-1', product_id: 'vida-pan-american' }),
+      makePolicy({ id: 'pol-2', product_id: 'asistencia-veterinaria' }),
+    ];
+    const { controller, policyService } = buildController({ policies });
+    await controller.handleWebhook(makeEvent());
+
+    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-1', 'paid', expect.anything());
+    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-1', 'active');
+    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-2', 'paid', expect.anything());
+    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-2', 'active');
+  });
+
+  it('sends one PDF per policy and a single combined confirmation message', async () => {
+    const policies = [
+      makePolicy({ id: 'pol-1', product_id: 'vida-pan-american' }),
+      makePolicy({ id: 'pol-2', product_id: 'asistencia-veterinaria' }),
+    ];
+    const { controller, policyService, telegram } = buildController({ policies });
+    await controller.handleWebhook(makeEvent());
+
+    expect(policyService.generateFinalPdf).toHaveBeenCalledWith(expect.objectContaining({ id: 'pol-1' }));
+    expect(policyService.generateFinalPdf).toHaveBeenCalledWith(expect.objectContaining({ id: 'pol-2' }));
+    expect(telegram.sendDocument).toHaveBeenCalledTimes(2);
+    expect(telegram.sendText).toHaveBeenCalledTimes(1);
+    expect(telegram.sendText).toHaveBeenCalledWith('999888777', expect.stringContaining('2 pólizas'));
+  });
+
+  it('saves policyIds (plural) alongside the single policyId for backward compatibility', async () => {
+    const policies = [
+      makePolicy({ id: 'pol-1', product_id: 'vida-pan-american' }),
+      makePolicy({ id: 'pol-2', product_id: 'asistencia-veterinaria' }),
+    ];
+    const { controller, conversations } = buildController({ policies });
+    await controller.handleWebhook(makeEvent());
+
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.POLICY_ISSUED,
+      expect.objectContaining({ policyId: 'pol-1', policyIds: ['pol-1', 'pol-2'] }),
+    );
+  });
+
+  it('idempotency — only settles the still-pending policy when one of the two was already processed', async () => {
+    // Guards against a partial-retry scenario: Wompi redelivers the webhook, one policy
+    // in the bundle already transitioned but the other didn't (e.g. a crash mid-loop).
+    const policies = [
+      makePolicy({ id: 'pol-1', product_id: 'vida-pan-american', status: 'active' }),
+      makePolicy({ id: 'pol-2', product_id: 'asistencia-veterinaria', status: 'pending_payment' }),
+    ];
+    const { controller, policyService } = buildController({ policies });
+    const result = await controller.handleWebhook(makeEvent());
+
+    expect(result.status).toBe('processed');
+    expect(policyService.updateStatus).not.toHaveBeenCalledWith('pol-1', 'paid', expect.anything());
+    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-2', 'paid', expect.anything());
+  });
+
+  it('idempotency — skips entirely when every policy in the bundle is already processed', async () => {
+    const policies = [
+      makePolicy({ id: 'pol-1', product_id: 'vida-pan-american', status: 'active' }),
+      makePolicy({ id: 'pol-2', product_id: 'asistencia-veterinaria', status: 'paid' }),
+    ];
+    const { controller, policyService, telegram } = buildController({ policies });
+    const result = await controller.handleWebhook(makeEvent());
+
+    expect(result.status).toBe('already_processed');
+    expect(policyService.updateStatus).not.toHaveBeenCalled();
+    expect(telegram.sendText).not.toHaveBeenCalled();
+  });
+
+  it('a declined payment marks every policy in the bundle declined and sends one notification', async () => {
+    const policies = [
+      makePolicy({ id: 'pol-1', product_id: 'vida-pan-american' }),
+      makePolicy({ id: 'pol-2', product_id: 'asistencia-veterinaria' }),
+    ];
+    const { controller, policyService, telegram } = buildController({ policies });
+    await controller.handleWebhook(makeEvent({ status: 'DECLINED' }));
+
+    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-1', 'declined');
+    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-2', 'declined');
+    expect(telegram.sendText).toHaveBeenCalledTimes(1);
   });
 });
 

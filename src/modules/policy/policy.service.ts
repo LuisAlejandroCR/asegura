@@ -75,19 +75,20 @@ export class PolicyService {
   }
 
   // Wompi's Payment Links API has no "reference" field — the webhook's transaction
-  // carries payment_link_id instead, which we match back to the policy here.
-  async findByWompiLinkId(wompiLinkId: string): Promise<Policy | null> {
+  // carries payment_link_id instead, which we match back to policies here. Returns an
+  // array (not maybeSingle) because a multi-product purchase issues one policy per
+  // product but shares a single combined Wompi payment link across all of them.
+  async findAllByWompiLinkId(wompiLinkId: string): Promise<Policy[]> {
     const { data, error } = await this.supabase.db
       .from('policies')
       .select('*')
-      .eq('wompi_link_id', wompiLinkId)
-      .maybeSingle();
+      .eq('wompi_link_id', wompiLinkId);
 
     if (error) {
-      this.logger.error(`findByWompiLinkId error: ${error.message}`);
-      return null;
+      this.logger.error(`findAllByWompiLinkId error: ${error.message}`);
+      return [];
     }
-    return data as Policy | null;
+    return (data ?? []) as Policy[];
   }
 
   // Generates the policy PDF after payment is confirmed — the only PDF the user receives.

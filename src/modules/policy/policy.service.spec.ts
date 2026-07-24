@@ -8,6 +8,16 @@ function makeSupabaseMock(overrides: { data?: unknown; error?: unknown } = {}) {
   return { db: { from } } as any;
 }
 
+// findAllByWompiLinkId doesn't chain .maybeSingle() — it awaits .eq() directly, since it
+// can return zero, one, or several rows (several when a multi-product purchase shares one
+// combined payment link across policies).
+function makeArraySupabaseMock(overrides: { data?: unknown; error?: unknown } = {}) {
+  const eq = jest.fn().mockResolvedValue({ data: overrides.data ?? null, error: overrides.error ?? null });
+  const select = jest.fn().mockReturnValue({ eq });
+  const from = jest.fn().mockReturnValue({ select });
+  return { db: { from } } as any;
+}
+
 function makePdfMock() {
   return { generate: jest.fn().mockResolvedValue(Buffer.from('%PDF-fake')) } as any;
 }
@@ -123,10 +133,10 @@ describe('PolicyService.findById', () => {
   });
 });
 
-describe('PolicyService.findByWompiLinkId', () => {
+describe('PolicyService.findAllByWompiLinkId', () => {
   // Wompi's Payment Links API has no "reference" field — the webhook's transaction
-  // carries payment_link_id, which we must be able to match back to our policy.
-  it('returns the policy row matching the given wompi_link_id', async () => {
+  // carries payment_link_id, which we must be able to match back to our policies.
+  it('returns the policy rows matching the given wompi_link_id', async () => {
     const row = {
       id: 'pol-1', conversation_id: 'conv-1', product_id: 'asistencia-veterinaria',
       cedula: '123456789', nombre: 'Juan Pérez', email: 'juan@test.com',
@@ -134,16 +144,33 @@ describe('PolicyService.findByWompiLinkId', () => {
       wompi_link_id: 'link-abc-123',
       created_at: '2026-07-23T00:00:00Z', updated_at: '2026-07-23T00:00:00Z',
     };
-    const supabase = makeSupabaseMock({ data: row });
+    const supabase = makeArraySupabaseMock({ data: [row] });
     const service = new PolicyService(supabase, makePdfMock());
-    const result = await service.findByWompiLinkId('link-abc-123');
-    expect(result).toEqual(row);
+    const result = await service.findAllByWompiLinkId('link-abc-123');
+    expect(result).toEqual([row]);
   });
 
-  it('returns null when no policy matches', async () => {
-    const supabase = makeSupabaseMock({ data: null, error: null });
+  // Real feature: a multi-product purchase (e.g. "quiero los dos") issues one policy per
+  // product, all sharing the same combined payment link.
+  it('returns multiple policy rows when several share the same wompi_link_id', async () => {
+    const rowA = { id: 'pol-1', wompi_link_id: 'link-bundle', product_id: 'vida-pan-american' };
+    const rowB = { id: 'pol-2', wompi_link_id: 'link-bundle', product_id: 'asistencia-veterinaria' };
+    const supabase = makeArraySupabaseMock({ data: [rowA, rowB] });
     const service = new PolicyService(supabase, makePdfMock());
-    await expect(service.findByWompiLinkId('unknown-link')).resolves.toBeNull();
+    const result = await service.findAllByWompiLinkId('link-bundle');
+    expect(result).toEqual([rowA, rowB]);
+  });
+
+  it('returns an empty array when no policy matches', async () => {
+    const supabase = makeArraySupabaseMock({ data: null, error: null });
+    const service = new PolicyService(supabase, makePdfMock());
+    await expect(service.findAllByWompiLinkId('unknown-link')).resolves.toEqual([]);
+  });
+
+  it('returns an empty array (not throw) when Supabase errors', async () => {
+    const supabase = makeArraySupabaseMock({ data: null, error: { message: 'connection failed' } });
+    const service = new PolicyService(supabase, makePdfMock());
+    await expect(service.findAllByWompiLinkId('link-abc-123')).resolves.toEqual([]);
   });
 });
 

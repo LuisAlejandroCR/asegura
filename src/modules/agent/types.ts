@@ -49,7 +49,12 @@ interface ConversationContext {
   // just presented and is explicitly waiting for the user to pick a mode — "uno por uno"
   // or "todas a la vez" — before a specific category is named.
   crossSellOffered?: boolean;
+  // Set when the user is buying 2+ products together in one purchase (e.g. "quiero los
+  // dos") — each gets its own policy row and PDF, sharing one combined Wompi payment.
+  // Falls back to quoteProductId (single) when unset/empty.
+  selectedProductIds?: string[];
   policyId?: string;
+  policyIds?: string[];
   checkoutUrl?: string;
 }
 

@@ -49,46 +49,67 @@ export class WompiWebhookController {
       return { status: 'ignored', reason: 'no_payment_link_id' };
     }
 
-    const policy = await this.policy.findByWompiLinkId(txData.paymentLinkId);
-    if (!policy) {
+    // A multi-product purchase ("quiero los dos") issues one policy per product, all
+    // sharing this one combined payment link — never just the first/single match.
+    const policies = await this.policy.findAllByWompiLinkId(txData.paymentLinkId);
+    if (policies.length === 0) {
       this.logger.warn(`No policy found for payment_link_id ${txData.paymentLinkId}`);
       return { status: 'ignored', reason: 'policy_not_found' };
     }
 
-    // Idempotency — Wompi retries webhook delivery for reliability; a policy already
-    // paid/active means this transaction (or a duplicate delivery of it) was handled.
-    if (PROCESSED_STATUSES.includes(policy.status)) {
+    // Idempotency — Wompi retries webhook delivery for reliability; if every policy
+    // sharing this link is already paid/active, this transaction (or a duplicate
+    // delivery of it) was already handled in full.
+    const pending = policies.filter((p) => !PROCESSED_STATUSES.includes(p.status));
+    if (pending.length === 0) {
       return { status: 'already_processed' };
     }
 
     if (txData.status !== 'APPROVED') {
-      await this.policy.updateStatus(policy.id, txData.status.toLowerCase());
-      await this.notifyPaymentFailed(policy);
+      for (const p of pending) {
+        await this.policy.updateStatus(p.id, txData.status.toLowerCase());
+      }
+      await this.notifyPaymentFailed(pending[0]);
       return { status: 'ignored', reason: txData.status };
     }
 
-    await this.policy.updateStatus(policy.id, 'paid', { wompi_link_id: txData.paymentLinkId });
-    await this.policy.updateStatus(policy.id, 'active');
+    for (const p of pending) {
+      await this.policy.updateStatus(p.id, 'paid', { wompi_link_id: txData.paymentLinkId });
+      await this.policy.updateStatus(p.id, 'active');
+    }
 
-    await this.notifyPolicyIssued(policy);
+    await this.notifyPoliciesIssued(pending);
 
     return { status: 'processed', transactionId: txData.transactionId };
   }
 
-  private async notifyPolicyIssued(policy: Policy): Promise<void> {
-    if (!policy.conversation_id) return;
-    const conversation = await this.conversations.findById(policy.conversation_id);
+  private async notifyPoliciesIssued(policies: Policy[]): Promise<void> {
+    const first = policies[0];
+    if (!first.conversation_id) return;
+    const conversation = await this.conversations.findById(first.conversation_id);
     if (!conversation) return;
 
-    const newContext: ConversationContext = { ...conversation.context, policyId: policy.id };
+    const newContext: ConversationContext = {
+      ...conversation.context,
+      policyId: first.id,
+      policyIds: policies.map((p) => p.id),
+    };
     await this.conversations.saveState(conversation.id, ConversationState.POLICY_ISSUED, newContext);
-    await this.telegram.sendText(conversation.user_id, STATE_RESPONSES[ConversationState.POLICY_ISSUED](newContext));
+
+    const message = policies.length > 1
+      ? `✅ *¡Quedaste asegurado con ${policies.length} pólizas!*\n\n` +
+        `Tus seguros están activos desde hoy. Recibirás un PDF por cada uno adjunto a este chat.\n\n` +
+        `Si tienes dudas sobre coberturas o quieres proteger algo más, aquí estoy 24/7.`
+      : STATE_RESPONSES[ConversationState.POLICY_ISSUED](newContext);
+    await this.telegram.sendText(conversation.user_id, message);
 
     // This is the only PDF the user ever receives — the draft PDF before payment was
-    // removed in an earlier fix, so it must send unconditionally on approval.
-    const pdfBuffer = await this.policy.generateFinalPdf(policy);
-    if (pdfBuffer) {
-      await this.telegram.sendDocument(conversation.user_id, pdfBuffer, `poliza-${policy.id.slice(0, 8)}.pdf`);
+    // removed in an earlier fix, so each policy must send unconditionally on approval.
+    for (const policy of policies) {
+      const pdfBuffer = await this.policy.generateFinalPdf(policy);
+      if (pdfBuffer) {
+        await this.telegram.sendDocument(conversation.user_id, pdfBuffer, `poliza-${policy.id.slice(0, 8)}.pdf`);
+      }
     }
   }
 
