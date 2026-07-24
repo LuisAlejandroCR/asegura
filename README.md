@@ -41,9 +41,7 @@ Usuario confirma y paga (link Wompi, dentro del chat)
     ↓
 Wompi confirma el pago automáticamente vía webhook — verificado, no autoreportado
     ↓
-Registro inmutable en Celo Mainnet
-    ↓
-PDF de póliza + link Celoscan enviados al chat (con QR de auditoría blockchain)
+PDF de póliza enviado al chat, con QR de verificación
 ```
 
 Sin formularios. Sin menús. Sin salir del chat. La confirmación de pago la valida Wompi directamente — nadie puede activar una póliza sin haber pagado realmente.
@@ -79,8 +77,7 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 | Base de datos | Supabase (Postgres) |
 | Canal MVP | Telegram (grammy) |
 | Canal futuro | WhatsApp Business API |
-| Pagos | Wompi — Payment Links + Bre-B |
-| Blockchain | Celo Mainnet · AseguraLedger.sol · Foundry |
+| Pagos | Wompi — Payment Links (sandbox) |
 | Deploy | Railway (API) + Vercel (pitch web) |
 | Dashboard | Metabase |
 
@@ -103,24 +100,11 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 
 ---
 
-## Verificación blockchain
+## Verificación de póliza
 
-Cada póliza vendida queda registrada en Celo Mainnet como evidencia pública e inmutable.
+El PDF de cada póliza incluye un código QR que enlaza a su registro de auditoría — escaneable desde cualquier celular.
 
-🔗 **Contrato AseguraLedger:** `[dirección — próximamente]`
-
-| Propiedad | Detalle |
-|-----------|---------|
-| Red | Celo Mainnet (chainId 42220) |
-| Contrato | AseguraLedger (verificado en Celoscan) |
-| Custodia de fondos | NO — solo registra eventos |
-| Verificación | Cualquier persona puede auditar las transacciones |
-| Datos públicos | `referenceURI` en pestaña Logs de cada tx |
-| Costo por registro | < $0.001 USD |
-
-El código fuente del contrato es público y verificado. Cualquier persona puede auditar qué hace y leer las pólizas registradas.
-
-El PDF de cada póliza incluye un código QR que enlaza directamente al registro de auditoría — escaneable desde cualquier celular, sin necesidad de copiar direcciones ni buscar manualmente en el explorador.
+**Próximamente:** registro inmutable en Celo Mainnet vía el contrato `AseguraLedger.sol` (código fuente disponible en `contracts/`, sin custodia de fondos, solo registro de eventos). Esta integración está construida y probada pero no forma parte del flujo activo todavía.
 
 ---
 
