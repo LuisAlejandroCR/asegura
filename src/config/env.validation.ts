@@ -52,6 +52,10 @@ class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  HOST: string;
+
+  @IsString()
+  @IsOptional()
   TELEGRAM_BOT_TOKEN: string;
 
   @IsString()
@@ -117,6 +121,16 @@ function crossFieldErrors(validated: EnvironmentVariables): string[] {
       errors.push(`${group.label} config is partial — set all of [${group.keys.join(', ')}] or none. Missing: ${missing.join(', ')}`);
     }
   }
+
+  // Regression: main.ts calls config.getOrThrow('TELEGRAM_WEBHOOK_SECRET') as soon as HOST
+  // is set (webhook mode) — that throw happened deep inside the unawaited bootstrap() call
+  // with no .catch(), so HOST set without TELEGRAM_WEBHOOK_SECRET crashed the process
+  // silently before it ever bound to a port. Caught here instead, at startup, with a
+  // message that actually explains what's missing.
+  if (validated.HOST && !validated.TELEGRAM_WEBHOOK_SECRET) {
+    errors.push('HOST is set (webhook mode) but TELEGRAM_WEBHOOK_SECRET is missing — required to verify incoming Telegram requests.');
+  }
+
   return errors;
 }
 

@@ -77,4 +77,10 @@ async function bootstrap() {
   logger.log(`Asegura running on port ${port}`);
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  // Without this, a throw anywhere in bootstrap() (e.g. a missing required env var
+  // discovered deep in setup) becomes an unhandled promise rejection — silent on some
+  // Node versions, fatal-but-uninformative on others. Log clearly and exit intentionally.
+  new Logger('Bootstrap').error(`Fatal error during startup: ${err}`);
+  process.exit(1);
+});
