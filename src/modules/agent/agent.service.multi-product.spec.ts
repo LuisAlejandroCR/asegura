@@ -75,6 +75,55 @@ describe('AgentService — multi-product selection: "los dos" / "ambos"', () => 
   });
 });
 
+describe('AgentService — cross-sell quote history is preserved (not reset) across a category switch', () => {
+  // Real live-test bug: after a pet quote, "Quiero ese, para mí, que hay." correctly
+  // cross-sold straight into an asistencia quote (an earlier fix), but that branch reset
+  // shownProductIds to just the new product — so a follow-up "Dame esos dos." (wanting
+  // BOTH the pet product and this new one) found only one product shown and fell through
+  // to a plain re-display of the asistencia quote, silently ignoring "esos dos" entirely.
+  it('the direct-category cross-sell quote appends to shownProductIds instead of replacing it', async () => {
+    const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
+    const asistenciaProduct = PRODUCTS.find(p => p.category === 'asistencia')!;
+    const { service, telegram, quoting, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: petProduct.id, productCategory: 'mascotas', shownProductIds: [petProduct.id] },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: 'asistencia' }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: asistenciaProduct,
+      score: { reasons: [], monthlyPremium: asistenciaProduct.basePremium },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Quiero ese, para mí, que hay.'));
+    await service.handleMessage({});
+
+    const saveCall = conversations.saveState.mock.calls[0];
+    expect(saveCall?.[2].shownProductIds).toEqual(
+      expect.arrayContaining([petProduct.id, asistenciaProduct.id]),
+    );
+  });
+
+  it('a later "dame esos dos" then correctly selects both the pet product and the cross-sold one', async () => {
+    const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
+    const asistenciaProduct = PRODUCTS.find(p => p.category === 'asistencia')!;
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      // Context as it would be AFTER the fix above — both products in shownProductIds.
+      context: { quoteProductId: asistenciaProduct.id, productCategory: 'asistencia', shownProductIds: [petProduct.id, asistenciaProduct.id] },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Dame esos dos.'));
+    await service.handleMessage({});
+
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(petProduct.name);
+    expect(sentText).toContain(asistenciaProduct.name);
+    const saveCall = conversations.saveState.mock.calls[0];
+    expect(saveCall?.[2].selectedProductIds).toEqual(
+      expect.arrayContaining([petProduct.id, asistenciaProduct.id]),
+    );
+  });
+});
+
 describe('AgentService — multi-product selection: additive "incluye también X"', () => {
   it('adds the named category to the currently viewed product', async () => {
     const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;

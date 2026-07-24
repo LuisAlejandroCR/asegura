@@ -260,7 +260,9 @@ export class AgentService {
       const quote = this.quoting.bestQuote(newContext as AffiliateSignals);
       if (quote) {
         newContext.quoteProductId = quote.product.id;
-        newContext.shownProductIds = [quote.product.id];
+        // Append to (not replace) shownProductIds — a pet product shown before a
+        // cross-sell reset must stay in history for a later "los dos" reference.
+        newContext.shownProductIds = [...new Set([...(context.shownProductIds ?? []), quote.product.id])];
         return {
           text: this.formatQuote(quote.product, quote.score, newContext),
           nextState: ConversationState.QUOTE_PRESENTED,
@@ -270,7 +272,7 @@ export class AgentService {
       // No match for this profile — reset category/coverage and let user redirect
       return {
         text: 'No encontré una opción exacta para ese perfil en el catálogo actual. ¿Quieres que busquemos algo diferente — vida, accidentes, asistencia médica?',
-        context: { ...newContext, productCategory: undefined, coverage: undefined, shownProductIds: [] },
+        context: { ...newContext, productCategory: undefined, coverage: undefined },
       };
     }
 
@@ -323,10 +325,14 @@ export class AgentService {
         };
         const best = this.quoting.bestQuote(personalContext as AffiliateSignals);
         if (best) {
+          // Append to (not replace) shownProductIds — real live-test bug: a later "dame
+          // esos dos" / "los dos" referencing this product AND the pet quote just shown
+          // found only this one, because the pet product's history got silently dropped.
+          const shownIds = [...new Set([...(context.shownProductIds ?? []), best.product.id])];
           return {
             text: this.formatQuote(best.product, best.score, personalContext),
             nextState: ConversationState.QUOTE_PRESENTED,
-            context: { ...personalContext, quoteProductId: best.product.id, shownProductIds: [best.product.id] },
+            context: { ...personalContext, quoteProductId: best.product.id, shownProductIds: shownIds },
           };
         }
       }
@@ -336,7 +342,7 @@ export class AgentService {
           '¿Los quieres ver uno por uno, o te muestro los tres a la vez?'
         ),
         nextState: ConversationState.DISCOVERY,
-        context: { ...context, productCategory: undefined, coverage: undefined, petType: undefined, petCount: undefined, shownProductIds: [], crossSellOffered: true },
+        context: { ...context, productCategory: undefined, coverage: undefined, petType: undefined, petCount: undefined, crossSellOffered: true },
       };
     }
 
@@ -363,10 +369,13 @@ export class AgentService {
       };
       const best = this.quoting.bestQuote(switchedContext as AffiliateSignals);
       if (best) {
+        // Append to (not replace) shownProductIds so a later "los dos"/"dame esos dos"
+        // referencing both this product and the previously quoted one still finds both.
+        const shownIds = [...new Set([...(context.shownProductIds ?? []), best.product.id])];
         return {
           text: this.formatQuote(best.product, best.score, switchedContext),
           nextState: ConversationState.QUOTE_PRESENTED,
-          context: { ...switchedContext, quoteProductId: best.product.id, shownProductIds: [best.product.id] },
+          context: { ...switchedContext, quoteProductId: best.product.id, shownProductIds: shownIds },
         };
       }
     }
@@ -397,7 +406,7 @@ export class AgentService {
       return {
         text: 'No tengo más opciones en esta categoría. ¿Quieres que busquemos en otra?',
         nextState: ConversationState.DISCOVERY,
-        context: { ...context, productCategory: undefined, coverage: undefined, shownProductIds: [] },
+        context: { ...context, productCategory: undefined, coverage: undefined },
       };
     }
 
@@ -560,6 +569,10 @@ export class AgentService {
       };
     }
 
+    // Append to (not replace) shownProductIds — the pet product that triggered this
+    // cross-sell offer must stay in history for a later "los dos"/"todos" reference.
+    const shownIds = [...new Set([...(context.shownProductIds ?? []), ...quotes.map((q) => q.product.id)])];
+
     return {
       texts: quotes.map((q) => this.formatQuote(q.product, q.score, context)),
       nextState: ConversationState.QUOTE_PRESENTED,
@@ -567,7 +580,7 @@ export class AgentService {
         ...context,
         productCategory: quotes[0].product.category,
         quoteProductId: quotes[0].product.id,
-        shownProductIds: quotes.map((q) => q.product.id),
+        shownProductIds: shownIds,
         crossSellOffered: false,
       },
     };
