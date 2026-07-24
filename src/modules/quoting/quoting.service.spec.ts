@@ -155,8 +155,19 @@ describe('QuotingService INVARIANTS', () => {
 describe('QuotingService — budget scoring from RANGO_SALARIAL', () => {
   const service = makeService();
 
-  it('applies the budget boost for an exact RANGO_SALARIAL match', () => {
-    const scores = service.score({ productCategory: 'vida', rangoSalarial: 'Hasta 2 SMLV' });
+  // Real bug found 2026-07-24, cross-checking against the actual affiliate data
+  // (Usos_Productos_Afiliados_SIN_ID / the synthetic CSV built from its real marginal
+  // distribution): budgetFromSalary's keys ('hasta 2 smlv', 'entre 2 y 4 smlv', ...)
+  // never matched ANY real RANGO_SALARIAL value — the real bands are finer-grained
+  // ("Entre 1 y 1.5 SMLV", "Menor al SMLV", "Entre 2.5 y 3 SMLV", etc., 12 bands total).
+  // The single most common real band alone ("Entre 1 y 1.5 SMLV", ~65% of the 465k
+  // non-empty rows in Base 2) silently got NO budget scoring boost at all.
+  it.each([
+    'Menor al SMLV', 'Entre 1 y 1.5 SMLV', 'Entre 1.5 y 2 SMLV', 'Entre 2 y 2.5 SMLV',
+    'Entre 2.5 y 3 SMLV', 'Entre 3 y 4 SMLV', 'Entre 4 y 6 SMLV', 'Entre 6 y 8 SMLV',
+    'Entre 8 y 10 SMLV', 'Entre 10 y 20 SMLV', 'Entre 20 y 30 SMLV', 'Mayor a 30 SMLV',
+  ])('regression — applies the budget boost for the real RANGO_SALARIAL band "%s"', (rango) => {
+    const scores = service.score({ productCategory: 'vida', rangoSalarial: rango });
     const vida = scores.find((s) => s.productId === 'vida')!;
     expect(vida.reasons.some((r) => r.includes('presupuesto'))).toBe(true);
   });
@@ -166,19 +177,24 @@ describe('QuotingService — budget scoring from RANGO_SALARIAL', () => {
   // whitespace or a stray case difference would silently drop the budget scoring boost
   // (15 of ~100 match points) with no error or fallback signal.
   it('regression — matches despite surrounding whitespace from the xlsx export', () => {
-    const scores = service.score({ productCategory: 'vida', rangoSalarial: '  Hasta 2 SMLV  ' as any });
+    const scores = service.score({ productCategory: 'vida', rangoSalarial: '  Entre 1 y 1.5 SMLV  ' as any });
     const vida = scores.find((s) => s.productId === 'vida')!;
     expect(vida.reasons.some((r) => r.includes('presupuesto'))).toBe(true);
   });
 
   it('regression — matches despite a case difference from the xlsx export', () => {
-    const scores = service.score({ productCategory: 'vida', rangoSalarial: 'hasta 2 smlv' as any });
+    const scores = service.score({ productCategory: 'vida', rangoSalarial: 'entre 1 y 1.5 smlv' as any });
     const vida = scores.find((s) => s.productId === 'vida')!;
     expect(vida.reasons.some((r) => r.includes('presupuesto'))).toBe(true);
   });
 
   it('does not apply the budget boost for an unrecognized rango (no crash, just no boost)', () => {
     expect(() => service.score({ productCategory: 'vida', rangoSalarial: 'not a real bracket' as any })).not.toThrow();
+  });
+
+  // ~1% of real rows have an empty RANGO_SALARIAL (Colsubsidio's own data gap, not ours).
+  it('handles an empty RANGO_SALARIAL value without crashing', () => {
+    expect(() => service.score({ productCategory: 'vida', rangoSalarial: '' as any })).not.toThrow();
   });
 });
 

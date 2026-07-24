@@ -86,15 +86,28 @@ export class QuotingService {
   // budget for insurance. Normalized (trim/case/accents) because the xlsx is an external
   // file Colsubsidio regenerates — a stray whitespace or casing difference must not
   // silently drop this scoring boost with no error or fallback signal.
+  //
+  // Real bug found 2026-07-24, cross-checked against the actual affiliate data
+  // (Usos_Productos_Afiliados_SIN_ID, ~465k non-empty rows): the previous map's keys
+  // ('hasta 2 smlv', 'entre 2 y 4 smlv', 'mas de 10 smlv', ...) never matched ANY real
+  // RANGO_SALARIAL value — the real bands are finer-grained. "Entre 1 y 1.5 SMLV" alone
+  // (the most common, ~65% of rows) got silently NO budget boost at all. These are the
+  // 12 actual band strings from the real distribution.
   private budgetFromSalary(rango?: string): number | null {
     if (!rango) return null;
     const map: Record<string, number> = {
-      'hasta 2 smlv': 20000,
-      'entre 2 y 4 smlv': 40000,
-      'entre 4 y 6 smlv': 60000,
-      'entre 6 y 8 smlv': 80000,
-      'entre 8 y 10 smlv': 100000,
-      'mas de 10 smlv': 150000,
+      'menor al smlv': 15000,
+      'entre 1 y 1.5 smlv': 20000,
+      'entre 1.5 y 2 smlv': 30000,
+      'entre 2 y 2.5 smlv': 40000,
+      'entre 2.5 y 3 smlv': 50000,
+      'entre 3 y 4 smlv': 60000,
+      'entre 4 y 6 smlv': 80000,
+      'entre 6 y 8 smlv': 100000,
+      'entre 8 y 10 smlv': 120000,
+      'entre 10 y 20 smlv': 150000,
+      'entre 20 y 30 smlv': 200000,
+      'mayor a 30 smlv': 300000,
     };
     return map[this.normalizeRango(rango)] ?? null;
   }
