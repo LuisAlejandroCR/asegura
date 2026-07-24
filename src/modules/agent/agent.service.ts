@@ -282,6 +282,25 @@ export class AgentService {
       };
     }
 
+    // Explicit category switch: the user directly named a different insurance category
+    // than what's currently quoted (e.g. "quiero ver seguro de vida" while looking at an
+    // asistencia quote). wantsAlternative only cycles within the SAME category, so this
+    // used to fall through to the neutral re-display branch below and just repeat the
+    // unchanged quote no matter what category the user asked for next (real live-test bug).
+    if (intent.productCategory && currentProduct && intent.productCategory !== currentProduct.category) {
+      const switchedContext: ConversationContext = {
+        ...context, productCategory: intent.productCategory, coverage: undefined, shownProductIds: [],
+      };
+      const best = this.quoting.bestQuote(switchedContext as AffiliateSignals);
+      if (best) {
+        return {
+          text: this.formatQuote(best.product, best.score, switchedContext),
+          nextState: ConversationState.QUOTE_PRESENTED,
+          context: { ...switchedContext, quoteProductId: best.product.id, shownProductIds: [best.product.id] },
+        };
+      }
+    }
+
     if (intent.isAffirmative) {
       return {
         text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](context),
@@ -334,6 +353,15 @@ export class AgentService {
     const personalPhrases = ['para mí', 'para mi', 'y yo'];
     const humanCategories = ['vida', 'accidentes', 'accidente', 'salud', 'hogar'];
     return personalPhrases.some((p) => text.includes(p)) || humanCategories.some((c) => text.includes(c));
+  }
+
+  // Common backchannel/acknowledgment words a voice transcription can produce in
+  // response to the bot's OWN previous message — never a real person's full name.
+  private static readonly FILLER_WORDS = ['gracias', 'ok', 'okay', 'vale', 'listo', 'dale', 'bueno', 'ya'];
+
+  private isFillerWord(text: string): boolean {
+    const normalized = text.trim().toLowerCase().replace(/[.,!¡¿?]/g, '');
+    return AgentService.FILLER_WORDS.includes(normalized);
   }
 
   private formatPetsSummary(pets: PetDetail[]): string {
@@ -476,8 +504,14 @@ export class AgentService {
       };
     }
 
-    // Step 2 — collect nombre
+    // Step 2 — collect nombre. Reject common filler/acknowledgment words a voice
+    // transcription might produce in response to the bot's own prior message (e.g.
+    // "Gracias.") — accepting these verbatim as the customer's name previously
+    // corrupted the rest of the flow (the real name then landed in the NEXT field).
     if (!context.nombre) {
+      if (this.isFillerWord(rawText)) {
+        return { text: '¿Cuál es tu nombre completo?' };
+      }
       newContext.nombre = rawText;
       return {
         text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext),
@@ -485,8 +519,13 @@ export class AgentService {
       };
     }
 
-    // Step 3 — collect email
+    // Step 3 — collect email. Requires a basic email shape (user@domain.tld) — accepting
+    // any text unconditionally previously let an unrelated phrase (e.g. a name captured
+    // here after nombre was wrongly filled by a filler word) silently become the "email".
     if (!context.email) {
+      if (!/\S+@\S+\.\S+/.test(rawText)) {
+        return { text: '¿Cuál es tu correo electrónico? Ahí recibirás la póliza.' };
+      }
       newContext.email = rawText;
       return {
         text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext),
@@ -539,7 +578,8 @@ export class AgentService {
     }
 
     const correctionTriggered = intent.isNegative ||
-      ['corregir', 'corrig', 'cambiar', 'cambia', 'editar', 'está mal', 'esta mal', 'equivocad'].some((k) => text.includes(k));
+      ['corregir', 'corrig', 'cambiar', 'cambia', 'editar', 'está mal', 'esta mal', 'equivocad', 'falta', 'falda el']
+        .some((k) => text.includes(k));
 
     if (correctionTriggered) {
       // Targeted correction: if the message names exactly one field, only reset that

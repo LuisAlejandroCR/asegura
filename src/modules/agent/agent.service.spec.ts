@@ -330,6 +330,72 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     );
   });
 
+  it('regression — a filler/acknowledgment word is never captured as the nombre', async () => {
+    // Real live-test bug: after providing cédula, the user's next voice message was an
+    // acknowledgment ("Gracias.") to the bot's own prior response, transcribed and
+    // captured verbatim as the customer's full name — corrupting the rest of the flow
+    // (the actual name then got captured as the "email" in the following turn).
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678' },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Gracias.'));
+    await service.handleMessage({});
+    expect(conversations.saveState).not.toHaveBeenCalledWith(
+      expect.anything(), expect.anything(), expect.objectContaining({ nombre: expect.anything() }),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toMatch(/nombre/i);
+  });
+
+  it('regression — text without a valid email format is never captured as the email', async () => {
+    // Real live-test bug: once nombre was wrongly set to "Gracias." (see above), the
+    // NEXT message ("Juan Pérez.") got captured as the email with zero format
+    // validation — no '@', no domain, nothing. The user's later attempts to fix "just
+    // the email" then had no effect because the underlying corruption was in nombre.
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan Pérez' },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Juan Pérez.'));
+    await service.handleMessage({});
+    expect(conversations.saveState).not.toHaveBeenCalledWith(
+      expect.anything(), expect.anything(), expect.objectContaining({ email: expect.anything() }),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toMatch(/correo|email/i);
+  });
+
+  it('accepts a well-formed email at step 3', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan Pérez' },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('juan.perez@email.com'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE, expect.objectContaining({ email: 'juan.perez@email.com' }),
+    );
+  });
+
+  it('regression — "falta el correo" at confirmation is recognized as a correction request naming email', async () => {
+    // Real live-test bug: "falta el correo" / "correo falta" did not match any keyword
+    // in the correction-trigger list (corregir/cambiar/editar/está mal/equivocad) and
+    // the message fell through to a generic "no logré entender" acknowledgment instead
+    // of resetting the email field.
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan Pérez', email: 'wrong@test.com' },
+      intent: makeIntent({ isNegative: false, isAffirmative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('falta el correo'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ cedula: '12345678', nombre: 'Juan Pérez', email: undefined }),
+    );
+  });
+
   it('regression — bare "no" at confirmation asks WHICH field is wrong instead of resetting everything', async () => {
     // Real live-test bug: bare "no" immediately wiped cédula+nombre+email and forced a
     // full restart. The user's very next message (a filler word, not a cédula) then got
@@ -921,6 +987,67 @@ describe('AgentService — QUOTE_PRESENTED cross-sell for personal coverage', ()
     );
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText.toLowerCase()).toMatch(/vida|accidentes|asistencia/);
+  });
+});
+
+describe('AgentService — QUOTE_PRESENTED explicit category switch', () => {
+  it('regression — naming a different category by name switches the quote instead of repeating the current one', async () => {
+    // Real live-test bug: while viewing an "asistencia" quote, "muéstrame seguro de
+    // vida" / "quiero ver seguro de vida" fell through to the neutral re-display branch
+    // (only an exact "otra opción"/wantsAlternative cycled within the SAME category) —
+    // the same asistencia quote kept repeating verbatim no matter what category the
+    // user explicitly named next.
+    const asistenciaProduct = PRODUCTS.find(p => p.category === 'asistencia')!;
+    const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: asistenciaProduct.id, productCategory: 'asistencia' },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: 'vida' }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: vidaProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Quiero ver seguro de vida.'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(vidaProduct.name);
+    expect(sentText).not.toContain(asistenciaProduct.name);
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.QUOTE_PRESENTED, expect.objectContaining({ quoteProductId: vidaProduct.id }),
+    );
+  });
+
+  it('regression — category switch takes priority even when isAffirmative is true', async () => {
+    const asistenciaProduct = PRODUCTS.find(p => p.category === 'asistencia')!;
+    const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: asistenciaProduct.id, productCategory: 'asistencia' },
+      intent: makeIntent({ isAffirmative: true, isNegative: false, wantsAlternative: false, productCategory: 'vida' }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: vidaProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Quiero ver seguro de vida.'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(vidaProduct.name);
+  });
+
+  it('does not switch when the named category matches the currently quoted product', async () => {
+    const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: vidaProduct.id, productCategory: 'vida' },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: 'vida' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿el de vida cubre incapacidad?'));
+    await service.handleMessage({});
+    expect(quoting.bestQuote).not.toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(vidaProduct.name);
   });
 });
 
