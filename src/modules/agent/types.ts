@@ -47,7 +47,6 @@ interface ConversationContext {
   awaitingCorrectionField?: boolean;
   policyId?: string;
   checkoutUrl?: string;
-  celoscanUrl?: string;
 }
 
 interface Conversation {

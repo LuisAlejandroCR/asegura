@@ -77,20 +77,16 @@ describe('STATE_RESPONSES — DATA_CAPTURE progressive flow', () => {
   });
 });
 
-describe('STATE_RESPONSES — POLICY_ISSUED Celoscan link', () => {
-  it('includes Celoscan link when celoscanUrl present', () => {
-    const ctx: ConversationContext = { celoscanUrl: 'https://celoscan.io/tx/0xabc' };
-    expect(STATE_RESPONSES[ConversationState.POLICY_ISSUED](ctx)).toContain('celoscan.io');
-  });
-
-  it('does not include Celoscan line when celoscanUrl absent', () => {
+describe('STATE_RESPONSES — POLICY_ISSUED', () => {
+  // Blockchain (Celo) verification was descoped from the active flow — the message no
+  // longer mentions it regardless of context.
+  it('never mentions blockchain/Celo', () => {
     expect(STATE_RESPONSES[ConversationState.POLICY_ISSUED](empty)).not.toContain('celoscan');
+    expect(STATE_RESPONSES[ConversationState.POLICY_ISSUED](empty)).not.toContain('blockchain');
   });
 
-  it('shows active policy confirmation in both cases', () => {
+  it('shows active policy confirmation', () => {
     expect(STATE_RESPONSES[ConversationState.POLICY_ISSUED](empty)).toContain('activo');
-    const ctx: ConversationContext = { celoscanUrl: 'https://celoscan.io/tx/0xabc' };
-    expect(STATE_RESPONSES[ConversationState.POLICY_ISSUED](ctx)).toContain('activo');
   });
 });
 

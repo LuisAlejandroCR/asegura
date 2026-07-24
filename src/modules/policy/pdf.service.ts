@@ -1,4 +1,4 @@
-// pdf.service.ts: generates a branded policy PDF using pdfkit + a Celo audit QR
+// pdf.service.ts: generates a branded policy PDF using pdfkit + a verification QR
 import { Injectable, Logger } from '@nestjs/common';
 import * as PDFDocument from 'pdfkit';
 import * as QRCode from 'qrcode';
@@ -17,9 +17,6 @@ interface PolicyPdfData {
   email?: string;
   monthlyPremium: number;
   issuedAt: Date;
-  // Real Celoscan tx URL, known only after payment + on-chain registration.
-  // Before that, the QR falls back to the deterministic referenceURI.
-  celoscanUrl?: string;
   // Number of pets covered — mascotas products are priced per pet (monthlyPremium is
   // the per-unit price); when set and > 1, the premium box shows the multiplied total.
   petCount?: number | null;
@@ -55,7 +52,7 @@ export class PdfService {
   private readonly logger = new Logger(PdfService.name);
 
   async generate(data: PolicyPdfData): Promise<Buffer> {
-    const auditUrl = this.resolveAuditUrl(data.policyId, data.celoscanUrl);
+    const auditUrl = this.resolveAuditUrl(data.policyId);
     const qrBuffer = await this.generateQr(auditUrl);
 
     return new Promise((resolve, reject) => {
@@ -71,11 +68,8 @@ export class PdfService {
     });
   }
 
-  // The real Celo tx isn't known until after payment, but the PDF is generated before
-  // that. referenceURI is the SAME deterministic URI later registered on-chain
-  // (see agent.service.ts handlePayment), so it's a stable audit anchor either way.
-  private resolveAuditUrl(policyId: string, celoscanUrl?: string): string {
-    return celoscanUrl || `https://asegura.co/poliza/${policyId}`;
+  private resolveAuditUrl(policyId: string): string {
+    return `https://asegura.co/poliza/${policyId}`;
   }
 
   private async generateQr(url: string): Promise<Buffer | null> {
@@ -263,7 +257,7 @@ export class PdfService {
     doc.y = startY + boxHeight + 20;
   }
 
-  // ── Blockchain audit QR ────────────────────────────────────────────────────────
+  // ── Verification QR ────────────────────────────────────────────────────────────
 
   private drawAuditBox(
     doc: InstanceType<typeof PDFDocument>,
@@ -289,10 +283,10 @@ export class PdfService {
     const textX = x + 14 + qrSize + 16;
     const textWidth = contentWidth - qrSize - 44;
     doc.fillColor(BRAND.blue).fontSize(11).font('Helvetica-Bold')
-      .text('Verificación blockchain (Celo)', textX, startY + 14, { width: textWidth });
+      .text('Verificación de póliza', textX, startY + 14, { width: textWidth });
     doc.fillColor(BRAND.gray).fontSize(9).font('Helvetica')
       .text(
-        'Escanea el código para consultar el registro público de auditoría de esta póliza en la red Celo.',
+        'Escanea el código para consultar los detalles públicos de esta póliza.',
         textX, startY + 34, { width: textWidth },
       );
     doc.fontSize(7).font('Helvetica').fillColor(BRAND.gray)

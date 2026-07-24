@@ -19,7 +19,6 @@ export class HealthController {
       llm: (this.config.get('LLM_API_KEY') || this.config.get('LLM_BASE_URL')) ? 'configured' : 'pending',
       telegram: this.config.get('TELEGRAM_BOT_TOKEN') ? 'configured' : 'pending',
       wompi: this.config.get('WOMPI_PUBLIC_KEY') ? 'configured' : 'pending',
-      celo: this.config.get('CELO_RPC_URL') ? 'configured' : 'pending',
       timestamp: new Date().toISOString(),
     };
   }

@@ -643,10 +643,10 @@ export class AgentService {
     const isConfirm = intent.isAffirmative;
 
     // Payment confirmation is no longer trust-based: the user's word was never actually
-    // verified against Wompi, so anyone could type "sí" and get a policy issued +
-    // registered on-chain without paying. The Wompi webhook (wompi-webhook.controller.ts)
-    // is now the sole source of truth — it confirms, registers on Celo, and notifies the
-    // user proactively once Wompi reports the transaction as APPROVED.
+    // verified against Wompi, so anyone could type "sí" and get a policy issued without
+    // paying. The Wompi webhook (wompi-webhook.controller.ts) is now the sole source of
+    // truth — it confirms and notifies the user proactively once Wompi reports the
+    // transaction as APPROVED.
     if (context.checkoutUrl && intent.isNegative) {
       return {
         text: 'Entendido. Si quieres intentar de nuevo más tarde, escríbeme cuando gustes.',

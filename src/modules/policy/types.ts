@@ -17,7 +17,6 @@ interface Policy {
   pets: PetDetail[] | null;
   status: string;
   wompi_link_id: string | null;
-  celo_tx_hash: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -69,16 +69,12 @@ function buildService(overrides: {
     createPaymentLink: jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.wompi.co/l/test', paymentLinkId: 'link-test' }),
     isEnabled: true,
   };
-  // Kept as a spy target only — AgentService no longer depends on CeloService directly.
-  // Celo registration now happens exclusively in wompi-webhook.controller.ts.
-  const blockchain = { registerPolicy: jest.fn().mockResolvedValue({ txHash: null, celoscanUrl: null }) };
-
   const service = new AgentService(
     nlp as any, telegram as any, conversations as any,
     quoting as any, policy as any, wompi as any,
   );
 
-  return { service, nlp, telegram, conversations, quoting, policy, wompi, blockchain };
+  return { service, nlp, telegram, conversations, quoting, policy, wompi };
 }
 
 // ── Unsupported input (images, long audio) ────────────────────────────────────

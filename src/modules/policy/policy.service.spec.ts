@@ -100,7 +100,7 @@ describe('PolicyService.findById', () => {
       id: 'pol-1', conversation_id: 'conv-1', product_id: 'asistencia-veterinaria',
       cedula: '123456789', nombre: 'Juan Pérez', email: 'juan@test.com',
       monthly_premium: 14500, status: 'pending_payment',
-      wompi_link_id: null, celo_tx_hash: null,
+      wompi_link_id: null,
       created_at: '2026-07-23T00:00:00Z', updated_at: '2026-07-23T00:00:00Z',
     };
     const supabase = makeSupabaseMock({ data: row });
@@ -131,7 +131,7 @@ describe('PolicyService.findByWompiLinkId', () => {
       id: 'pol-1', conversation_id: 'conv-1', product_id: 'asistencia-veterinaria',
       cedula: '123456789', nombre: 'Juan Pérez', email: 'juan@test.com',
       monthly_premium: 14500, status: 'pending_payment',
-      wompi_link_id: 'link-abc-123', celo_tx_hash: null,
+      wompi_link_id: 'link-abc-123',
       created_at: '2026-07-23T00:00:00Z', updated_at: '2026-07-23T00:00:00Z',
     };
     const supabase = makeSupabaseMock({ data: row });
@@ -152,17 +152,17 @@ describe('PolicyService.generateFinalPdf', () => {
     id: 'pol-1', conversation_id: 'conv-1', product_id: 'asistencia-veterinaria',
     cedula: '123456789', document_type: null, nombre: 'Juan Pérez', email: 'juan@test.com',
     monthly_premium: 14500, status: 'active',
-    wompi_link_id: 'txn-1', celo_tx_hash: '0xabc', pet_count: null, pets: null,
+    wompi_link_id: 'txn-1', pet_count: null, pets: null,
     created_at: '2026-07-23T00:00:00Z', updated_at: '2026-07-23T00:00:00Z',
   };
 
-  it('generates a PDF passing the real celoscanUrl through to PdfService', async () => {
+  it('generates a PDF for the given policy', async () => {
     const pdf = makePdfMock();
     const service = new PolicyService(makeSupabaseMock(), pdf);
-    const buffer = await service.generateFinalPdf(policy, 'https://celoscan.io/tx/0xabc');
+    const buffer = await service.generateFinalPdf(policy);
     expect(buffer).not.toBeNull();
     expect(pdf.generate).toHaveBeenCalledWith(
-      expect.objectContaining({ policyId: 'pol-1', celoscanUrl: 'https://celoscan.io/tx/0xabc', productName: 'Asistencia veterinaria' }),
+      expect.objectContaining({ policyId: 'pol-1', productName: 'Asistencia veterinaria' }),
     );
   });
 
@@ -172,14 +172,14 @@ describe('PolicyService.generateFinalPdf', () => {
     // between DATA_CAPTURE (chat) and the webhook (async, hours later).
     const pdf = makePdfMock();
     const service = new PolicyService(makeSupabaseMock(), pdf);
-    await service.generateFinalPdf({ ...policy, pet_count: 3, monthly_premium: 43500 }, 'https://celoscan.io/tx/0xabc');
+    await service.generateFinalPdf({ ...policy, pet_count: 3, monthly_premium: 43500 });
     expect(pdf.generate).toHaveBeenCalledWith(expect.objectContaining({ petCount: 3 }));
   });
 
   it('regression — passes the stored document_type through to the final PDF', async () => {
     const pdf = makePdfMock();
     const service = new PolicyService(makeSupabaseMock(), pdf);
-    await service.generateFinalPdf({ ...policy, document_type: 'TI' }, 'https://celoscan.io/tx/0xabc');
+    await service.generateFinalPdf({ ...policy, document_type: 'TI' });
     expect(pdf.generate).toHaveBeenCalledWith(expect.objectContaining({ documentType: 'TI' }));
   });
 
@@ -187,19 +187,32 @@ describe('PolicyService.generateFinalPdf', () => {
     const pdf = makePdfMock();
     const service = new PolicyService(makeSupabaseMock(), pdf);
     const pets = [{ name: 'Max', age: '3 años', breed: 'labrador' }];
-    await service.generateFinalPdf({ ...policy, pets }, 'https://celoscan.io/tx/0xabc');
+    await service.generateFinalPdf({ ...policy, pets });
     expect(pdf.generate).toHaveBeenCalledWith(expect.objectContaining({ pets }));
+  });
+
+  it('regression — uses the premium LOCKED IN at issuance (policy.monthly_premium), not the live catalog price', async () => {
+    // Real bug: generateFinalPdf read product.basePremium straight from the current
+    // PRODUCTS catalog instead of the policy's own stored monthly_premium. The webhook
+    // fires asynchronously (sometimes hours after issuance) — if catalog pricing changes
+    // in that window, or the policy's premium was computed per-pet (a multiplied amount
+    // that no longer equals any single product's basePremium), the final PDF would show
+    // a premium the user was never actually charged.
+    const pdf = makePdfMock();
+    const service = new PolicyService(makeSupabaseMock(), pdf);
+    await service.generateFinalPdf({ ...policy, monthly_premium: 43500 });
+    expect(pdf.generate).toHaveBeenCalledWith(expect.objectContaining({ monthlyPremium: 43500 }));
   });
 
   it('returns null when the product_id does not match any known product', async () => {
     const service = new PolicyService(makeSupabaseMock(), makePdfMock());
-    const result = await service.generateFinalPdf({ ...policy, product_id: 'unknown-product' }, 'https://celoscan.io/tx/0xabc');
+    const result = await service.generateFinalPdf({ ...policy, product_id: 'unknown-product' });
     expect(result).toBeNull();
   });
 
   it('returns null (not throw) when PdfService.generate rejects', async () => {
     const pdf = { generate: jest.fn().mockRejectedValue(new Error('pdf boom')) };
     const service = new PolicyService(makeSupabaseMock(), pdf as any);
-    await expect(service.generateFinalPdf(policy, 'https://celoscan.io/tx/0xabc')).resolves.toBeNull();
+    await expect(service.generateFinalPdf(policy)).resolves.toBeNull();
   });
 });

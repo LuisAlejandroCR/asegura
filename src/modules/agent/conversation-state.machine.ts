@@ -82,18 +82,10 @@ export const STATE_RESPONSES: ResponsesMap = {
   [ConversationState.PAYMENT]: () =>
     '🔐 El pago es 100% seguro a través de Wompi — plataforma oficial de Bancolombia.\n\nAcepta tarjeta débito/crédito, Nequi y PSE.\n\n¿Listo para generar tu link de pago?',
 
-  [ConversationState.POLICY_ISSUED]: (ctx) => {
-    const c = translate(ctx);
-    const celoLine = c.celoscanUrl
-      ? `\n\n🔗 *Verificación blockchain:* [Ver en Celoscan](${c.celoscanUrl})\nTu póliza quedó registrada permanentemente en Celo Mainnet — es tuya para siempre.`
-      : '';
-    return (
-      `✅ *¡Quedaste asegurado!*\n\n` +
-      `Tu seguro está activo desde hoy. Recibirás el PDF con todos los detalles adjunto a este chat.` +
-      `${celoLine}\n\n` +
-      `Si tienes dudas sobre coberturas o quieres proteger algo más, aquí estoy 24/7.`
-    );
-  },
+  [ConversationState.POLICY_ISSUED]: () =>
+    `✅ *¡Quedaste asegurado!*\n\n` +
+    `Tu seguro está activo desde hoy. Recibirás el PDF con todos los detalles adjunto a este chat.\n\n` +
+    `Si tienes dudas sobre coberturas o quieres proteger algo más, aquí estoy 24/7.`,
 
   [ConversationState.COMPLETED]: () =>
     '✅ ¡Todo listo! Tu seguro Colsubsidio está activo.\n\n' +

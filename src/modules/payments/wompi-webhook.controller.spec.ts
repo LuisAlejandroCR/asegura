@@ -40,7 +40,7 @@ function makePolicy(overrides: Partial<Policy> = {}): Policy {
     id: 'pol-1', conversation_id: 'conv-1', product_id: 'asistencia-veterinaria',
     cedula: '123456789', document_type: null, nombre: 'Juan Pérez', email: 'juan@test.com',
     monthly_premium: 14500, pet_count: null, pets: null, status: 'pending_payment',
-    wompi_link_id: 'link-abc', celo_tx_hash: null,
+    wompi_link_id: 'link-abc',
     created_at: '2026-07-23T00:00:00Z', updated_at: '2026-07-23T00:00:00Z',
     ...overrides,
   };
@@ -55,7 +55,7 @@ function makeConversation(overrides: Partial<{ id: string; user_id: string; chan
   };
 }
 
-function buildController(overrides: { policy?: Policy | null; celoResult?: { txHash: string | null; celoscanUrl: string | null } } = {}) {
+function buildController(overrides: { policy?: Policy | null } = {}) {
   const wompi = {
     validateWebhookSignature: jest.fn().mockReturnValue(true),
     extractTransactionData: jest.fn((event: WompiWebhookEvent) => ({
@@ -73,9 +73,6 @@ function buildController(overrides: { policy?: Policy | null; celoResult?: { txH
     updateStatus: jest.fn().mockResolvedValue(undefined),
     generateFinalPdf: jest.fn().mockResolvedValue(Buffer.from('%PDF-fake')),
   };
-  const celo = {
-    registerPolicy: jest.fn().mockResolvedValue(overrides.celoResult ?? { txHash: '0xabc', celoscanUrl: 'https://celoscan.io/tx/0xabc' }),
-  };
   const conversations = {
     findById: jest.fn().mockResolvedValue(makeConversation()),
     saveState: jest.fn().mockResolvedValue(undefined),
@@ -86,10 +83,10 @@ function buildController(overrides: { policy?: Policy | null; celoResult?: { txH
   };
 
   const controller = new WompiWebhookController(
-    wompi as any, policyService as any, celo as any, conversations as any, telegram as any,
+    wompi as any, policyService as any, conversations as any, telegram as any,
   );
 
-  return { controller, wompi, policyService, celo, conversations, telegram };
+  return { controller, wompi, policyService, conversations, telegram };
 }
 
 describe('WompiWebhookController — signature validation', () => {
@@ -115,59 +112,69 @@ describe('WompiWebhookController — policy resolution (payment_link_id, not ref
   });
 
   it('ignores gracefully when no policy matches the payment_link_id', async () => {
-    const { controller, celo } = buildController({ policy: null });
+    const { controller } = buildController({ policy: null });
     const result = await controller.handleWebhook(makeEvent());
     expect(result.status).toBe('ignored');
-    expect(celo.registerPolicy).not.toHaveBeenCalled();
   });
 });
 
 describe('WompiWebhookController — idempotency', () => {
   it.each(['paid', 'active'])('skips reprocessing when policy.status is already "%s"', async (status) => {
-    const { controller, celo, telegram } = buildController({ policy: makePolicy({ status }) });
+    const { controller, telegram } = buildController({ policy: makePolicy({ status }) });
     const result = await controller.handleWebhook(makeEvent());
     expect(result.status).toBe('already_processed');
-    expect(celo.registerPolicy).not.toHaveBeenCalled();
     expect(telegram.sendText).not.toHaveBeenCalled();
   });
 });
 
+describe('WompiWebhookController — malformed payload', () => {
+  // Regression: extractTransactionData used to destructure event.data.transaction.* with
+  // no existence check — an unexpected Wompi event shape (a ping/test event, or a bug on
+  // Wompi's side) would throw a raw TypeError instead of a clean, loggable "ignored"
+  // response. Signature validation alone can't catch this since it's mocked/independent
+  // of payload shape (and even a genuinely-signed event could still be a shape we don't expect).
+  it('returns ignored/malformed_payload when data.transaction is missing entirely', async () => {
+    const { controller, policyService } = buildController();
+    const malformed = {
+      event: 'ping', timestamp: 123, signature: { checksum: 'x', properties: [] }, data: {},
+    } as any;
+    await expect(controller.handleWebhook(malformed)).resolves.toEqual({ status: 'ignored', reason: 'malformed_payload' });
+    expect(policyService.findByWompiLinkId).not.toHaveBeenCalled();
+  });
+
+  it('returns ignored/malformed_payload when transaction.status is missing', async () => {
+    const { controller, policyService } = buildController();
+    const malformed = {
+      event: 'transaction.updated', timestamp: 123, signature: { checksum: 'x', properties: [] },
+      data: { transaction: { id: 'txn-1', payment_link_id: 'link-abc' } },
+    } as any;
+    await expect(controller.handleWebhook(malformed)).resolves.toEqual({ status: 'ignored', reason: 'malformed_payload' });
+    expect(policyService.findByWompiLinkId).not.toHaveBeenCalled();
+  });
+});
+
 describe('WompiWebhookController — APPROVED payment', () => {
-  it('updates status to paid then active, registers on Celo, and notifies the user', async () => {
-    const { controller, policyService, celo, telegram, conversations } = buildController();
+  it('updates status to paid then active, and notifies the user', async () => {
+    const { controller, policyService, telegram, conversations } = buildController();
     await controller.handleWebhook(makeEvent());
 
     expect(policyService.updateStatus).toHaveBeenCalledWith('pol-1', 'paid', expect.anything());
-    expect(celo.registerPolicy).toHaveBeenCalledWith('pol-1', expect.stringContaining('pol-1'));
-    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-1', 'active', expect.objectContaining({ celo_tx_hash: '0xabc' }));
+    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-1', 'active');
 
     expect(conversations.saveState).toHaveBeenCalledWith(
-      'conv-1', ConversationState.POLICY_ISSUED, expect.objectContaining({ celoscanUrl: 'https://celoscan.io/tx/0xabc' }),
+      'conv-1', ConversationState.POLICY_ISSUED, expect.objectContaining({ policyId: 'pol-1' }),
     );
-    expect(telegram.sendText).toHaveBeenCalledWith('999888777', expect.stringContaining('celoscan.io'));
+    expect(telegram.sendText).toHaveBeenCalledWith('999888777', expect.stringContaining('activo'));
   });
 
-  it('sends the final PDF (with the real celoscanUrl) as a document', async () => {
+  // Regression: the PDF used to be gated on a real celoscanUrl being present — now that
+  // Celo registration is gone, this is the ONLY PDF the user will ever receive (the draft
+  // sent before payment was removed in an earlier fix), so it must send unconditionally.
+  it('regression — always sends the final PDF on approval, with no blockchain step in between', async () => {
     const { controller, policyService, telegram } = buildController();
     await controller.handleWebhook(makeEvent());
-    expect(policyService.generateFinalPdf).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'pol-1' }), 'https://celoscan.io/tx/0xabc',
-    );
+    expect(policyService.generateFinalPdf).toHaveBeenCalledWith(expect.objectContaining({ id: 'pol-1' }));
     expect(telegram.sendDocument).toHaveBeenCalledWith('999888777', expect.any(Buffer), expect.stringContaining('.pdf'));
-  });
-
-  it('still marks the policy active and notifies the user when Celo registration is unavailable', async () => {
-    // Celo not configured (registerPolicy returns nulls) must not block payment confirmation
-    const { controller, policyService, telegram } = buildController({ celoResult: { txHash: null, celoscanUrl: null } });
-    await controller.handleWebhook(makeEvent());
-    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-1', 'active', expect.anything());
-    expect(telegram.sendText).toHaveBeenCalled();
-  });
-
-  it('does not attempt to send a final PDF when there is no real celoscanUrl', async () => {
-    const { controller, policyService } = buildController({ celoResult: { txHash: null, celoscanUrl: null } });
-    await controller.handleWebhook(makeEvent());
-    expect(policyService.generateFinalPdf).not.toHaveBeenCalled();
   });
 
   it('does not throw when the policy has no linked conversation', async () => {
@@ -180,15 +187,21 @@ describe('WompiWebhookController — APPROVED payment', () => {
     conversations.findById.mockResolvedValue(null);
     await expect(controller.handleWebhook(makeEvent())).resolves.toBeDefined();
   });
+
+  it('does not throw and skips the PDF when generateFinalPdf returns null', async () => {
+    const { controller, policyService, telegram } = buildController();
+    policyService.generateFinalPdf.mockResolvedValue(null);
+    await expect(controller.handleWebhook(makeEvent())).resolves.toBeDefined();
+    expect(telegram.sendDocument).not.toHaveBeenCalled();
+  });
 });
 
 describe('WompiWebhookController — declined/failed payment', () => {
-  it.each(['DECLINED', 'VOIDED', 'ERROR'])('updates status and notifies the user on %s, without registering on Celo', async (status) => {
-    const { controller, policyService, celo, telegram, conversations } = buildController();
+  it.each(['DECLINED', 'VOIDED', 'ERROR'])('updates status and notifies the user on %s, without issuing a policy', async (status) => {
+    const { controller, policyService, telegram, conversations } = buildController();
     await controller.handleWebhook(makeEvent({ status }));
 
     expect(policyService.updateStatus).toHaveBeenCalledWith('pol-1', status.toLowerCase());
-    expect(celo.registerPolicy).not.toHaveBeenCalled();
     expect(telegram.sendText).toHaveBeenCalled();
     // Clears the dead checkoutUrl so the user's next "sí" creates a fresh payment link
     expect(conversations.saveState).toHaveBeenCalledWith(

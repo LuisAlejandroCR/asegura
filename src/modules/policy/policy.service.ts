@@ -90,9 +90,8 @@ export class PolicyService {
     return data as Policy | null;
   }
 
-  // Regenerates the policy PDF once the real Celoscan tx is known (post-payment),
-  // replacing the referenceURI fallback the initial PDF used before payment completed.
-  async generateFinalPdf(policy: Policy, celoscanUrl: string): Promise<Buffer | null> {
+  // Generates the policy PDF after payment is confirmed — the only PDF the user receives.
+  async generateFinalPdf(policy: Policy): Promise<Buffer | null> {
     const product = PRODUCTS.find((p) => p.id === policy.product_id);
     if (!product) return null;
 
@@ -106,9 +105,8 @@ export class PolicyService {
         cedula: policy.cedula,
         documentType: policy.document_type ?? undefined,
         email: policy.email ?? undefined,
-        monthlyPremium: product.basePremium,
+        monthlyPremium: policy.monthly_premium,
         issuedAt: new Date(policy.created_at),
-        celoscanUrl,
         petCount: policy.pet_count,
         pets: policy.pets ?? undefined,
       });

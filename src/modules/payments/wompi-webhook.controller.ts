@@ -2,11 +2,10 @@
 // Wompi's Payment Links API has no "reference" create-parameter, so transactions
 // are matched back to a policy via payment_link_id, not the transaction's own
 // auto-generated reference. Chat-based "sí" no longer confirms payment — this
-// webhook is the only path that registers on Celo and notifies the user.
+// webhook is the only path that notifies the user and sends the final PDF.
 import { Controller, Post, Body, UnauthorizedException, Logger } from '@nestjs/common';
 import { WompiService } from './wompi.service';
 import { PolicyService } from '../policy/policy.service';
-import { CeloService } from '../blockchain/celo.service';
 import { ConversationService } from '../agent/conversation.service';
 import { TelegramAdapter } from '../channel/telegram-adapter.service';
 import { WompiWebhookEvent } from './types';
@@ -23,7 +22,6 @@ export class WompiWebhookController {
   constructor(
     private readonly wompi: WompiService,
     private readonly policy: PolicyService,
-    private readonly celo: CeloService,
     private readonly conversations: ConversationService,
     private readonly telegram: TelegramAdapter,
   ) {}
@@ -32,6 +30,15 @@ export class WompiWebhookController {
   async handleWebhook(@Body() event: WompiWebhookEvent) {
     if (!this.wompi.validateWebhookSignature(event)) {
       throw new UnauthorizedException('Invalid webhook signature');
+    }
+
+    // A genuinely-signed event can still carry an unexpected shape (e.g. a ping/test
+    // event, or a future Wompi event type without a transaction) — extractTransactionData
+    // destructures event.data.transaction.* unconditionally, so this must be checked first
+    // to avoid an uncaught TypeError turning into a 500 instead of a clean ignored response.
+    if (!event.data?.transaction || typeof event.data.transaction.status !== 'string') {
+      this.logger.warn(`Malformed Wompi webhook payload — missing transaction or status`);
+      return { status: 'ignored', reason: 'malformed_payload' };
     }
 
     const txData = this.wompi.extractTransactionData(event);
@@ -61,32 +68,27 @@ export class WompiWebhookController {
     }
 
     await this.policy.updateStatus(policy.id, 'paid', { wompi_link_id: txData.paymentLinkId });
+    await this.policy.updateStatus(policy.id, 'active');
 
-    const referenceURI = `https://asegura.co/poliza/${policy.id}`;
-    const { txHash, celoscanUrl } = await this.celo.registerPolicy(policy.id, referenceURI);
-    await this.policy.updateStatus(policy.id, 'active', txHash ? { celo_tx_hash: txHash } : {});
+    await this.notifyPolicyIssued(policy);
 
-    await this.notifyPolicyIssued(policy, celoscanUrl ?? undefined);
-
-    return { status: 'processed', transactionId: txData.transactionId, celoTxHash: txHash };
+    return { status: 'processed', transactionId: txData.transactionId };
   }
 
-  private async notifyPolicyIssued(policy: Policy, celoscanUrl?: string): Promise<void> {
+  private async notifyPolicyIssued(policy: Policy): Promise<void> {
     if (!policy.conversation_id) return;
     const conversation = await this.conversations.findById(policy.conversation_id);
     if (!conversation) return;
 
-    const newContext: ConversationContext = { ...conversation.context, celoscanUrl, policyId: policy.id };
+    const newContext: ConversationContext = { ...conversation.context, policyId: policy.id };
     await this.conversations.saveState(conversation.id, ConversationState.POLICY_ISSUED, newContext);
     await this.telegram.sendText(conversation.user_id, STATE_RESPONSES[ConversationState.POLICY_ISSUED](newContext));
 
-    // Only worth resending the PDF when there's a real on-chain tx to show — otherwise
-    // it would carry the same referenceURI fallback QR as the draft PDF already sent.
-    if (celoscanUrl) {
-      const pdfBuffer = await this.policy.generateFinalPdf(policy, celoscanUrl);
-      if (pdfBuffer) {
-        await this.telegram.sendDocument(conversation.user_id, pdfBuffer, `poliza-${policy.id.slice(0, 8)}.pdf`);
-      }
+    // This is the only PDF the user ever receives — the draft PDF before payment was
+    // removed in an earlier fix, so it must send unconditionally on approval.
+    const pdfBuffer = await this.policy.generateFinalPdf(policy);
+    if (pdfBuffer) {
+      await this.telegram.sendDocument(conversation.user_id, pdfBuffer, `poliza-${policy.id.slice(0, 8)}.pdf`);
     }
   }
 
