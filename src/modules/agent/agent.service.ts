@@ -287,6 +287,24 @@ export class AgentService {
     // otherwise win the race and send the user straight to DATA_CAPTURE for the pet
     // quote, silently ignoring the cross-sell request (real live-test bug).
     if (currentProduct?.category === 'mascotas' && this.mentionsPersonalCoverage(text)) {
+      // The same message that triggers cross-sell often already names a specific category
+      // (e.g. "muéstrame ese de salud de accidentes para mí" → productCategory: 'accidentes')
+      // — quote it directly instead of asking a redundant clarifying question that discards
+      // information the user already gave (real live-test complaint: "I already said salud
+      // y accidentes, why ask again?").
+      if (intent.productCategory && intent.productCategory !== 'mascotas') {
+        const personalContext: ConversationContext = {
+          ...context, productCategory: intent.productCategory, coverage: undefined, petType: undefined, petCount: undefined, shownProductIds: [],
+        };
+        const best = this.quoting.bestQuote(personalContext as AffiliateSignals);
+        if (best) {
+          return {
+            text: this.formatQuote(best.product, best.score, personalContext),
+            nextState: ConversationState.QUOTE_PRESENTED,
+            context: { ...personalContext, quoteProductId: best.product.id, shownProductIds: [best.product.id] },
+          };
+        }
+      }
       return {
         text: (
           '¡Claro! Además de tus mascotas, puedo cotizarte algo para ti — vida, accidentes o asistencia médica.\n\n' +

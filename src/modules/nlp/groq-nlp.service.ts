@@ -56,6 +56,8 @@ Solo responde con JSON válido, sin markdown:
   "petBreed": null,
   "pets": []
 }
+"asistencia" cubre lo que el usuario suele llamar "salud" o "seguro médico" — si el
+usuario dice "salud", usa productCategory "asistencia", nunca inventes una categoría nueva.
 petType solo aplica si productCategory es "mascotas". Reglas:
 - Solo menciona gatos ("gato", "michi", "felino") → "gato"
 - Solo menciona perros ("perro", "canino") → "perro"
@@ -161,6 +163,10 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     const categories: Record<string, InsuranceIntent['productCategory']> = {
       vida: 'vida', hogar: 'hogar', casa: 'hogar',
       accidente: 'accidentes', asistencia: 'asistencia',
+      // "salud" is the colloquial term for the catalog's "asistencia" (asistencia médica)
+      // category — real live-test message "Ahora el de salud." got no category at all
+      // without this alias, and just re-showed the previously quoted product unchanged.
+      salud: 'asistencia',
       mascota: 'mascotas', perro: 'mascotas', gato: 'mascotas', michi: 'mascotas',
       familia: 'vida', hijo: 'vida',
     };

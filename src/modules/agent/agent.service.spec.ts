@@ -988,6 +988,33 @@ describe('AgentService — QUOTE_PRESENTED cross-sell for personal coverage', ()
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText.toLowerCase()).toMatch(/vida|accidentes|asistencia/);
   });
+
+  it('regression — quotes the named category immediately instead of re-asking when the cross-sell message already names one', async () => {
+    // Real live-test complaint: "Quiero ser mascotas, muéstrame ese de salud de
+    // accidentes para mí." both triggers cross-sell (mentionsPersonalCoverage) AND
+    // already names a specific category ('accidentes', per Groq's extraction) — but the
+    // cross-sell branch unconditionally asked "¿Cuál te interesa?" and discarded
+    // intent.productCategory entirely. User: "why continue not understanding my last
+    // request? I said 'salud y accidentes'".
+    const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
+    const accidentesProduct = PRODUCTS.find(p => p.category === 'accidentes')!;
+    const { service, telegram, quoting, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: petProduct.id, productCategory: 'mascotas', petCount: 3 },
+      intent: makeIntent({ isAffirmative: true, isNegative: false, wantsAlternative: false, productCategory: 'accidentes' }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: accidentesProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: accidentesProduct.basePremium, priority: 'medium', productId: accidentesProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Quiero ser mascotas, muéstrame ese de salud de accidentes para mí.'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(accidentesProduct.name);
+    expect(sentText).not.toContain('¿Cuál te interesa');
+    const saveCall = conversations.saveState.mock.calls[0];
+    expect(saveCall?.[1]).toBe(ConversationState.QUOTE_PRESENTED);
+  });
 });
 
 describe('AgentService — QUOTE_PRESENTED explicit category switch', () => {

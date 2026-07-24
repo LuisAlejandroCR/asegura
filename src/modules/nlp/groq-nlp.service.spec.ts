@@ -113,6 +113,13 @@ describe('GroqNlpService.fallbackIntent — intent extraction', () => {
     ['tengo dos perros', 'mascotas'],
     ['michi necesita vacunas', 'mascotas'],
     ['accidente de tránsito', 'accidentes'],
+    // Regression: "Ahora el de salud." (real live-test message) got no category at all —
+    // colloquial Spanish uses "salud" for health/medical coverage, but the formal catalog
+    // category is "asistencia" (asistencia médica), and neither the fallback dict nor the
+    // Groq prompt had this alias. The message fell through to "re-show the current quote
+    // unchanged", ignoring the request entirely.
+    ['ahora el de salud', 'asistencia'],
+    ['quiero un seguro de salud', 'asistencia'],
   ])('"%s" → productCategory "%s"', (text, expected) => {
     expect(fallback(service, text).productCategory).toBe(expected);
   });
