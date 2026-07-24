@@ -16,7 +16,7 @@ function App() {
           </h1>
           <div className="hero-actions">
             <a
-              href="https://t.me/AseguraBot"
+              href="https://t.me/asegura_bot"
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn-primary"
@@ -395,7 +395,7 @@ function App() {
           </div>
 
           <a
-            href="https://t.me/AseguraBot"
+            href="https://t.me/asegura_bot"
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-primary btn-large"
