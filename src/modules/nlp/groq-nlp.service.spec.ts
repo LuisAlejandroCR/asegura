@@ -509,6 +509,23 @@ describe('GroqNlpService.fallbackIntent — Colombian slang affirmatives', () =>
   });
 });
 
+// Real live-test bug (2026-07-24): after a quote card, "Dame ese" (voice-transcribed,
+// Colombian Spanish for "give me that one" — a clear purchase confirmation) was not
+// recognized as an affirmative. handleQuotation's fallback branch then re-showed the
+// IDENTICAL quote card instead of advancing to phone verification — reading to the user
+// as the agent ignoring their confirmation and "showing another insurance".
+describe('GroqNlpService.fallbackIntent — deictic confirmations ("dame ese", "quiero ese")', () => {
+  const service = makeService();
+
+  it.each([
+    'Dame ese',
+    'dame ese',
+    'Deme ese',
+  ])('"%s" → isAffirmative true', (text) => {
+    expect(fallback(service, text).isAffirmative).toBe(true);
+  });
+});
+
 // ── Deterministic petCount extraction (2026-07-24 regression) ──────────────────
 // Real live-test bug: "Tengo dos mascotas y yo." was quoted and charged for 3 mascotas,
 // not 2 — petCount had zero deterministic validation, unlike petType/petResolution

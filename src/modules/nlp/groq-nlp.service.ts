@@ -64,7 +64,7 @@ petType solo aplica si productCategory es "mascotas". Reglas:
 - Menciona AMBOS (gato y perro en el mismo mensaje) → "mixto"
 - No especifica → null
 
-isAffirmative: true cuando el usuario expresa acuerdo, confirmación, interés positivo o deseo de continuar (ej: "sí", "claro", "me interesa", "quiero", "perfecto", "adelante", "todos", "todas", "hagámoslo", "confirmo", "listo", "dale", "me parece bien", "genera", "generalo", "procede", "procédele", "hágale", "vale")
+isAffirmative: true cuando el usuario expresa acuerdo, confirmación, interés positivo o deseo de continuar (ej: "sí", "claro", "me interesa", "quiero", "perfecto", "adelante", "todos", "todas", "hagámoslo", "confirmo", "listo", "dale", "me parece bien", "genera", "generalo", "procede", "procédele", "hágale", "vale", "dame ese", "deme ese" — estas dos últimas son formas comunes en Colombia de confirmar la opción que se le acaba de mostrar, no una pregunta)
 isNegative: true cuando el usuario expresa rechazo, deseo de cambiar, o desinterés (ej: "no", "paso", "otro", "otra", "diferente", "no me interesa", "quizás después", "ninguno")
 Ambos pueden ser false si el mensaje es neutral o informativo.
 
@@ -293,7 +293,12 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     const affirmatives = ['sí', 'si', 'claro', 'me interesa', 'quiero', 'perfecto', 'adelante',
       'todos', 'todas', 'ambos', 'hagámoslo', 'confirmo', 'listo', 'dale', 'me parece bien',
       // Colombian slang confirmations (real gap: "generalo" wasn't recognized, stalling payment)
-      'genera', 'procede', 'procéde', 'hágale', 'vale'];
+      'genera', 'procede', 'procéde', 'hágale', 'vale',
+      // Real live-test bug: "Dame ese" (voice-transcribed "give me that one", a common
+      // Colombian way to confirm a choice from a quote) was not recognized as a
+      // confirmation, causing the quote card to be re-shown identically instead of
+      // advancing to phone verification.
+      'dame', 'deme'];
     return affirmatives.some((a) => lower.includes(a));
   }
 
