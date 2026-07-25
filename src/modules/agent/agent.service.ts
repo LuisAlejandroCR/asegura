@@ -490,6 +490,26 @@ export class AgentService {
   // response to the bot's OWN previous message — never a real person's full name.
   private static readonly FILLER_WORDS = ['gracias', 'ok', 'okay', 'vale', 'listo', 'dale', 'bueno', 'ya'];
 
+  // A human/pet name is letters only (incl. Spanish accents/ñ), one or more words
+  // separated by spaces, apostrophes or hyphens — never digits or other symbols. Real
+  // bug: a saved conversation context showed "nombre": "2+2" accepted as a valid full
+  // name, since the field was previously stored verbatim with zero shape validation.
+  private static readonly NAME_REGEX = /^[a-zA-ZÀ-ÖØ-öø-ÿ]+(?:['’\-][a-zA-ZÀ-ÖØ-öø-ÿ]+|\s+[a-zA-ZÀ-ÖØ-öø-ÿ]+)*$/;
+
+  private isValidHumanName(text: string): boolean {
+    const trimmed = text.trim();
+    return trimmed.length >= 2 && trimmed.length <= 80 && AgentService.NAME_REGEX.test(trimmed);
+  }
+
+  // True if ANY product in this purchase (single or multi-product) requires conditional
+  // underwriting (2026-07-24 business feedback: vida, medicina-prepagada-gatos/perros).
+  private requiresUnderwritingInfo(context: ConversationContext): boolean {
+    const productIds = context.selectedProductIds?.length
+      ? context.selectedProductIds
+      : (context.quoteProductId ? [context.quoteProductId] : []);
+    return productIds.some((id) => PRODUCTS.find((p) => p.id === id)?.requiresUnderwriting);
+  }
+
   // Single source for the Wompi payment link's expiry — was duplicated as two separate
   // literal `30`s (the API call and the user-facing message text), risking drift if one
   // changed without the other.
@@ -644,7 +664,9 @@ export class AgentService {
           const updatedPets = [...pets];
           for (const p of extracted) {
             if (updatedPets.length >= totalPets) break;
-            if (!p.name) continue;
+            // A pet name goes on the final policy PDF just like a human nombre — reject
+            // the same digit/symbol garbage (e.g. NLP mis-extracting "2" as a pet name).
+            if (!p.name || !this.isValidHumanName(p.name)) continue;
             updatedPets.push({
               name: p.name,
               age: p.age ?? 'no especificada',
@@ -734,8 +756,11 @@ export class AgentService {
 
       const updatedPets = [...pets];
       const current = updatedPets[targetIndex];
+      // Same digit/symbol guard as the initial capture — a garbage-shaped petName
+      // (e.g. NLP mis-extracting "2") must never overwrite an already-valid pet name.
+      const newName = intent.petName && this.isValidHumanName(intent.petName) ? intent.petName : current.name;
       updatedPets[targetIndex] = {
-        name: intent.petName ?? current.name,
+        name: newName,
         age: intent.petAge ?? current.age,
         breed: intent.petBreed ? matchBreed(intent.petBreed) : current.breed,
       };
@@ -743,6 +768,21 @@ export class AgentService {
       return {
         text: this.formatPetsSummary(updatedPets),
         context: { ...context, pets: updatedPets },
+      };
+    }
+
+    // Step 3.5 — conditional underwriting info (2026-07-24 business feedback). Set by
+    // the email step below once cédula/nombre/correo are all in and the quoted product
+    // requires it. Accepts ANY reply verbatim — this is informational (age, illnesses,
+    // clinical history), not a structural gate, so it must never loop: the very next
+    // message is stored as-is and the flow proceeds to the final confirmation.
+    if (context.awaitingMedicalInfo) {
+      newContext.medicalInfo = rawText;
+      newContext.medicalInfoProvided = true;
+      newContext.awaitingMedicalInfo = undefined;
+      return {
+        text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext),
+        context: newContext,
       };
     }
 
@@ -770,7 +810,10 @@ export class AgentService {
       if (this.isFillerWord(rawText)) {
         return { text: '¿Cuál es tu nombre completo?' };
       }
-      newContext.nombre = rawText;
+      if (!this.isValidHumanName(rawText)) {
+        return { text: 'Ese no parece un nombre válido — solo letras y espacios, sin números ni símbolos. ¿Cuál es tu nombre completo?' };
+      }
+      newContext.nombre = rawText.trim();
       return {
         text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext),
         context: newContext,
@@ -785,6 +828,15 @@ export class AgentService {
         return { text: '¿Cuál es tu correo electrónico? Ahí recibirás la póliza.' };
       }
       newContext.email = rawText;
+      // 2026-07-24 business feedback: vida and medicina-prepagada-gatos/perros need
+      // conditional underwriting info before the final confirmation — everything else
+      // is direct-sell and goes straight to it.
+      if (this.requiresUnderwritingInfo(newContext) && !newContext.medicalInfoProvided) {
+        return {
+          text: 'Para este seguro necesito un par de datos adicionales: tu edad, si tienes alguna enfermedad preexistente, y un breve historial clínico (o escribe "ninguna" si no aplica).',
+          context: { ...newContext, awaitingMedicalInfo: true },
+        };
+      }
       return {
         text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext),
         context: newContext,

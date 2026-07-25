@@ -421,6 +421,42 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     expect(sentText).toMatch(/nombre/i);
   });
 
+  // Real bug: a saved conversation context showed "nombre": "2+2" accepted as a valid
+  // full name — no field ever rejected digits or symbols. A name must contain only
+  // letters (incl. Spanish accents/ñ), spaces, apostrophes and hyphens.
+  describe('regression — nombre rejects digits and special characters', () => {
+    const invalidNames = ['2+2', '12345', 'Juan123', '!!!', 'Juan@Perez', '<script>', '****', '   ', '.', 'a'];
+
+    it.each(invalidNames)('rejects %j as a nombre and re-asks without saving it', async (badName) => {
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.DATA_CAPTURE,
+        context: { cedula: '12345678' },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage(badName));
+      await service.handleMessage({});
+      expect(conversations.saveState).not.toHaveBeenCalledWith(
+        expect.anything(), expect.anything(), expect.objectContaining({ nombre: expect.anything() }),
+      );
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).toMatch(/nombre/i);
+    });
+
+    const validNames = ['Juan Pérez', 'María José Gómez-Ruiz', "D'Angelo Niño", 'Ana', 'José Ñuñez'];
+
+    it.each(validNames)('accepts %j as a valid nombre', async (goodName) => {
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.DATA_CAPTURE,
+        context: { cedula: '12345678' },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage(goodName));
+      await service.handleMessage({});
+      expect(conversations.saveState).toHaveBeenCalledWith(
+        'conv-1', ConversationState.DATA_CAPTURE,
+        expect.objectContaining({ nombre: goodName }),
+      );
+    });
+  });
+
   it('regression — text without a valid email format is never captured as the email', async () => {
     // Real live-test bug: once nombre was wrongly set to "Gracias." (see above), the
     // NEXT message ("Juan Pérez.") got captured as the email with zero format
@@ -643,6 +679,82 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
   });
 });
 
+// ── Conditional underwriting (2026-07-24 business feedback) ──────────────────
+// "Seguro de vida" and both "Medicina prepagada" (gatos/perros) products need age,
+// pre-existing illnesses, and clinical history before they can be sold — everything
+// else in the catalog is direct-sell (cédula/nombre/correo only).
+
+describe('AgentService — conditional underwriting gate', () => {
+  it('regression — a product requiring underwriting asks for medical info instead of jumping to the final confirmation', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan Pérez', quoteProductId: 'vida' },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('juan@email.com'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toMatch(/edad|enfermedad|historial/i);
+    expect(sentText).not.toMatch(/¿todo listo|confirmar|sí.*continuar/i);
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ email: 'juan@email.com', awaitingMedicalInfo: true }),
+    );
+  });
+
+  it('a product that does NOT require underwriting skips medical questions and goes straight to confirmation', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Juan Pérez', quoteProductId: 'exequial' },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('juan@email.com'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toMatch(/edad|enfermedad|historial/i);
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.email).toBe('juan@email.com');
+    expect(savedContext.awaitingMedicalInfo).toBeFalsy();
+  });
+
+  it('regression — after the medical-info question, any reply is accepted (never loops) and the flow proceeds to the final confirmation', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@email.com',
+        quoteProductId: 'vida', awaitingMedicalInfo: true,
+      },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('35 años, sin enfermedades preexistentes'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({
+        medicalInfo: '35 años, sin enfermedades preexistentes',
+        medicalInfoProvided: true,
+        awaitingMedicalInfo: undefined,
+      }),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toMatch(/sí/i); // final confirmation summary, ready for payment
+  });
+
+  it('regression — a bare "no" while awaiting medical info is stored as the answer, not misread as abandon/correction', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@email.com',
+        quoteProductId: 'vida', awaitingMedicalInfo: true,
+      },
+      intent: makeIntent({ isNegative: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('no'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ medicalInfo: 'no', medicalInfoProvided: true }),
+    );
+  });
+});
+
 // ── Payment method choice (2026-07-24 feedback) ───────────────────────────────
 // "at the end let user choose if they want to pay with Tarjeta Colsubsidio or Link de
 // pago" — both route to the exact same real Wompi checkout link (no new payment rail,
@@ -793,6 +905,25 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
     );
   });
 
+  // Real gap: a pet name is a free-text field just like the human nombre — an NLP
+  // mis-extraction of a digit/symbol "name" (e.g. "2") must not be pushed into pets[]
+  // and end up on the final policy PDF.
+  it('regression — a digit/symbol-only extracted petName is rejected, re-asks instead of saving it', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { productCategory: 'mascotas', petCount: 1, pets: [] },
+      intent: makeIntent({ productCategory: 'mascotas', petName: '2', petAge: '5 años', petBreed: 'criollo' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('se llama 2, tiene 5 años, es criollo'));
+    await service.handleMessage({});
+    expect(conversations.saveState).not.toHaveBeenCalledWith(
+      expect.anything(), expect.anything(),
+      expect.objectContaining({ pets: expect.arrayContaining([expect.objectContaining({ name: '2' })]) }),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toMatch(/mascota/i);
+  });
+
   it('shows a confirmation summary (not cédula yet) once all pets are collected', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DATA_CAPTURE,
@@ -872,6 +1003,28 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
     );
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain('8 años');
+  });
+
+  it('regression — a garbage-shaped extracted petName never overwrites an already-valid pet name during correction', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        productCategory: 'mascotas', petCount: 1,
+        pets: [{ name: 'Rocky', age: '5 años', breed: 'Doberman' }],
+        petsAwaitingConfirmation: true,
+      },
+      // Single-pet household — targetIndex falls back to 0, so a garbage petName must
+      // not silently rename "Rocky" to "2".
+      intent: makeIntent({ isAffirmative: false, petName: '2', petAge: '6 años' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('tiene 6 años'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DATA_CAPTURE,
+      expect.objectContaining({
+        pets: [{ name: 'Rocky', age: '6 años', breed: 'Doberman' }],
+      }),
+    );
   });
 
   // Real live-test bug (2026-07-24): a 3-pet message ("Bruna... Ramón... Pancha...")
@@ -1761,4 +1914,85 @@ describe('AgentService FUZZ — confirmation variants', () => {
       'conv-1', ConversationState.DISCOVERY, expect.objectContaining({ autorizado: true }),
     );
   });
+});
+
+// 2026-07-24: "not let user record integers or special characters in fields where it's
+// not allowed" — random-input fuzzing for the nombre field, on top of the fixed-list
+// regression tests above.
+describe('AgentService FUZZ — nombre never accepts digits/symbols', () => {
+  function randomGarbageName(): string {
+    const pool = '0123456789!@#$%^&*()_+=<>{}[]';
+    const len = 1 + Math.floor(Math.random() * 15);
+    let out = '';
+    for (let i = 0; i < len; i++) out += pool[Math.floor(Math.random() * pool.length)];
+    return out;
+  }
+
+  function randomValidSpanishName(): string {
+    const syllables = ['ma', 'ra', 'lo', 'fer', 'nan', 'do', 'gar', 'cí', 'a', 'lu', 'pe', 'rez', 'sán', 'chez', 'ñu'];
+    const wordCount = 1 + Math.floor(Math.random() * 3);
+    const words: string[] = [];
+    for (let w = 0; w < wordCount; w++) {
+      const sylCount = 1 + Math.floor(Math.random() * 3);
+      let word = '';
+      for (let s = 0; s < sylCount; s++) word += syllables[Math.floor(Math.random() * syllables.length)];
+      words.push(word.charAt(0).toUpperCase() + word.slice(1));
+    }
+    return words.join(' ');
+  }
+
+  it('never accepts a random digit/symbol string as nombre (50 random samples)', async () => {
+    for (let i = 0; i < 50; i++) {
+      const garbage = randomGarbageName();
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.DATA_CAPTURE,
+        context: { cedula: '12345678' },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage(garbage));
+      await service.handleMessage({});
+      const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext | undefined;
+      expect(savedContext?.nombre).toBeUndefined();
+    }
+  });
+
+  it('always accepts a random letters-only Spanish-shaped name (50 random samples)', async () => {
+    for (let i = 0; i < 50; i++) {
+      const name = randomValidSpanishName();
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.DATA_CAPTURE,
+        context: { cedula: '12345678' },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage(name));
+      await service.handleMessage({});
+      const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext | undefined;
+      expect(savedContext?.nombre).toBe(name);
+    }
+  });
+});
+
+// INVARIANT: the conditional-underwriting question (age/illness/clinical history) must
+// appear if and only if the quoted product's catalog entry has requiresUnderwriting —
+// swept across the ENTIRE real catalog so a future product addition/removal can't
+// silently drift from the business rule without a test noticing.
+describe('AgentService INVARIANT — underwriting question matches catalog flag for every product', () => {
+  it.each(PRODUCTS.map((p) => [p.id, !!p.requiresUnderwriting] as const))(
+    'product "%s" (requiresUnderwriting=%s) asks for medical info iff the flag is set',
+    async (productId, expectMedicalQuestion) => {
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.DATA_CAPTURE,
+        context: { cedula: '12345678', nombre: 'Juan Pérez', quoteProductId: productId },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('juan@email.com'));
+      await service.handleMessage({});
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+      if (expectMedicalQuestion) {
+        expect(sentText).toMatch(/edad|enfermedad|historial/i);
+        expect(savedContext.awaitingMedicalInfo).toBe(true);
+      } else {
+        expect(sentText).not.toMatch(/edad|enfermedad|historial/i);
+        expect(savedContext.awaitingMedicalInfo).toBeFalsy();
+      }
+    },
+  );
 });

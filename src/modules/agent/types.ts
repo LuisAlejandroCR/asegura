@@ -86,6 +86,14 @@ interface ConversationContext {
   // succeeded before the user has actually paid via the link.
   awaitingPaymentMethodChoice?: boolean;
   paymentMethodChoice?: 'tarjeta_colsubsidio' | 'link_pago';
+  // Conditional underwriting (2026-07-24 business feedback) — vida and both medicina
+  // prepagada (gatos/perros) products need age, pre-existing illnesses, and clinical
+  // history before the policy can be issued; every other product is direct-sell
+  // (cédula/nombre/correo only). Asked once, right after correo — any reply is accepted
+  // and stored verbatim (informational, not a structural gate like the KYC steps above).
+  awaitingMedicalInfo?: boolean;
+  medicalInfoProvided?: boolean;
+  medicalInfo?: string;
 }
 
 interface Conversation {
