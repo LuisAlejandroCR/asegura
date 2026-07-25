@@ -6,6 +6,7 @@ asegura-knowledge-base/
 AGENTS.md
 docs/
 .claude/
+src/videos
 
 # Dependencias
 node_modules/

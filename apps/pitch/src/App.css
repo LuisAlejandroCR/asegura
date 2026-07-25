@@ -453,6 +453,29 @@ tr:last-child td { border-bottom: none; }
   box-shadow: var(--shadow-sm);
 }
 
+/* ── Teaser Video ─────────────────────────────────────────────────────── */
+.teaser-video-wrapper {
+  max-width: 340px;
+  margin: 28px auto 36px;
+  text-align: center;
+}
+
+.teaser-video {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  border-radius: var(--r);
+  border: 1px solid var(--border-mid);
+  box-shadow: var(--shadow-sm);
+  background: #16161a;
+  display: block;
+}
+
+.teaser-caption {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
 /* ── Comparison Table ─────────────────────────────────────────────────── */
 .comparison-table {
   overflow-x: auto;

@@ -208,6 +208,22 @@ function App() {
           <Reveal><span className="section-label">Viabilidad técnica · 20%</span></Reveal>
           <Reveal delay={60}><h2>Demo en vivo</h2></Reveal>
 
+          <Reveal delay={80}>
+            <div className="teaser-video-wrapper">
+              <video
+                className="teaser-video"
+                src="/pitch-teaser.mp4"
+                controls
+                muted
+                playsInline
+                preload="metadata"
+              />
+              <p className="teaser-caption">
+                Grabación real de la conversación completa — sin cortes de guion.
+              </p>
+            </div>
+          </Reveal>
+
           <Reveal delay={100}>
             <div className="comparison-table">
               <table>
