@@ -168,7 +168,13 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
     // cast here so IChannelAdapter's interface can stay a plain string (channel-agnostic).
     // isBig maps to Telegram's is_big flag — a much larger animated burst, used for the
     // phone/contact-share confirmation (2026-07-24 feedback).
-    await this.bot.api.setMessageReaction(Number(userId), messageId, [{ type: 'emoji', emoji } as any], { is_big: isBig }).catch(() => undefined);
+    //
+    // Real live-test report (reported 3 times): the reaction reportedly never shows,
+    // despite code review and passing tests finding no bug here. A silent .catch() made
+    // this undebuggable — logging the real failure reason turns it into an actual log
+    // line to diagnose from next time, instead of a guess.
+    await this.bot.api.setMessageReaction(Number(userId), messageId, [{ type: 'emoji', emoji } as any], { is_big: isBig })
+      .catch((err) => this.logger.warn(`reactToMessage failed: ${err}`));
   }
 
   // 2026-07-24 feedback: a real branded success-checkmark video for the

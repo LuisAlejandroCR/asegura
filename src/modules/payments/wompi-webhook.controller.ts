@@ -20,7 +20,9 @@ const PROCESSED_STATUSES = ['paid', 'active'];
 // nest-cli.json doesn't copy non-.ts assets into dist/, and the server runs `node dist/main`
 // from the project root, so `src/assets/` is reachable at runtime via process.cwd()
 // (same convention as pdf.service.ts's IMAGES_DIR and agent.service.ts's copy of this path).
-const SUCCESS_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'success-check.mp4');
+// "¡Pago recibido!" is baked into the video itself (2026-07-24 feedback) — same asset
+// used for the Tarjeta Colsubsidio choice in agent.service.ts.
+const PAYMENT_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'payment-received.mp4');
 
 @Controller('webhooks/wompi')
 export class WompiWebhookController {
@@ -123,7 +125,7 @@ export class WompiWebhookController {
     // 2026-07-24 feedback: the real Wompi approval is the actual "successfully paid"
     // moment — gets the same branded success-checkmark video as the selfie and
     // Tarjeta Colsubsidio moments.
-    await this.telegram.sendAnimation(conversation.user_id, SUCCESS_ANIMATION_PATH);
+    await this.telegram.sendAnimation(conversation.user_id, PAYMENT_ANIMATION_PATH);
     await this.telegram.sendText(conversation.user_id, message);
 
     // This is the only PDF the user ever receives — the draft PDF before payment was

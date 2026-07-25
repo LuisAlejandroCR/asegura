@@ -35,11 +35,13 @@ interface ProcessResult {
   animation?: string;
 }
 
-// Static brand asset — referenced relative to the project root (not __dirname) because
+// Static brand assets — referenced relative to the project root (not __dirname) because
 // nest-cli.json doesn't copy non-.ts assets into dist/, and the server runs `node dist/main`
 // from the project root, so `src/assets/` is reachable at runtime via process.cwd()
-// (same convention as pdf.service.ts's IMAGES_DIR).
-const SUCCESS_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'success-check.mp4');
+// (same convention as pdf.service.ts's IMAGES_DIR). Each has its own baked-in text label
+// (2026-07-24 feedback) — no separate "confirmed" text message needed alongside it.
+const IDENTITY_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'identity-confirmed.mp4');
+const PAYMENT_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'payment-received.mp4');
 
 @Injectable()
 export class AgentService {
@@ -791,11 +793,11 @@ export class AgentService {
           selfieRetryAsked: undefined,
         };
         return {
-          text: `✅ Identidad confirmada con tu foto.\n\n${this.firstDataCaptureQuestion(confirmedContext)}`,
+          // 2026-07-24 feedback: the "¡Identidad confirmada!" label is now baked into the
+          // video itself (IDENTITY_ANIMATION_PATH) — repeating it as text read as redundant.
+          text: this.firstDataCaptureQuestion(confirmedContext),
           context: confirmedContext,
-          // 2026-07-24 feedback: "animated successfully check" — the real branded
-          // success-checkmark video, not just a text reaction.
-          animation: SUCCESS_ANIMATION_PATH,
+          animation: IDENTITY_ANIMATION_PATH,
         };
       }
       const skippedContext: ConversationContext = {
@@ -1241,7 +1243,7 @@ export class AgentService {
         // precisely because there's nothing real to show for it, the "match found"
         // moment gets the real branded success-checkmark video. Still the exact same
         // real Wompi link, never a faked/instant "paid" claim.
-        ...(context.paymentMethodChoice === 'tarjeta_colsubsidio' && { animation: SUCCESS_ANIMATION_PATH }),
+        ...(context.paymentMethodChoice === 'tarjeta_colsubsidio' && { animation: PAYMENT_ANIMATION_PATH }),
       };
     } catch (error) {
       this.logger.error(`Failed to create payment link: ${error}`);

@@ -174,7 +174,7 @@ describe('WompiWebhookController — APPROVED payment', () => {
   it('sends the branded success animation on approval', async () => {
     const { controller, telegram } = buildController();
     await controller.handleWebhook(makeEvent());
-    expect(telegram.sendAnimation).toHaveBeenCalledWith('999888777', expect.stringContaining('success-check.mp4'));
+    expect(telegram.sendAnimation).toHaveBeenCalledWith('999888777', expect.stringContaining('payment-received.mp4'));
   });
 
   // Regression: the PDF used to be gated on a real celoscanUrl being present — now that

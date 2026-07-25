@@ -334,7 +334,7 @@ describe('AgentService — KYC cosmetic selfie step', () => {
     });
     telegram.normalize.mockResolvedValue({ ...makeMessage(''), photo: { width: 1080, height: 1080 }, messageId: 555 });
     await service.handleMessage({});
-    expect(telegram.sendAnimation).toHaveBeenCalledWith('u1', expect.stringContaining('success-check.mp4'));
+    expect(telegram.sendAnimation).toHaveBeenCalledWith('u1', expect.stringContaining('identity-confirmed.mp4'));
   });
 
   it('does not re-trigger once selfieProvided is already true', async () => {
@@ -996,7 +996,7 @@ describe('AgentService — payment method choice (Tarjeta Colsubsidio vs Link de
     });
     telegram.normalize.mockResolvedValue({ ...makeMessage('tarjeta colsubsidio'), messageId: 777 });
     await service.handleMessage({});
-    expect(telegram.sendAnimation).toHaveBeenCalledWith('u1', expect.stringContaining('success-check.mp4'));
+    expect(telegram.sendAnimation).toHaveBeenCalledWith('u1', expect.stringContaining('payment-received.mp4'));
     expect(wompi.createPaymentLink).toHaveBeenCalled();
   });
 
