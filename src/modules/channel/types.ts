@@ -19,8 +19,14 @@ interface NormalizedMessage {
   // A plain photo message — set instead of unsupportedInput because a cosmetic
   // selfie-KYC step (2026-07-24, simulated identity confirmation — see
   // AgentService's awaitingSelfie step) needs to receive a photo as a valid answer.
-  // AgentService decides what it means based on conversation state.
-  photo?: true;
+  // AgentService decides what it means based on conversation state. Carries the
+  // dimensions of the largest Telegram-provided size so a suspiciously tiny image (an
+  // icon/sticker-shaped file, not an actual camera photo) can be sanity-checked without
+  // any real face detection — width/height only, never analyzing pixel content.
+  photo?: { width: number; height: number };
+  // The channel-native message id — needed to react to a SPECIFIC message (e.g. the
+  // selfie photo itself) rather than just sending a new one.
+  messageId?: number;
 }
 
 interface IChannelAdapter {
@@ -28,6 +34,10 @@ interface IChannelAdapter {
   sendText(userId: string, text: string): Promise<void>;
   sendDocument(userId: string, file: Buffer, filename: string): Promise<void>;
   sendContactRequest(userId: string, text: string): Promise<void>;
+  // Reacts to a specific prior message with an emoji (Telegram's setMessageReaction) — a
+  // lightweight, asset-free "animated" success touch (the reaction itself renders with a
+  // small built-in animation) that doesn't require hosting a GIF/sticker.
+  reactToMessage(userId: string, messageId: number, emoji: string): Promise<void>;
   setWebhook(url: string, secret: string): Promise<void>;
 }
 

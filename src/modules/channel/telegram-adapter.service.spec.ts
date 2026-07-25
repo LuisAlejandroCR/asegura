@@ -26,12 +26,32 @@ describe('TelegramAdapter.normalize — unsupported media', () => {
 
   // 2026-07-24: a plain photo is no longer generically "unsupported" — the cosmetic
   // selfie-KYC step needs to receive one as a valid answer (see AgentService's
-  // awaitingSelfie step). It sets `photo: true` instead, and AgentService decides what
-  // that means based on conversation state (expected selfie vs. a stray unrelated photo).
-  it('regression — a plain photo sets photo:true instead of unsupportedInput, so a cosmetic selfie-KYC step can receive it', async () => {
+  // awaitingSelfie step). It carries width/height instead of a bare `true`, and
+  // AgentService decides what that means based on conversation state (expected selfie
+  // vs. a stray unrelated photo).
+  it('regression — a plain photo sets photo dimensions instead of unsupportedInput, so a cosmetic selfie-KYC step can receive it', async () => {
     const result = await adapter.normalize(makeCtx({ photo: [{ file_id: 'photo-1', width: 100, height: 100 }] }));
-    expect(result.photo).toBe(true);
+    expect(result.photo).toEqual({ width: 100, height: 100 });
     expect(result.unsupportedInput).toBeUndefined();
+  });
+
+  // Telegram sends the SAME photo as an array of several resolutions (thumbnail up to
+  // full size) — a tiny-image sanity check must look at the actual sent photo's real
+  // size, not accidentally pick the smallest thumbnail and reject a perfectly good photo.
+  it('picks the LARGEST of several Telegram-provided photo sizes for the dimensions', async () => {
+    const result = await adapter.normalize(makeCtx({
+      photo: [
+        { file_id: 'thumb', width: 90, height: 90 },
+        { file_id: 'medium', width: 320, height: 320 },
+        { file_id: 'full', width: 1280, height: 960 },
+      ],
+    }));
+    expect(result.photo).toEqual({ width: 1280, height: 960 });
+  });
+
+  it('sets messageId from the Telegram message_id', async () => {
+    const result = await adapter.normalize(makeCtx({ message_id: 4242, text: 'hola' }));
+    expect(result.messageId).toBe(4242);
   });
 
   it('a document (e.g. PDF/file upload) also sets unsupportedInput to "image" (generic unreadable media)', async () => {
@@ -225,4 +245,36 @@ describe('TelegramAdapter.sendContactRequest (2026-07-24 KYC feedback)', () => {
       }),
     );
   }, 10000);
+});
+
+// 2026-07-24 feedback: "is there a way to show an animated successfully check pass
+// inside the chat?" — Telegram's native message reactions render with a small built-in
+// animation and need no hosted asset (GIF/sticker), unlike sendAnimation/sendSticker.
+describe('TelegramAdapter.reactToMessage', () => {
+  function mockSendableBot() {
+    return { api: { setMessageReaction: jest.fn().mockResolvedValue(undefined) } };
+  }
+
+  it('reacts to the given message id with the given emoji', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    const bot = mockSendableBot();
+    (adapter as any).bot = bot;
+
+    await adapter.reactToMessage('222', 4242, '✅');
+
+    expect(bot.api.setMessageReaction).toHaveBeenCalledWith(222, 4242, [{ type: 'emoji', emoji: '✅' }]);
+  });
+
+  it('never throws if the reaction call fails (cosmetic, non-critical)', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    const bot = { api: { setMessageReaction: jest.fn().mockRejectedValue(new Error('rate limited')) } };
+    (adapter as any).bot = bot;
+
+    await expect(adapter.reactToMessage('222', 4242, '✅')).resolves.toBeUndefined();
+  });
+
+  it('does nothing when the bot is disabled (no token)', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    await expect(adapter.reactToMessage('222', 4242, '✅')).resolves.toBeUndefined();
+  });
 });

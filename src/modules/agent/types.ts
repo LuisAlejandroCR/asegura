@@ -80,6 +80,11 @@ interface ConversationContext {
   // to guard against a fake identity (see flujo-conversacional.md's KYC section).
   awaitingSelfie?: boolean;
   selfieProvided?: boolean;
+  // Set after one gentle "that image looks too small" retry ask for a suspiciously tiny
+  // photo (2026-07-24 feedback) — no real face detection, just a width/height sanity
+  // check. Any reply after this (even another tiny photo) is accepted, same
+  // never-loop-forever guarantee as every other KYC gate above.
+  selfieRetryAsked?: boolean;
   // Payment method wording choice (2026-07-24 feedback) — "Tarjeta Colsubsidio" and
   // "link_pago" route to the exact same real Wompi checkout link; this only changes the
   // surrounding copy. Not a second payment rail, and never claims the payment already

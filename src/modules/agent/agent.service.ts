@@ -22,6 +22,9 @@ interface ProcessResult {
   // When set, `text` is sent via the Telegram native contact-share button instead of a
   // plain message (2026-07-24 KYC feedback — see AgentService's phone-verification gate).
   requestContact?: boolean;
+  // When set, reacts to the triggering message with this emoji (2026-07-24 feedback — a
+  // lightweight "animated success" touch, e.g. on the selfie photo itself).
+  reaction?: string;
 }
 
 @Injectable()
@@ -81,6 +84,10 @@ export class AgentService {
       await this.telegram.sendDocument(msg.userId, result.document.buffer, result.document.filename);
     }
 
+    if (result.reaction && msg.messageId !== undefined) {
+      await this.telegram.reactToMessage(msg.userId, msg.messageId, result.reaction);
+    }
+
     if (result.requestContact && result.text) {
       await this.telegram.sendContactRequest(msg.userId, result.text);
     } else if (result.texts?.length) {
@@ -99,7 +106,7 @@ export class AgentService {
     text: string,
     intent: InsuranceIntent,
     contact?: NormalizedMessage['contact'],
-    photo?: boolean,
+    photo?: NormalizedMessage['photo'],
     rawText: string = text,
   ): Promise<ProcessResult> {
     if (
@@ -501,6 +508,16 @@ export class AgentService {
     return trimmed.length >= 2 && trimmed.length <= 80 && AgentService.NAME_REGEX.test(trimmed);
   }
 
+  // Voice dictation of an email in Spanish spells out the symbols as words ("arroba" for
+  // @, "punto" for .) instead of saying them literally — a message like "Juan arroba
+  // gmail punto com" has neither symbol and fails any @/. shape check as-is.
+  private normalizeSpokenEmail(text: string): string {
+    return text
+      .replace(/\s+arroba\s+/gi, '@')
+      .replace(/\s+punto\s+/gi, '.')
+      .replace(/\s+/g, '');
+  }
+
   // True if ANY product in this purchase (single or multi-product) requires conditional
   // underwriting (2026-07-24 business feedback: vida, medicina-prepagada-gatos/perros).
   private requiresUnderwritingInfo(context: ConversationContext): boolean {
@@ -514,6 +531,11 @@ export class AgentService {
   // literal `30`s (the API call and the user-facing message text), risking drift if one
   // changed without the other.
   private static readonly PAYMENT_LINK_EXPIRY_MINUTES = 30;
+
+  // Below this width/height, a "photo" is more likely an icon/sticker-shaped file than
+  // an actual camera photo — a real phone selfie is always at least a few hundred px on
+  // its shortest side. Not real face detection, just a sanity floor.
+  private static readonly MIN_SELFIE_DIMENSION = 80;
 
   private isFillerWord(text: string): boolean {
     const normalized = text.trim().toLowerCase().replace(/[.,!¡¿?]/g, '');
@@ -577,7 +599,7 @@ export class AgentService {
     intent: InsuranceIntent,
     rawText: string = text,
     contact?: NormalizedMessage['contact'],
-    photo?: boolean,
+    photo?: NormalizedMessage['photo'],
   ): Promise<ProcessResult> {
     const newContext: ConversationContext = { ...context };
 
@@ -628,14 +650,30 @@ export class AgentService {
     // very next message isn't a photo.
     if (context.awaitingSelfie && !context.selfieProvided) {
       if (photo) {
+        // 2026-07-24 feedback: "confirm the image is a selfie, is ok if is not high
+        // resolution" — no real face detection (stays a cosmetic simulation), just a
+        // width/height sanity check against an icon/sticker-shaped file. Asked at most
+        // once, same never-loop-forever guarantee as every other KYC gate: a SECOND
+        // tiny image (or anything else) is accepted anyway.
+        const isTinyImage = photo.width < AgentService.MIN_SELFIE_DIMENSION || photo.height < AgentService.MIN_SELFIE_DIMENSION;
+        if (isTinyImage && !context.selfieRetryAsked) {
+          return {
+            text: 'Esa imagen se ve muy pequeña para confirmar tu identidad 📸 ¿puedes enviarla de nuevo?',
+            context: { ...context, selfieRetryAsked: true },
+          };
+        }
         const confirmedContext: ConversationContext = {
           ...context,
           selfieProvided: true,
           awaitingSelfie: undefined,
+          selfieRetryAsked: undefined,
         };
         return {
           text: `✅ Identidad confirmada con tu foto.\n\n${this.firstDataCaptureQuestion(confirmedContext)}`,
           context: confirmedContext,
+          // 2026-07-24 feedback: "animated successfully check" — Telegram message
+          // reactions render with a small built-in animation, no hosted asset needed.
+          reaction: '✅',
         };
       }
       const skippedContext: ConversationContext = {
@@ -662,11 +700,22 @@ export class AgentService {
 
         if (extracted.length > 0) {
           const updatedPets = [...pets];
+          // Real live-test bug: the NLP extraction dropped a pet from a 3-pet message
+          // (fixed separately in groq-nlp.service.ts), and the user's next message —
+          // believing all 3 were already given — re-stated an already-collected pet
+          // instead of the actually-missing one. That got pushed as a literal duplicate,
+          // corrupting the final paid, issued policy. Second line of defense: an exact
+          // name match against an already-collected pet is never pushed again.
+          let duplicateName: string | null = null;
           for (const p of extracted) {
             if (updatedPets.length >= totalPets) break;
             // A pet name goes on the final policy PDF just like a human nombre — reject
             // the same digit/symbol garbage (e.g. NLP mis-extracting "2" as a pet name).
             if (!p.name || !this.isValidHumanName(p.name)) continue;
+            if (updatedPets.some((existing) => existing.name.toLowerCase() === p.name!.toLowerCase())) {
+              duplicateName = p.name;
+              continue;
+            }
             updatedPets.push({
               name: p.name,
               age: p.age ?? 'no especificada',
@@ -676,8 +725,11 @@ export class AgentService {
             });
           }
           if (updatedPets.length < totalPets) {
+            const text = duplicateName
+              ? `Ya tengo a ${duplicateName} registrada. Cuéntame de una mascota diferente: ¿nombre, edad y raza?`
+              : `Perfecto. Ahora cuéntame de tu mascota ${updatedPets.length + 1} de ${totalPets}: ¿nombre, edad y raza?`;
             return {
-              text: `Perfecto. Ahora cuéntame de tu mascota ${updatedPets.length + 1} de ${totalPets}: ¿nombre, edad y raza?`,
+              text,
               context: { ...context, pets: updatedPets },
             };
           }
@@ -823,11 +875,15 @@ export class AgentService {
     // Step 3 — collect email. Requires a basic email shape (user@domain.tld) — accepting
     // any text unconditionally previously let an unrelated phrase (e.g. a name captured
     // here after nombre was wrongly filled by a filler word) silently become the "email".
+    // Real live-test bug: a voice message dictating an email says "arroba" for @ and
+    // "punto" for . (standard Spanish spoken-email convention) — normalize those to the
+    // literal symbols before validating, or a perfectly clear spoken email never passes.
     if (!context.email) {
-      if (!/\S+@\S+\.\S+/.test(rawText)) {
+      const normalizedEmail = this.normalizeSpokenEmail(rawText);
+      if (!/\S+@\S+\.\S+/.test(normalizedEmail)) {
         return { text: '¿Cuál es tu correo electrónico? Ahí recibirás la póliza.' };
       }
-      newContext.email = rawText;
+      newContext.email = normalizedEmail;
       // 2026-07-24 business feedback: vida and medicina-prepagada-gatos/perros need
       // conditional underwriting info before the final confirmation — everything else
       // is direct-sell and goes straight to it.
@@ -1045,7 +1101,16 @@ export class AgentService {
         `En cuanto tu pago sea confirmado, te aviso aquí automáticamente con tu póliza.`
       );
 
-      return { text: msg, nextState: ConversationState.PAYMENT, context: { ...context, checkoutUrl } };
+      return {
+        text: msg,
+        nextState: ConversationState.PAYMENT,
+        context: { ...context, checkoutUrl },
+        // 2026-07-24 feedback: Tarjeta Colsubsidio has no real API/sandbox of its own —
+        // precisely because there's nothing real to show for it, the "match found"
+        // moment gets a livelier confirmation than plain text. Still the exact same
+        // real Wompi link, never a faked/instant "paid" claim.
+        ...(context.paymentMethodChoice === 'tarjeta_colsubsidio' && { reaction: '🎉' }),
+      };
     } catch (error) {
       this.logger.error(`Failed to create payment link: ${error}`);
       return {

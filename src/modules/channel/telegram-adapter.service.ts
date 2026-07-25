@@ -54,7 +54,13 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
       ? { phoneNumber: msg.contact.phone_number, firstName: msg.contact.first_name }
       : undefined;
 
-    const photo = msg?.photo ? true : undefined;
+    // Telegram sends the same photo as several resolutions (thumbnail up to full
+    // size) — the LARGEST one reflects the actual photo that was sent, needed for a
+    // tiny-image sanity check (an icon/sticker-shaped file, not a real camera photo)
+    // without doing any real face detection.
+    const photo = msg?.photo?.length
+      ? msg.photo.reduce((max, p) => (p.width > max.width ? { width: p.width, height: p.height } : max), { width: msg.photo[0].width, height: msg.photo[0].height })
+      : undefined;
 
     if (msg?.document || msg?.sticker || msg?.video || msg?.video_note) {
       unsupportedInput = 'image';
@@ -80,6 +86,7 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
       ...(unsupportedInput && { unsupportedInput }),
       ...(contact && { contact }),
       ...(photo && { photo }),
+      ...(msg?.message_id !== undefined && { messageId: msg.message_id }),
     };
   }
 
@@ -148,6 +155,17 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
     await new Promise((resolve) => setTimeout(resolve, TelegramAdapter.TYPING_DELAY_MS));
     const keyboard = new Keyboard().requestContact('📱 Compartir mi contacto').resized().oneTime();
     await this.bot.api.sendMessage(Number(userId), text, { parse_mode: 'Markdown', reply_markup: keyboard });
+  }
+
+  // A lightweight, asset-free "animated success" touch (2026-07-24 feedback) — Telegram
+  // message reactions render with a small built-in animation with no hosted GIF/sticker
+  // needed, unlike sendAnimation/sendSticker. Purely cosmetic (same as the selfie step
+  // it's used with) — never allowed to break the real message flow if it fails.
+  async reactToMessage(userId: string, messageId: number, emoji: string): Promise<void> {
+    if (!this.bot) return;
+    // grammy types `emoji` as a closed union of Telegram's allowed reaction emoji —
+    // cast here so IChannelAdapter's interface can stay a plain string (channel-agnostic).
+    await this.bot.api.setMessageReaction(Number(userId), messageId, [{ type: 'emoji', emoji } as any]).catch(() => undefined);
   }
 
   async sendDocument(userId: string, file: Buffer, filename: string): Promise<void> {

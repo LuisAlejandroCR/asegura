@@ -239,7 +239,7 @@ describe('AgentService — KYC cosmetic selfie step', () => {
       state: ConversationState.DATA_CAPTURE,
       context: { phoneVerified: true, awaitingSelfie: true },
     });
-    telegram.normalize.mockResolvedValue({ ...makeMessage(''), photo: true });
+    telegram.normalize.mockResolvedValue({ ...makeMessage(''), photo: { width: 1080, height: 1080 } });
     await service.handleMessage({});
     expect(conversations.saveState).toHaveBeenCalledWith(
       'conv-1', ConversationState.DATA_CAPTURE,
@@ -254,11 +254,72 @@ describe('AgentService — KYC cosmetic selfie step', () => {
       state: ConversationState.DATA_CAPTURE,
       context: { phoneVerified: true, awaitingSelfie: true, productCategory: 'mascotas', petCount: 2 },
     });
-    telegram.normalize.mockResolvedValue({ ...makeMessage(''), photo: true });
+    telegram.normalize.mockResolvedValue({ ...makeMessage(''), photo: { width: 1080, height: 1080 } });
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain('1 de 2');
     expect(sentText).not.toContain('dígitos');
+  });
+
+  // 2026-07-24 feedback: "is there a way to confirm that the image is a selfie, is ok if
+  // is not high resolution" — no real face detection (stays a cosmetic simulation), but
+  // a suspiciously tiny image (icon/sticker-shaped, not an actual camera photo) gets one
+  // gentle retry ask instead of being silently accepted as "confirmed".
+  describe('KYC selfie — tiny-image sanity guard (never blocks a sale)', () => {
+    it('a suspiciously tiny image asks to retry once instead of accepting it as the selfie', async () => {
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.DATA_CAPTURE,
+        context: { phoneVerified: true, awaitingSelfie: true },
+      });
+      telegram.normalize.mockResolvedValue({ ...makeMessage(''), photo: { width: 40, height: 40 } });
+      await service.handleMessage({});
+      const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+      expect(savedContext.selfieProvided).toBeFalsy();
+      expect(savedContext.awaitingSelfie).toBe(true);
+      expect(savedContext.selfieRetryAsked).toBe(true);
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText.toLowerCase()).toMatch(/pequeñ/);
+    });
+
+    it('regression — a SECOND tiny image is accepted anyway (never loops forever, same as every other KYC gate)', async () => {
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.DATA_CAPTURE,
+        context: { phoneVerified: true, awaitingSelfie: true, selfieRetryAsked: true },
+      });
+      telegram.normalize.mockResolvedValue({ ...makeMessage(''), photo: { width: 40, height: 40 } });
+      await service.handleMessage({});
+      expect(conversations.saveState).toHaveBeenCalledWith(
+        'conv-1', ConversationState.DATA_CAPTURE,
+        expect.objectContaining({ selfieProvided: true, awaitingSelfie: undefined }),
+      );
+    });
+
+    it('a normal-sized photo is accepted immediately, no retry ask', async () => {
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.DATA_CAPTURE,
+        context: { phoneVerified: true, awaitingSelfie: true },
+      });
+      telegram.normalize.mockResolvedValue({ ...makeMessage(''), photo: { width: 1080, height: 1080 } });
+      await service.handleMessage({});
+      expect(conversations.saveState).toHaveBeenCalledWith(
+        'conv-1', ConversationState.DATA_CAPTURE,
+        expect.objectContaining({ selfieProvided: true }),
+      );
+    });
+  });
+
+  // 2026-07-24 feedback: "is there a way to show an animated successfully check pass
+  // inside the chat?" — reacts to the selfie photo message itself with an emoji
+  // (Telegram's native message reactions render with a small built-in animation, no
+  // hosted GIF/sticker asset needed).
+  it('reacts to the selfie photo message with a checkmark emoji when confirmed', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { phoneVerified: true, awaitingSelfie: true },
+    });
+    telegram.normalize.mockResolvedValue({ ...makeMessage(''), photo: { width: 1080, height: 1080 }, messageId: 555 });
+    await service.handleMessage({});
+    expect(telegram.reactToMessage).toHaveBeenCalledWith('u1', 555, expect.any(String));
   });
 
   it('does not re-trigger once selfieProvided is already true', async () => {
@@ -485,6 +546,29 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     expect(conversations.saveState).toHaveBeenCalledWith(
       'conv-1', ConversationState.DATA_CAPTURE, expect.objectContaining({ email: 'juan.perez@email.com' }),
     );
+  });
+
+  // Real live-test bug: a voice message dictating an email says "arroba" for @ and
+  // "punto" for . (standard Spanish spoken-email convention) — the literal transcription
+  // has neither symbol, so it failed the /\S+@\S+\.\S+/ shape check entirely.
+  describe('regression — spoken email dictation ("arroba"/"punto") is normalized before validating', () => {
+    it.each([
+      ['Juan arroba gmail punto com', 'Juan@gmail.com'],
+      ['juan arroba gmail punto com.', 'juan@gmail.com'],
+      ['juan punto perez arroba gmail punto com', 'juan.perez@gmail.com'],
+    ])('"%s" is normalized to a valid email and stored as "%s"', async (spoken, expected) => {
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.DATA_CAPTURE,
+        context: { cedula: '12345678', nombre: 'Juan Pérez' },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage(spoken));
+      await service.handleMessage({});
+      expect(conversations.saveState).toHaveBeenCalledWith(
+        'conv-1', ConversationState.DATA_CAPTURE, expect.objectContaining({ email: expected }),
+      );
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).not.toMatch(/correo electrónico\?/i);
+    });
   });
 
   it('regression — "falta el correo" at confirmation is recognized as a correction request naming email', async () => {
@@ -820,6 +904,40 @@ describe('AgentService — payment method choice (Tarjeta Colsubsidio vs Link de
     expect(sentText.toLowerCase()).toMatch(/tarjeta colsubsidio/);
     expect(sentText.toLowerCase()).not.toMatch(/pago exitoso|pago realizado|ya pagaste|pago fue exitoso/);
   });
+
+  // 2026-07-24 feedback: "Tarjeta Colsubsidio" has no real API/sandbox of its own (unlike
+  // Wompi) — precisely BECAUSE there's nothing real to show for it, the "match found"
+  // moment needs a livelier confirmation than plain text. Reuses the same
+  // reactToMessage mechanism as the selfie step. The real Wompi link is still generated
+  // and sent exactly as before — this never skips or fakes the actual payment.
+  it('reacts to the "Tarjeta Colsubsidio" choice message with a celebratory emoji, same real Wompi link underneath', async () => {
+    const { service, telegram, wompi } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com',
+        quoteProductId: PRODUCTS[0].id, awaitingPaymentMethodChoice: true,
+      },
+      intent: makeIntent({}),
+    });
+    telegram.normalize.mockResolvedValue({ ...makeMessage('tarjeta colsubsidio'), messageId: 777 });
+    await service.handleMessage({});
+    expect(telegram.reactToMessage).toHaveBeenCalledWith('u1', 777, expect.any(String));
+    expect(wompi.createPaymentLink).toHaveBeenCalled();
+  });
+
+  it('does NOT react when "link de pago" is chosen instead', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com',
+        quoteProductId: PRODUCTS[0].id, awaitingPaymentMethodChoice: true,
+      },
+      intent: makeIntent({}),
+    });
+    telegram.normalize.mockResolvedValue({ ...makeMessage('link de pago'), messageId: 778 });
+    await service.handleMessage({});
+    expect(telegram.reactToMessage).not.toHaveBeenCalled();
+  });
 });
 
 // ── DATA_CAPTURE — per-pet detail collection (name, age, breed) ──────────────
@@ -922,6 +1040,37 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
     );
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toMatch(/mascota/i);
+  });
+
+  // Real live-test bug (2026-07-24): a 3-pet voice message ("Bruna...Ramón...Pancha...")
+  // had Bruna silently dropped by the NLP extraction (fixed separately in
+  // groq-nlp.service.ts). The user, believing all 3 pets were already given, was asked
+  // for a "missing" 3rd pet and re-stated Pancha's details again — which got pushed as a
+  // literal duplicate entry, corrupting the final paid, issued policy. This guard is the
+  // second line of defense: even if the NLP still under-extracts for some other message,
+  // re-stating an already-collected pet's exact name must never create a duplicate.
+  it('regression — re-stating an already-collected pet name does not create a duplicate entry', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        productCategory: 'mascotas', petCount: 3,
+        pets: [
+          { name: 'Ramón', age: '3 años', breed: 'Cocker Spaniel' },
+          { name: 'Pancha', age: '10 años', breed: 'Doberman' },
+        ],
+      },
+      intent: makeIntent({ productCategory: 'mascotas', petName: 'Pancha', petAge: '10 años', petBreed: 'doberman' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Pancha, 10 años, Doberman'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.pets).toHaveLength(2);
+    expect(savedContext.pets).toEqual([
+      { name: 'Ramón', age: '3 años', breed: 'Cocker Spaniel' },
+      { name: 'Pancha', age: '10 años', breed: 'Doberman' },
+    ]);
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toMatch(/ya tengo a pancha|ya la tengo|diferente/i);
   });
 
   it('shows a confirmation summary (not cédula yet) once all pets are collected', async () => {
@@ -1929,7 +2078,10 @@ describe('AgentService FUZZ — nombre never accepts digits/symbols', () => {
   }
 
   function randomValidSpanishName(): string {
-    const syllables = ['ma', 'ra', 'lo', 'fer', 'nan', 'do', 'gar', 'cí', 'a', 'lu', 'pe', 'rez', 'sán', 'chez', 'ñu'];
+    // No single-character syllables here (e.g. a lone "a") — isValidHumanName correctly
+    // requires length >= 2, and a random single-letter word would make this generator
+    // occasionally produce a name the real validator (correctly) rejects, flaking the test.
+    const syllables = ['ma', 'ra', 'lo', 'fer', 'nan', 'do', 'gar', 'cí', 'lu', 'pe', 'rez', 'sán', 'chez', 'ñu'];
     const wordCount = 1 + Math.floor(Math.random() * 3);
     const words: string[] = [];
     for (let w = 0; w < wordCount; w++) {
