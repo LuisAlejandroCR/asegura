@@ -26,6 +26,11 @@ chat conversacional y scoring de canal/timing. Construido sobre
   digital / asistido) y ventana de tiempo sugerida.
 - `clustering_comparacion.csv` -- resultados numericos de comparar los 4 algoritmos
   de clustering (silhouette score, tiempo, tamano de cluster).
+- `generar_full.py` -- corre el pipeline completo (preprocess -> clustering ->
+  reglas -> canal/timing) sobre las 500k-1.5M filas y guarda `afiliados_final.parquet`.
+- `exportar_ofertas.py` -- lee `afiliados_final.parquet` y exporta `ofertas_clientes.csv`
+  con una fila por afiliado (identificado por `SERIE`, nunca por posicion ni nombre)
+  y su oferta principal, secundaria, canal y ventana de contacto.
 
 ## Como correrlo
 
@@ -34,14 +39,15 @@ chat conversacional y scoring de canal/timing. Construido sobre
    copialo o crea un symlink dentro de esta carpeta si vas a correr el notebook desde aqui.
 3. Abre `motor_seguros_colsubsidio.ipynb` y corre todas las celdas.
 
-**Nota:** el notebook se subio sin outputs (celdas limpias) para mantener el repo
-liviano y los diffs legibles en PRs futuros. Al correrlo genera sus propios outputs
-y graficos localmente.
+**Nota:** el notebook committeado incluye los outputs ya ejecutados (graficos y
+resultados de la seccion 7 sobre las 500k filas completas), para que se pueda revisar
+sin tener que correrlo. Si lo vuelves a correr localmente, esos outputs se regeneran
+con tus propios datos/entorno.
 
 La seccion 7 del notebook usa un archivo `afiliados_final.parquet` con resultados
 precomputados sobre las 500k filas completas (no incluido aqui por tamano -- se
-regenera corriendo `preprocess.py` -> `reglas_negocio.py` -> `canal_timing.py` en
-secuencia sobre el CSV completo).
+regenera corriendo `generar_full.py`, que encadena `preprocess.py` -> clustering ->
+`reglas_negocio.py` -> `canal_timing.py` sobre el CSV completo).
 
 ## Relacion con la app en `src/`
 

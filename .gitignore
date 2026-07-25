@@ -46,4 +46,4 @@ analytics/*.parquet
 analytics/.ipynb_checkpoints/
 __pycache__/
 *.pyc
-analytics/README.md 
+analytics/README.md
