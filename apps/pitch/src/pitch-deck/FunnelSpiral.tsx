@@ -31,7 +31,10 @@ const ZOOM_START = 0.84; // eased-progress point where descent stops and the zoo
 // once the descent freezes and the zoom takes over.
 const FINAL_FOCUS_T = 0.97;
 const ZOOM_SCALE = 1.8;
-const DURATION_MS = 10000;
+// 2026-07-25 feedback: 10s read as "goes fast" — not enough time to actually read each
+// step label as the camera passes it. Slowed to 16s, same proportions throughout (every
+// phase — counter, descent, zoom — is a fraction of this, so they all scale together).
+const DURATION_MS = 14000;
 const COUNTER_END = 0.16; // fraction of progress during which "35M colombianos" finishes counting
 const TARGET_POPULATION = 35000000;
 
@@ -81,8 +84,12 @@ function smoothstep(p: number): number {
 
 const SPIRAL_PATH = buildSpiralPath(480);
 const TIP = pointAt(1);
+// Leads calificados branches off to the side — a real but separate outcome.
 const LEFT_END = { x: TIP.x - 108, y: TIP.y + BIFURCATION_H };
-const RIGHT_END = { x: TIP.x + 108, y: TIP.y + BIFURCATION_H };
+// Paga fácil sits right at the coil's own terminal point (2026-07-25 feedback) — it's
+// the main flow continuing, not a side branch, so it gets only a small nudge clear of
+// the coil itself rather than the same offset as the branch.
+const RIGHT_END = { x: TIP.x + 26, y: TIP.y + 34 };
 const DOTS = Array.from({ length: 72 }, (_, i) => pointAt(i / 71));
 
 interface FunnelSpiralProps {
