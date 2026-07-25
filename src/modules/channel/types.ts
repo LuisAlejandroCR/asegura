@@ -33,15 +33,11 @@ interface IChannelAdapter {
   normalize(raw: unknown): Promise<NormalizedMessage>;
   sendText(userId: string, text: string): Promise<void>;
   sendDocument(userId: string, file: Buffer, filename: string): Promise<void>;
-  // Sends a short video/animation from a local file path (e.g. the branded
-  // success-checkmark clip) — heavier than a reaction, used only for the moments that
-  // explicitly ask for it.
-  sendAnimation(userId: string, filePath: string): Promise<void>;
   sendContactRequest(userId: string, text: string): Promise<void>;
   // Reacts to a specific prior message with an emoji (Telegram's setMessageReaction) — a
   // lightweight, asset-free "animated" success touch (the reaction itself renders with a
   // small built-in animation) that doesn't require hosting a GIF/sticker.
-  reactToMessage(userId: string, messageId: number, emoji: string, isBig?: boolean): Promise<void>;
+  reactToMessage(userId: string, messageId: number, emoji: string): Promise<void>;
   setWebhook(url: string, secret: string): Promise<void>;
 }
 

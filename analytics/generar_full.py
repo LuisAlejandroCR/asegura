@@ -13,9 +13,10 @@ np.random.seed(SEED)
 CSV_CANDIDATOS = [
     "Usos_Productos_Afiliados_SIMULADO.csv",
     "../Usos_Productos_Afiliados_SIMULADO.csv",
+    "afiliados.csv",
+    "../afiliados.csv",
 ]
 CSV_PATH = next((p for p in CSV_CANDIDATOS if os.path.exists(p)), CSV_CANDIDATOS[0])
-OUTPUT_PATH = "afiliados_final.csv" if os.path.exists("preprocess.py") else "analytics/afiliados_final.csv"
 print("Cargando:", CSV_PATH)
 
 df_raw = pd.read_csv(CSV_PATH, sep=";")
@@ -46,5 +47,5 @@ t0 = time.time()
 df_final = calcular_canal_y_timing(df_reglas)
 print(f"Canal/timing aplicado: {time.time()-t0:.2f}s")
 
-df_final.to_csv(OUTPUT_PATH, sep=";", index=False)
-print("Guardado", OUTPUT_PATH, ":", len(df_final), "filas")
+df_final.to_parquet("afiliados_final.parquet", index=False)
+print("Guardado afiliados_final.parquet:", len(df_final), "filas")

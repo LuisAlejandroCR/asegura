@@ -65,7 +65,7 @@ petType solo aplica si productCategory es "mascotas". Reglas:
 - No especifica → null
 
 isAffirmative: true cuando el usuario expresa acuerdo, confirmación, interés positivo o deseo de continuar (ej: "sí", "claro", "me interesa", "quiero", "perfecto", "adelante", "todos", "todas", "hagámoslo", "confirmo", "listo", "dale", "me parece bien", "genera", "generalo", "procede", "procédele", "hágale", "vale", "dame ese", "deme ese" — estas dos últimas son formas comunes en Colombia de confirmar la opción que se le acaba de mostrar, no una pregunta)
-isNegative: true cuando el usuario expresa rechazo, deseo de cambiar, o desinterés (ej: "no", "paso", "otro", "otra", "diferente", "no me interesa", "quizás después", "ninguno", "ningún otro", "no estoy interesado", "no gracias", "no, gracias")
+isNegative: true cuando el usuario expresa rechazo, deseo de cambiar, o desinterés (ej: "no", "paso", "otro", "otra", "diferente", "no me interesa", "quizás después", "ninguno")
 Ambos pueden ser false si el mensaje es neutral o informativo.
 
 abandonIntent: true SOLO cuando el usuario expresa una intención clara y deliberada de
