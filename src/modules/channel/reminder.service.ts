@@ -1,38 +1,87 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { TelegramAdapter } from './telegram-adapter.service';
+import { ConversationService } from '../agent/conversation.service';
+import { ConversationState } from '../agent/types';
 
 // 2026-07-25 feature request: nudge a user back to the chat if they go quiet after a
 // prompt (a quote, the post-purchase cross-sell offer, etc.). This app is otherwise fully
 // stateless — driven only by incoming Telegram messages — so this is the one place with
 // an in-memory timer. Deliberately simple: it resets on every deploy/restart, which is an
 // accepted tradeoff for the hackathon (recommended over a DB-polled job at this
-// granularity — 30s is too short for cron-style polling to make sense).
-const REMINDER_DELAY_MS = 30_000;
+// granularity — 60s is too short for cron-style polling to make sense).
+//
+// 2026-07-25 live-test feedback: the original 30s fired while the user was still
+// recording a voice reply to DISCOVERY's open-ended question ("¿Tienes familia... qué te
+// preocupa proteger... audio o texto"), which itself invites a longer voice message —
+// a 29s voice note alone eats almost the whole window before the user even sends it.
+// Doubled to 60s; this fires from every non-terminal prompt (a quick yes/no quote
+// confirmation included), so a little slack elsewhere is an acceptable tradeoff for not
+// interrupting someone mid-recording.
+const REMINDER_DELAY_MS = 60_000;
 const REMINDER_TEXT = '¿Sigues ahí? Aquí estoy cuando quieras continuar 😊';
+
+// 2026-07-25 feature request: if the nudge above ALSO goes unanswered, the conversation
+// shouldn't just sit open forever in the DB — close it out so analytics/the dashboard
+// don't keep counting a truly-dead chat as still "in progress". 3 more minutes after the
+// nudge (4 total since the user's last message) before giving up.
+const CLOSE_DELAY_MS = 180_000;
+
+const TERMINAL_STATES = new Set<ConversationState>([
+  ConversationState.COMPLETED,
+  ConversationState.ABANDONED,
+  ConversationState.REJECTED,
+]);
 
 @Injectable()
 export class ReminderService {
-  private readonly timers = new Map<string, NodeJS.Timeout>();
+  private readonly logger = new Logger(ReminderService.name);
+  private readonly nudgeTimers = new Map<string, NodeJS.Timeout>();
+  private readonly closeTimers = new Map<string, NodeJS.Timeout>();
 
-  constructor(private readonly telegram: TelegramAdapter) {}
+  constructor(
+    private readonly telegram: TelegramAdapter,
+    private readonly conversations: ConversationService,
+  ) {}
 
   // Keyed by conversation id, not userId — a user could in principle run multiple
   // conversations (different channels), and conversation id is already the stable,
   // unique identifier used everywhere else in this codebase (saveState, etc.).
   schedule(conversationId: string, userId: string): void {
     this.cancel(conversationId);
-    const timer = setTimeout(() => {
-      this.timers.delete(conversationId);
+    const nudgeTimer = setTimeout(() => {
+      this.nudgeTimers.delete(conversationId);
       void this.telegram.sendText(userId, REMINDER_TEXT);
+
+      const closeTimer = setTimeout(() => {
+        this.closeTimers.delete(conversationId);
+        void this.closeIfStillStalled(conversationId);
+      }, CLOSE_DELAY_MS);
+      this.closeTimers.set(conversationId, closeTimer);
     }, REMINDER_DELAY_MS);
-    this.timers.set(conversationId, timer);
+    this.nudgeTimers.set(conversationId, nudgeTimer);
   }
 
   cancel(conversationId: string): void {
-    const existing = this.timers.get(conversationId);
-    if (existing) {
-      clearTimeout(existing);
-      this.timers.delete(conversationId);
+    const nudge = this.nudgeTimers.get(conversationId);
+    if (nudge) {
+      clearTimeout(nudge);
+      this.nudgeTimers.delete(conversationId);
     }
+    const close = this.closeTimers.get(conversationId);
+    if (close) {
+      clearTimeout(close);
+      this.closeTimers.delete(conversationId);
+    }
+  }
+
+  private async closeIfStillStalled(conversationId: string): Promise<void> {
+    const conv = await this.conversations.findById(conversationId);
+    if (!conv || TERMINAL_STATES.has(conv.state)) return;
+
+    const reason = conv.context?.productCategory ? 'no_response' : 'insufficient_info';
+    await this.conversations.saveState(conversationId, ConversationState.ABANDONED, {
+      ...conv.context,
+      abandonReason: reason,
+    }).catch((err) => this.logger.warn(`closeIfStillStalled failed: ${err}`));
   }
 }

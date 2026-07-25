@@ -862,8 +862,12 @@ export class AgentService {
           text: 'Identidad verificada ✅\n\n📸 Por último, toca el clip 📎 y envíame una selfie ahora mismo para confirmar tu identidad.',
           context: verifiedContext,
           // 2026-07-24 feedback: a "big" reaction (Telegram's is_big flag, a much larger
-          // animated burst) on the shared-contact message itself.
-          reaction: '✅',
+          // animated burst) on the shared-contact message itself. '✅' is NOT one of
+          // Telegram's allowed reaction emoji (grammy's ReactionTypeEmoji union — see
+          // telegram-adapter.service.ts's reactToMessage) — using it silently failed with
+          // `REACTION_INVALID` in production (confirmed via the .catch() logging added
+          // 2026-07-24). '🤝' is in the allowed set and fits "verified/connected" here.
+          reaction: '🤝',
           reactionBig: true,
         };
       }

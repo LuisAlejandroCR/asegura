@@ -122,6 +122,14 @@ interface ConversationContext {
   awaitingMedicalInfo?: boolean;
   medicalInfoProvided?: boolean;
   medicalInfo?: string;
+  // Set only when ReminderService auto-closes a conversation after prolonged silence
+  // (2026-07-25 feature request) — distinguishes a genuinely stalled chat from the
+  // existing manual-decline paths above (a plain "no"), which don't set this field.
+  // 'insufficient_info': went quiet before a productCategory was ever established —
+  // there wasn't enough to quote. 'no_response': went quiet after that point (e.g. a
+  // presented quote never got a reply) — the agent had enough to act, the person just
+  // never answered.
+  abandonReason?: 'insufficient_info' | 'no_response';
 }
 
 interface Conversation {
