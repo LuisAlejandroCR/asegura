@@ -161,6 +161,7 @@ export class WompiWebhookController {
       // Cosmetic selfie step (2026-07-24) — same one-time-per-conversation reasoning.
       selfieProvided: newContext.selfieProvided,
       productCategory: pendingCategory ?? undefined,
+      awaitingCrossSellResponse: true,
     };
     await this.conversations.saveState(conversation.id, ConversationState.DISCOVERY, followUpContext);
   }
