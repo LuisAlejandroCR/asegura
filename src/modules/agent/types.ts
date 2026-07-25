@@ -33,6 +33,12 @@ interface ConversationContext {
   quoteProductId?: string;
   shownProductIds?: string[];
   petCount?: number | null;
+  // Per-species breakdown for a mixed household (2026-07-24 live bug: "2 dogs + 1 cat"
+  // was quoted and charged as 3 cats — a single quoteProductId x total petCount can't
+  // represent a mixto household with species-specific products/prices). Set when a
+  // mixto message names explicit counts per species; used to quote/charge each
+  // species-specific product against its OWN count instead of the combined total.
+  petSpeciesCounts?: { gato?: number; perro?: number };
   pets?: PetDetail[];
   // Set once all pets are collected and the summary is shown, awaiting "sí" or a
   // per-pet correction, before moving on to the human's own cédula/nombre/correo.
@@ -50,6 +56,12 @@ interface ConversationContext {
   // current purchase is NOT interrupted; this category is offered as a follow-up only
   // after the current policy is issued and paid (see wompi-webhook.controller.ts).
   pendingCrossSell?: string | null;
+  // Set by wompi-webhook.controller.ts right after a purchase, when it asks "¿Quieres
+  // proteger algo más?" (or the pendingCrossSell-specific variant) — a decline here
+  // ("No, está bien así.") must end the conversation politely instead of falling through
+  // to DISCOVERY's generic "no entendí" acknowledgment, which read as the agent ignoring
+  // a clear "I'm done" (real live-test bug, 2026-07-24).
+  awaitingCrossSellResponse?: boolean;
   // Set when the user is buying 2+ products together in one purchase (e.g. "quiero los
   // dos") — each gets its own policy row and PDF, sharing one combined Wompi payment.
   // Falls back to quoteProductId (single) when unset/empty. Nothing in the live agent

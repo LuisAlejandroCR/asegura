@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Bot, Context, InputFile, Keyboard, webhookCallback } from 'grammy';
+import { createReadStream } from 'fs';
 import { IChannelAdapter, NormalizedMessage } from './types';
 
 @Injectable()
@@ -161,11 +162,33 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
   // message reactions render with a small built-in animation with no hosted GIF/sticker
   // needed, unlike sendAnimation/sendSticker. Purely cosmetic (same as the selfie step
   // it's used with) — never allowed to break the real message flow if it fails.
-  async reactToMessage(userId: string, messageId: number, emoji: string): Promise<void> {
+  async reactToMessage(userId: string, messageId: number, emoji: string, isBig?: boolean): Promise<void> {
     if (!this.bot) return;
     // grammy types `emoji` as a closed union of Telegram's allowed reaction emoji —
     // cast here so IChannelAdapter's interface can stay a plain string (channel-agnostic).
-    await this.bot.api.setMessageReaction(Number(userId), messageId, [{ type: 'emoji', emoji } as any]).catch(() => undefined);
+    // isBig maps to Telegram's is_big flag — a much larger animated burst, used for the
+    // phone/contact-share confirmation (2026-07-24 feedback).
+    //
+    // Real live-test report (reported 3 times): the reaction reportedly never shows,
+    // despite code review and passing tests finding no bug here. A silent .catch() made
+    // this undebuggable — logging the real failure reason turns it into an actual log
+    // line to diagnose from next time, instead of a guess.
+    await this.bot.api.setMessageReaction(Number(userId), messageId, [{ type: 'emoji', emoji } as any], { is_big: isBig })
+      .catch((err) => this.logger.warn(`reactToMessage failed: ${err}`));
+  }
+
+  // 2026-07-24 feedback: a real branded success-checkmark video for the
+  // selfie-confirmed and payment-confirmed moments — heavier than a reaction, so this
+  // is never allowed to break the real flow if it fails (same as reactToMessage above).
+  async sendAnimation(userId: string, filePath: string): Promise<void> {
+    if (!this.bot) return;
+    // A missing/unreadable asset file emits an 'error' event on the stream itself —
+    // with no listener attached that crashes the whole Node process (uncaught
+    // exception), not just this cosmetic send. Swallowed here for the same reason the
+    // .catch() below exists: this must never take down the real message flow.
+    const stream = createReadStream(filePath);
+    stream.on('error', () => undefined);
+    await this.bot.api.sendAnimation(Number(userId), new InputFile(stream)).catch(() => undefined);
   }
 
   async sendDocument(userId: string, file: Buffer, filename: string): Promise<void> {

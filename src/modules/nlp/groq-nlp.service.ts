@@ -193,8 +193,16 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     // ever wins when it found strictly MORE structured pets than Groq did, so it never
     // clobbers a correct LLM extraction of a shape this regex parser can't itself parse
     // (e.g. "Rocky tiene 5 años y es labrador" has no comma-triple clauses at all).
+    //
+    // Real regression this override itself caused: Groq's own prompt tells it to use the
+    // singular petName/petAge/petBreed fields (not pets[]) for a message describing ONE
+    // pet — pets: [] is the CORRECT shape there, not an undercount. Requiring more than
+    // 1 deterministic pet keeps this override scoped to genuine multi-pet detections
+    // (period-separated clauses); a single-pet message never gets its good Groq data
+    // replaced by this parser's weaker single-clause read (which doesn't understand
+    // Spanish word-form ages like "tres años", among other gaps).
     const deterministicPets = this.extractPetsFromText(text);
-    if (deterministicPets.length > (intent.pets?.length ?? 0)) {
+    if (deterministicPets.length > 1 && deterministicPets.length > (intent.pets?.length ?? 0)) {
       intent.pets = deterministicPets;
     }
 
@@ -209,6 +217,11 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5,
     seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10,
   };
+
+  // Shared regex fragment for both digit and Spanish word-form numbers — used by
+  // extractPetAge and extractPetsFromText's breed filter so a spoken age like "tres
+  // años" is recognized the same way a typed "3 años" already is.
+  private static readonly NUMBER_WORD_PATTERN = Object.keys(GroqNlpService.PET_NUMBER_WORDS).join('|');
 
   // A standalone "sí"/"si" word means the question mark is a confirmation tag ("¿sí?",
   // "sí está bien?"), not a real question — "asistencia" must not match. Plain \b doesn't
@@ -311,7 +324,11 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       const nameMatch = parts[0].match(/^([A-ZÁÉÍÓÚÑ][a-zA-Záéíóúñ]*)/);
       if (!nameMatch) continue;
       const age = this.extractPetAge(clause.toLowerCase());
-      const remaining = parts.slice(1).filter((p) => !/^\d+\s*(años?|meses?)$/i.test(p));
+      // Real live-test bug: a word-form age ("tres años", "ocho años" — very common in
+      // voice dictation) wasn't recognized by this digit-only filter, so the whole age
+      // clause leaked into breed instead ("tres años, dobermana").
+      const ageTokenPattern = new RegExp(`^(?:\\d+|${GroqNlpService.NUMBER_WORD_PATTERN})\\s*(años?|meses?)$`, 'i');
+      const remaining = parts.slice(1).filter((p) => !ageTokenPattern.test(p));
       const breed = remaining.length > 0 ? remaining.join(', ') : null;
       pets.push({ name: nameMatch[1], age, breed });
     }
@@ -323,9 +340,15 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     return match ? match[1] : null;
   }
 
+  // Real live-test bug: word-form ages ("tres años", "ocho años" — very common in voice
+  // dictation) weren't recognized at all, only digit-form ("3 años") — the age silently
+  // fell through and got absorbed into breed instead in the multi-pet clause parser.
   private extractPetAge(lower: string): string | null {
-    const match = lower.match(/(\d+)\s*años?/);
-    return match ? `${match[1]} años` : null;
+    const match = lower.match(new RegExp(`\\b(\\d+|${GroqNlpService.NUMBER_WORD_PATTERN})\\s*años?\\b`));
+    if (!match) return null;
+    const raw = match[1];
+    const value = /^\d+$/.test(raw) ? raw : GroqNlpService.PET_NUMBER_WORDS[raw];
+    return `${value} años`;
   }
 
   private isAffirmativeText(lower: string): boolean {

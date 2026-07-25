@@ -80,6 +80,7 @@ function buildController(overrides: { policies?: Policy[] } = {}) {
   const telegram = {
     sendText: jest.fn().mockResolvedValue(undefined),
     sendDocument: jest.fn().mockResolvedValue(undefined),
+    sendAnimation: jest.fn().mockResolvedValue(undefined),
   };
 
   const controller = new WompiWebhookController(
@@ -165,6 +166,15 @@ describe('WompiWebhookController — APPROVED payment', () => {
       'conv-1', ConversationState.POLICY_ISSUED, expect.objectContaining({ policyId: 'pol-1' }),
     );
     expect(telegram.sendText).toHaveBeenCalledWith('999888777', expect.stringContaining('activo'));
+  });
+
+  // 2026-07-24 feedback: the real Wompi payment approval — the actual "successfully
+  // paid" moment — gets the same branded success-checkmark video as the selfie and
+  // Tarjeta Colsubsidio moments.
+  it('sends the branded success animation on approval', async () => {
+    const { controller, telegram } = buildController();
+    await controller.handleWebhook(makeEvent());
+    expect(telegram.sendAnimation).toHaveBeenCalledWith('999888777', expect.stringContaining('payment-received.mp4'));
   });
 
   // Regression: the PDF used to be gated on a real celoscanUrl being present — now that

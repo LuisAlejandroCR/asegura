@@ -1,10 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import * as path from 'path';
 import { INlpProvider, InsuranceIntent } from '../nlp/types';
 import { TelegramAdapter } from '../channel/telegram-adapter.service';
 import { NormalizedMessage } from '../channel/types';
 import { ConversationService } from './conversation.service';
 import { ConversationState, ConversationContext, PetDetail, DocumentType } from './types';
-import { STATE_RESPONSES } from './conversation-state.machine';
+import { STATE_RESPONSES, formatNameList } from './conversation-state.machine';
 import { QuotingService } from '../quoting/quoting.service';
 import { PolicyService } from '../policy/policy.service';
 import { WompiService } from '../payments/wompi.service';
@@ -25,7 +26,22 @@ interface ProcessResult {
   // When set, reacts to the triggering message with this emoji (2026-07-24 feedback — a
   // lightweight "animated success" touch, e.g. on the selfie photo itself).
   reaction?: string;
+  // Upgrades `reaction` to Telegram's "big" reaction (a much larger animated burst) —
+  // used for the phone/contact-share confirmation.
+  reactionBig?: boolean;
+  // When set, sends this local video file as a Telegram animation (2026-07-24 feedback —
+  // a real branded success-checkmark clip, used for the selfie-confirmed and
+  // Tarjeta Colsubsidio moments — heavier than `reaction`, so only where explicitly asked).
+  animation?: string;
 }
+
+// Static brand assets — referenced relative to the project root (not __dirname) because
+// nest-cli.json doesn't copy non-.ts assets into dist/, and the server runs `node dist/main`
+// from the project root, so `src/assets/` is reachable at runtime via process.cwd()
+// (same convention as pdf.service.ts's IMAGES_DIR). Each has its own baked-in text label
+// (2026-07-24 feedback) — no separate "confirmed" text message needed alongside it.
+const IDENTITY_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'identity-confirmed.mp4');
+const PAYMENT_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'payment-received.mp4');
 
 @Injectable()
 export class AgentService {
@@ -84,8 +100,12 @@ export class AgentService {
       await this.telegram.sendDocument(msg.userId, result.document.buffer, result.document.filename);
     }
 
+    if (result.animation) {
+      await this.telegram.sendAnimation(msg.userId, result.animation);
+    }
+
     if (result.reaction && msg.messageId !== undefined) {
-      await this.telegram.reactToMessage(msg.userId, msg.messageId, result.reaction);
+      await this.telegram.reactToMessage(msg.userId, msg.messageId, result.reaction, result.reactionBig);
     }
 
     if (result.requestContact && result.text) {
@@ -183,6 +203,25 @@ export class AgentService {
   ): ProcessResult {
     const newContext: ConversationContext = { ...context };
 
+    // Real live-test bug: after a purchase, wompi-webhook.controller.ts asks "¿Quieres
+    // proteger algo más?" and resets to DISCOVERY — a decline ("No, está bien así.") fell
+    // through to DISCOVERY's generic "no entendí" acknowledgment below, reading as the
+    // agent ignoring a clear, polite "I'm done" right after a purchase. Only fires when
+    // the reply is a genuine decline with no new category named in the same breath (e.g.
+    // "no, quiero vida" still proceeds to quote vida, not end the conversation) — always
+    // clears the flag either way so it can never linger and hijack an unrelated later "no".
+    if (context.awaitingCrossSellResponse) {
+      const declining = intent.isNegative && !intent.productCategory;
+      if (declining) {
+        return {
+          text: '¡Perfecto! Si más adelante quieres proteger algo más, aquí estoy 24/7. ¡Que tengas un excelente día! 👋',
+          nextState: ConversationState.COMPLETED,
+          context: { ...newContext, awaitingCrossSellResponse: undefined },
+        };
+      }
+      newContext.awaitingCrossSellResponse = undefined;
+    }
+
     if (!context.productCategory && intent.productCategory) newContext.productCategory = intent.productCategory;
     // Handle clarification response when we already know it's a mixed-pet household
     if (context.petType === 'mixto') {
@@ -201,6 +240,15 @@ export class AgentService {
         };
       }
       if (!newContext.coverage?.length) newContext.coverage = ['medicina veterinaria'];
+
+      // Real live-test bug: "para todos" for a genuinely mixed household (a real gato
+      // AND perro count both known) must quote BOTH species-specific products at their
+      // own price, not fall through to bestQuote's single-product pick (previously
+      // always won by whichever product happened to tie-break first in the catalog,
+      // multiplied by the combined total — charging the wrong species the wrong price).
+      if (intent.petResolution === 'all' && context.petSpeciesCounts?.gato && context.petSpeciesCounts?.perro) {
+        return this.buildMixedSpeciesQuote(newContext);
+      }
     } else {
       if (!context.petType && intent.petType) {
         // Guard: if coverage is already set, pet was resolved in a previous turn.
@@ -211,6 +259,15 @@ export class AgentService {
         } else {
           newContext.petType = intent.petType;
         }
+      }
+      // Real live-test bug: "Tengo dos perros, una gata y yo." quoted a SINGLE product
+      // (whichever won bestQuote's tie-break) multiplied by the TOTAL pet count, charging
+      // the dogs at the cat rate. Capture the per-species breakdown right now, while the
+      // original message naming both species is still available — it's gone by the time
+      // "para todos" answers the clarification question below.
+      if (newContext.petType === 'mixto') {
+        const counts = this.extractSpeciesCounts(text);
+        if (counts.gato > 0 || counts.perro > 0) newContext.petSpeciesCounts = counts;
       }
     }
 
@@ -503,6 +560,54 @@ export class AgentService {
   // name, since the field was previously stored verbatim with zero shape validation.
   private static readonly NAME_REGEX = /^[a-zA-ZÀ-ÖØ-öø-ÿ]+(?:['’\-][a-zA-ZÀ-ÖØ-öø-ÿ]+|\s+[a-zA-ZÀ-ÖØ-öø-ÿ]+)*$/;
 
+  // Real live-test bug: dictating a cédula digit-by-digit by voice ("uno, dos, tres...")
+  // gets transcribed with a comma between each individual digit ("1, 2, 3, 4, 5, 6, 7,
+  // 8, 9") — the cédula regex needs a CONTIGUOUS \d{6,10} run, so this never matched at
+  // all. Only join when EVERY comma-separated token is a single lone digit (6+ of them)
+  // — a typed, intentionally-formatted number like "12.345.678" (period-separated
+  // multi-digit groups) or "1234 5678" (space-separated groups) must still be rejected
+  // as before; those aren't voice-digit dictation and have no commas at all.
+  private joinSpokenDigits(text: string): string {
+    const tokens = text.split(',').map((t) => t.trim());
+    if (tokens.length >= 6 && tokens.every((t) => /^\d$/.test(t))) {
+      return tokens.join('');
+    }
+    return text;
+  }
+
+  // Real live-test bug: a genuinely mixed household (2 dogs + 1 cat) was quoted a SINGLE
+  // product (medicina-prepagada-gatos, cat-only) multiplied by the TOTAL pet count (3) —
+  // charging the 2 dogs at the cat rate. The catalog has separate species-restricted
+  // products with different prices; a mixto household needs its OWN per-species count,
+  // not just a combined total, to quote/charge each product correctly.
+  private static readonly SPECIES_NUMBER_WORDS: Record<string, number> = {
+    un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5,
+    seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10,
+  };
+
+  private extractSpeciesCounts(lower: string): { gato: number; perro: number } {
+    const pattern = /\b(\d+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+(perr(?:os?|itos?|itas?|as?)|gat(?:os?|itos?|itas?|icos?|icas?|as?))\b/g;
+    let gato = 0;
+    let perro = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(lower)) !== null) {
+      const raw = match[1];
+      const n = /^\d+$/.test(raw) ? parseInt(raw, 10) : AgentService.SPECIES_NUMBER_WORDS[raw];
+      if (match[2].startsWith('gat')) gato += n;
+      else perro += n;
+    }
+    return { gato, perro };
+  }
+
+  // The right per-pet count for THIS product's own price — a species-restricted product
+  // (medicina-prepagada-gatos/perros) uses its own species' count from a mixto
+  // household's breakdown when known, never the combined total of every pet.
+  private petCountForProduct(context: ConversationContext, product: InsuranceProduct): number | null | undefined {
+    if (context.petSpeciesCounts && product.eligibility.pet === 'gato') return context.petSpeciesCounts.gato ?? context.petCount;
+    if (context.petSpeciesCounts && product.eligibility.pet === 'perro') return context.petSpeciesCounts.perro ?? context.petCount;
+    return context.petCount;
+  }
+
   private isValidHumanName(text: string): boolean {
     const trimmed = text.trim();
     return trimmed.length >= 2 && trimmed.length <= 80 && AgentService.NAME_REGEX.test(trimmed);
@@ -525,6 +630,21 @@ export class AgentService {
       ? context.selectedProductIds
       : (context.quoteProductId ? [context.quoteProductId] : []);
     return productIds.some((id) => PRODUCTS.find((p) => p.id === id)?.requiresUnderwriting);
+  }
+
+  // 2026-07-24 clarification: the generic "edad, enfermedad, historial clínico" question
+  // only fully fits a HUMAN product (vida) — a human's age is never captured anywhere
+  // else in the flow. A PET product (medicina-prepagada-gatos/perros) already has the
+  // pet's age from the Step-0 per-pet loop by the time this gate is reached, so re-asking
+  // it is redundant, and there's no "historial clínico" concept for a pet — only whether
+  // it has a preexisting illness. Must name the actual pet(s), not speak generically.
+  private buildUnderwritingQuestion(context: ConversationContext): string {
+    if (this.isPetSelected(context) && context.pets?.length) {
+      const names = formatNameList(context.pets.map((p) => p.name));
+      const plural = context.pets.length > 1;
+      return `Para emitir la póliza de ${names} necesito saber si ${plural ? 'tienen' : 'tiene'} alguna enfermedad preexistente (o escribe "ninguna" si no aplica).`;
+    }
+    return 'Para este seguro necesito un par de datos adicionales: tu edad, si tienes alguna enfermedad preexistente, y un breve historial clínico (o escribe "ninguna" si no aplica).';
   }
 
   // Single source for the Wompi payment link's expiry — was duplicated as two separate
@@ -627,6 +747,10 @@ export class AgentService {
         return {
           text: 'Identidad verificada ✅\n\n📸 Por último, toca el clip 📎 y envíame una selfie ahora mismo para confirmar tu identidad.',
           context: verifiedContext,
+          // 2026-07-24 feedback: a "big" reaction (Telegram's is_big flag, a much larger
+          // animated burst) on the shared-contact message itself.
+          reaction: '✅',
+          reactionBig: true,
         };
       }
       const skippedContext: ConversationContext = {
@@ -669,11 +793,11 @@ export class AgentService {
           selfieRetryAsked: undefined,
         };
         return {
-          text: `✅ Identidad confirmada con tu foto.\n\n${this.firstDataCaptureQuestion(confirmedContext)}`,
+          // 2026-07-24 feedback: the "¡Identidad confirmada!" label is now baked into the
+          // video itself (IDENTITY_ANIMATION_PATH) — repeating it as text read as redundant.
+          text: this.firstDataCaptureQuestion(confirmedContext),
           context: confirmedContext,
-          // 2026-07-24 feedback: "animated successfully check" — Telegram message
-          // reactions render with a small built-in animation, no hosted asset needed.
-          reaction: '✅',
+          animation: IDENTITY_ANIMATION_PATH,
         };
       }
       const skippedContext: ConversationContext = {
@@ -842,7 +966,7 @@ export class AgentService {
     // ciudadanía) — detect CE/TI/NIP/NUIP from keywords and extract the digit run
     // regardless of a spoken-out prefix ("CE 123456789", "mi tarjeta de identidad es...").
     if (!context.cedula) {
-      const digitsMatch = text.match(/\b\d{6,10}\b/);
+      const digitsMatch = this.joinSpokenDigits(text).match(/\b\d{6,10}\b/);
       if (!digitsMatch) {
         return { text: 'El número de documento debe tener entre 6 y 10 dígitos. Intenta de nuevo.' };
       }
@@ -889,7 +1013,7 @@ export class AgentService {
       // is direct-sell and goes straight to it.
       if (this.requiresUnderwritingInfo(newContext) && !newContext.medicalInfoProvided) {
         return {
-          text: 'Para este seguro necesito un par de datos adicionales: tu edad, si tienes alguna enfermedad preexistente, y un breve historial clínico (o escribe "ninguna" si no aplica).',
+          text: this.buildUnderwritingQuestion(newContext),
           context: { ...newContext, awaitingMedicalInfo: true },
         };
       }
@@ -968,7 +1092,13 @@ export class AgentService {
 
       const policyIds: string[] = [];
       for (const productId of productIds) {
-        const { policyId } = await this.policy.issue(convId, { ...newContext, quoteProductId: productId });
+        // A mixto household's species-restricted products must each be issued against
+        // their OWN per-species count (petCountForProduct), not the combined total —
+        // otherwise both policies store/charge the wrong pet_count (real bug: 2 dogs + 1
+        // cat both stored as petCount 3).
+        const product = PRODUCTS.find((p) => p.id === productId);
+        const petCountOverride = product ? this.petCountForProduct(newContext, product) : newContext.petCount;
+        const { policyId } = await this.policy.issue(convId, { ...newContext, quoteProductId: productId, petCount: petCountOverride });
         policyIds.push(policyId);
       }
       newContext.policyId = policyIds[0];
@@ -1064,7 +1194,11 @@ export class AgentService {
       };
     }
 
-    const amountCOP = products.reduce((sum, p) => sum + computeTotalPremium(p, context.petCount), 0);
+    // Real bug: a mixto household's species-restricted products were both charged
+    // against the COMBINED pet count (2 dogs + 1 cat both billed as 3) — the real Wompi
+    // charge amount itself was wrong, not just the on-screen quote. Each product bills
+    // against its own per-species count (petCountForProduct) when known.
+    const amountCOP = products.reduce((sum, p) => sum + computeTotalPremium(p, this.petCountForProduct(context, p)), 0);
     const productName = products.length > 1
       ? `${products.length} seguros Colsubsidio`
       : (products[0]?.name ?? 'Seguro Colsubsidio');
@@ -1107,9 +1241,9 @@ export class AgentService {
         context: { ...context, checkoutUrl },
         // 2026-07-24 feedback: Tarjeta Colsubsidio has no real API/sandbox of its own —
         // precisely because there's nothing real to show for it, the "match found"
-        // moment gets a livelier confirmation than plain text. Still the exact same
+        // moment gets the real branded success-checkmark video. Still the exact same
         // real Wompi link, never a faked/instant "paid" claim.
-        ...(context.paymentMethodChoice === 'tarjeta_colsubsidio' && { reaction: '🎉' }),
+        ...(context.paymentMethodChoice === 'tarjeta_colsubsidio' && { animation: PAYMENT_ANIMATION_PATH }),
       };
     } catch (error) {
       this.logger.error(`Failed to create payment link: ${error}`);
@@ -1207,5 +1341,46 @@ export class AgentService {
       `${priceBlock}${petNote}\n\n` +
       `¿Te interesa o prefieres que busquemos otra opción?`
     );
+  }
+
+  // Real live-test bug: a mixed household (e.g. 2 dogs + 1 cat) was quoted a SINGLE
+  // species-restricted product multiplied by the TOTAL pet count, silently charging the
+  // other species at the wrong rate. Quotes BOTH medicina-prepagada products together,
+  // each priced against its own species count — reuses the existing multi-product
+  // (selectedProductIds) purchase machinery, so confirmation/payment/policy issuance
+  // downstream needs no special-casing.
+  private buildMixedSpeciesQuote(context: ConversationContext): ProcessResult {
+    const gatoProduct = PRODUCTS.find((p) => p.id === 'medicina-prepagada-gatos')!;
+    const perroProduct = PRODUCTS.find((p) => p.id === 'medicina-prepagada-perros')!;
+    const gatoCount = this.petCountForProduct(context, gatoProduct) ?? 1;
+    const perroCount = this.petCountForProduct(context, perroProduct) ?? 1;
+    const gatoTotal = computeTotalPremium(gatoProduct, gatoCount);
+    const perroTotal = computeTotalPremium(perroProduct, perroCount);
+    const grandTotal = gatoTotal + perroTotal;
+
+    const productBlock = (product: InsuranceProduct, count: number, total: number) =>
+      `🛡️ *${product.name}* con ${product.insurer}\n` +
+      product.coverages.slice(0, 3).map((c) => `✅ ${c}`).join('\n') + '\n' +
+      `💰 *$${product.basePremium.toLocaleString('es-CO')}/mes por mascota* (${count} ${count === 1 ? 'mascota' : 'mascotas'}): *$${total.toLocaleString('es-CO')}/mes*\n` +
+      `👉 Ver detalles: ${product.url}`;
+
+    const text =
+      `📋 *Tu cotización personalizada*\n\n` +
+      `${productBlock(gatoProduct, gatoCount, gatoTotal)}\n\n` +
+      `${productBlock(perroProduct, perroCount, perroTotal)}\n\n` +
+      `💰 *Total para tu familia: $${grandTotal.toLocaleString('es-CO')}/mes*\n\n` +
+      `¿Te interesa o prefieres que busquemos otra opción?`;
+
+    const selectedProductIds = [gatoProduct.id, perroProduct.id];
+    return {
+      text,
+      nextState: ConversationState.QUOTE_PRESENTED,
+      context: {
+        ...context,
+        quoteProductId: gatoProduct.id,
+        selectedProductIds,
+        shownProductIds: [...new Set([...(context.shownProductIds ?? []), ...selectedProductIds])],
+      },
+    };
   }
 }

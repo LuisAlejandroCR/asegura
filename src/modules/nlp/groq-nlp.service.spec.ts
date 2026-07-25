@@ -257,6 +257,20 @@ describe('GroqNlpService.fallbackIntent — "Name, age, breed." period-separated
     const result = fallback(service, 'Rocky, 5 años, labrador');
     expect(result.pets).toEqual([{ name: 'Rocky', age: '5 años', breed: 'labrador' }]);
   });
+
+  // Real live-test bug: sending pets one message at a time, each in this same
+  // comma-triple shape, but with the age spoken as a WORD ("tres años", "ocho años") —
+  // very common in voice dictation — instead of a digit. extractPetAge only recognized
+  // digit-form ages, so the age silently fell through into breed instead ("Ramón — no
+  // especificada — tres años, dobermana" in the final summary).
+  it('regression — recognizes Spanish word-form ages ("tres años") instead of leaking them into breed', () => {
+    const result = fallback(service, 'Bruna, diez años, criolla. Ramón, tres años, dobermana. Pancha, ocho años, cocker.');
+    expect(result.pets).toEqual([
+      { name: 'Bruna', age: '10 años', breed: 'criolla' },
+      { name: 'Ramón', age: '3 años', breed: 'dobermana' },
+      { name: 'Pancha', age: '8 años', breed: 'cocker' },
+    ]);
+  });
 });
 
 // postProcess must override Groq's own `pets` array when Groq under-counted a
@@ -302,6 +316,22 @@ describe('GroqNlpService.postProcess — pets undercount override (2026-07-24 li
     const groqIntent = makeIntentWithPets([{ name: 'Rocky', age: '5 años', breed: 'labrador' }]);
     const result = postProcess(service, groqIntent, 'Rocky tiene 5 años y es labrador');
     expect(result.pets).toEqual([{ name: 'Rocky', age: '5 años', breed: 'labrador' }]);
+  });
+
+  // Real live-test regression introduced by the fix above: Groq's OWN prompt tells it to
+  // use the singular petName/petAge/petBreed fields (not pets[]) for a message describing
+  // ONE pet, and pets[] legitimately comes back empty in that case. The override must
+  // never treat "deterministic found 1, Groq's pets[] has 0" as evidence of an undercount
+  // — that's the expected shape for a single-pet message, and clobbering it with the
+  // single-clause deterministic parser corrupts perfectly good data. Live bug: sending
+  // pets one at a time ("Ramón, tres años, dobermana.") came back with age "no
+  // especificada" and breed "tres años, dobermana" in the final summary — the
+  // deterministic parser's OWN weaker single-clause read overwrote Groq's correct
+  // singular-field extraction.
+  it('regression — never overrides when Groq legitimately used the singular fields for a one-pet message (pets: [])', () => {
+    const groqIntent = makeIntentWithPets([]);
+    const result = postProcess(service, groqIntent, 'Ramón, tres años, dobermana.');
+    expect(result.pets).toEqual([]);
   });
 });
 

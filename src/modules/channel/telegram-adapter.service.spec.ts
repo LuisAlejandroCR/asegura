@@ -273,6 +273,21 @@ describe('TelegramAdapter.reactToMessage', () => {
     await expect(adapter.reactToMessage('222', 4242, '✅')).resolves.toBeUndefined();
   });
 
+  // Real live-test report (reported 3 times): the "big" reaction on the contact-share
+  // message reportedly never shows in Telegram, despite code review and passing tests
+  // finding no bug. Logging the actual failure reason (instead of a silent .catch) turns
+  // "still doesn't show, no idea why" into an actual Railway log line to diagnose from.
+  it('regression — logs a warning with the real error when the reaction call fails, instead of swallowing it silently', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    const bot = { api: { setMessageReaction: jest.fn().mockRejectedValue(new Error('REACTION_INVALID')) } };
+    (adapter as any).bot = bot;
+    const warnSpy = jest.spyOn((adapter as any).logger, 'warn').mockImplementation(() => undefined);
+
+    await adapter.reactToMessage('222', 4242, '✅', true);
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('REACTION_INVALID'));
+  });
+
   it('does nothing when the bot is disabled (no token)', async () => {
     const adapter = new TelegramAdapter(makeConfig());
     await expect(adapter.reactToMessage('222', 4242, '✅')).resolves.toBeUndefined();

@@ -1,4 +1,33 @@
-import { matchBreed } from './breed-matcher';
+import { matchBreed, classifyPetsBySpecies, DOG_BREEDS, CAT_BREEDS } from './breed-matcher';
+
+// Real live-test bug: a mixed household's final PDFs both listed all 3 pets instead of
+// each policy only listing its own species — PolicyService.issue() needed a way to
+// classify which of context.pets belongs to which species.
+describe('classifyPetsBySpecies', () => {
+  const petsFrom = (breeds: string[]) => breeds.map((breed, i) => ({ name: `P${i}`, age: '1 año', breed }));
+
+  it('classifies exact dog breeds as perro and exact cat breeds as gato', () => {
+    const pets = petsFrom(['Doberman', 'Siamés', 'Cocker Spaniel', 'Persa']);
+    expect(classifyPetsBySpecies(pets)).toEqual(['perro', 'gato', 'perro', 'gato']);
+  });
+
+  it('regression — the exact real-world case: 1 cat (Criollo) + 2 dogs classifies correctly using speciesCounts', () => {
+    const pets = petsFrom(['Criollo', 'Doberman', 'Cocker Spaniel']);
+    expect(classifyPetsBySpecies(pets, { gato: 1, perro: 2 })).toEqual(['gato', 'perro', 'perro']);
+  });
+
+  it('INVARIANT: every pet is classified as gato or perro, never null/undefined, for any breed mix', () => {
+    const allBreeds = [...DOG_BREEDS, ...CAT_BREEDS, 'Criollo', 'Mestizo', 'Común', 'Raza Desconocida'];
+    for (let i = 0; i < 30; i++) {
+      const count = 1 + Math.floor(Math.random() * 5);
+      const breeds = Array.from({ length: count }, () => allBreeds[Math.floor(Math.random() * allBreeds.length)]);
+      const pets = petsFrom(breeds);
+      const result = classifyPetsBySpecies(pets, { gato: count, perro: count });
+      expect(result).toHaveLength(count);
+      for (const s of result) expect(['gato', 'perro']).toContain(s);
+    }
+  });
+});
 
 describe('matchBreed — real-world voice transcription noise', () => {
   it('regression — "caken" (Whisper mis-transcription of "Cocker") matches Cocker Spaniel', () => {
