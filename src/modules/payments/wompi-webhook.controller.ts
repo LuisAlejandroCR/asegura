@@ -164,13 +164,6 @@ export class WompiWebhookController {
       selfieProvided: newContext.selfieProvided,
       productCategory: pendingCategory ?? undefined,
       awaitingCrossSellResponse: true,
-      // Real live-test bug: unlike policyId/policyIds (purchase-specific, reset here for
-      // the next one) and awaitingCrossSellResponse (a one-shot flag), this must persist
-      // permanently once set — it's the only durable signal that lets a LATER
-      // abandonIntent (processMessage in agent.service.ts) tell "already bought
-      // something" apart from "never bought anything", so a declined cross-sell doesn't
-      // get recorded as the same conversation status as never having purchased at all.
-      hasCompletedPurchase: true,
     };
     await this.conversations.saveState(conversation.id, ConversationState.DISCOVERY, followUpContext);
   }

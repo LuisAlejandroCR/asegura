@@ -84,39 +84,6 @@ export class QuotingService {
       matchScore += 10;
     }
 
-    // 2026-07-25 hyper-personalization tier — ported from a teammate's Python prototype
-    // (feature/motor-python-hiperpersonalizacion, analytics/reglas_negocio.py), reworked
-    // to use only signals the live conversation actually collects. The branch's
-    // age/pensioner tier (exequial for 55+) could NOT be ported: AffiliateSignals.edad is
-    // declared in the type but never populated live — the NLP schema only ever extracts a
-    // PET's age (petAge / pets[].age), never a human affiliate's own age. Deferred until
-    // a real DISCOVERY question captures it.
-    //
-    // Real bug found 2026-07-25 while writing the manual-verification script for this
-    // tier: this originally checked ONLY `budgetFromSalary(signals.rangoSalarial)` — but
-    // rangoSalarial is ALSO never populated live (InsuranceIntent has no such field; it
-    // only ever existed as an offline CSV-calibration signal, same class of bug as edad
-    // above). The only live income signal a user's own words can set is `budget` — reusing
-    // `effectiveBudget` (already computed above for the existing budget boost) so the tier
-    // actually reacts to what a real conversation can produce.
-    const hasDependents = !!signals.beneficiaries && signals.beneficiaries > 1;
-    const highIncome = (effectiveBudget ?? 0) >= 60000; // "Entre 3 y 4 SMLV"+ equivalent
-
-    if (product.category === 'vida') {
-      if (hasDependents && highIncome && product.id === 'vida-ahorro') {
-        matchScore += 25;
-        reasons.push(`Tienes ${signals.beneficiaries} personas a cargo y un ingreso que permite ahorrar — Vida+Ahorro protege y capitaliza a la vez`);
-      } else if (hasDependents && !highIncome && product.id === 'vida') {
-        matchScore += 15;
-        reasons.push(`Tienes ${signals.beneficiaries} personas a cargo — proteger ese ingreso es la necesidad más directa`);
-      }
-    }
-
-    if (product.category === 'accidentes' && !hasDependents && highIncome && product.id === 'accidentes-premium') {
-      matchScore += 20;
-      reasons.push('Tu ingreso permite una cobertura ampliada — Accidentes premium suma gastos médicos mayores e indemnización más alta');
-    }
-
     matchScore = Math.min(matchScore, 100);
 
     return {
