@@ -230,17 +230,13 @@ describe('QuotingService — category cross-sell map (locked-in current behavior
   // both ways; asistencia is relevant to a vida signal (life insurance + exequial is a
   // natural pairing) but NOT the reverse; mascotas cross-sells to human coverage via a
   // separate code path (mentionsPersonalCoverage in agent.service.ts), not this map.
-  it('a vida signal includes accidentes products (bidirectional)', () => {
-    const scores = service.score({ productCategory: 'vida' });
-    expect(scores.some((s) => PRODUCTS.find((p) => p.id === s.productId)?.category === 'accidentes')).toBe(true);
-  });
-
-  // Regression / known limitation: score() caps results to the top 3 by matchScore.
-  // 'accidentes' has exactly 3 direct products (all scoring 40), which fill every slot
-  // before the related-category vida match (scoring 20) is ever considered — so the
-  // accidentes->vida link in the map is real but never surfaces in practice. This test
-  // documents the current, verified behavior so a future change to either the map or the
-  // top-3 cap is deliberate, not accidental.
+  //
+  // 2026-07-24 UPDATE: the businessPriority tie-breaker (+10) now changes which
+  // related-category product wins the contested last top-3 slot for a vida signal — 4 of
+  // the 8 asistencia-or-accidentes candidates are prioritized products, so an asistencia
+  // product now wins that slot instead of accidentes (previously decided by catalog
+  // array order alone). The two tests below were updated to match; see the
+  // "business-priority boost" describe block above for the feature itself.
   it('an accidentes signal does NOT surface vida products — 3 direct accidentes matches already fill the top-3 cap', () => {
     const scores = service.score({ productCategory: 'accidentes' });
     expect(scores).toHaveLength(3);
@@ -252,12 +248,18 @@ describe('QuotingService — category cross-sell map (locked-in current behavior
     expect(scores.some((s) => PRODUCTS.find((p) => p.id === s.productId)?.category === 'vida')).toBe(false);
   });
 
-  // Same top-3-cap limitation as accidentes above: vida has 2 direct products, leaving one
-  // slot contested between accidentes and asistencia cross-sell candidates (both score 20).
-  // Stable sort preserves catalog order, so accidentes (earlier in products.data.ts) wins.
-  it('a vida signal does not include asistencia products in the top 3 (contested last slot, accidentes wins by catalog order)', () => {
+  // A vida signal has exactly 2 direct vida products (vida, vida-ahorro), leaving one
+  // top-3 slot contested among the related accidentes/asistencia candidates. Prioritized
+  // asistencia products (asistencias-multiples, exequial, asistencias-medicas) and the
+  // prioritized accidentes-exequial all score higher than the two non-prioritized
+  // accidentes products — an asistencia product wins the slot by catalog order among the
+  // prioritized ties.
+  it('a vida signal now surfaces a prioritized asistencia product in the contested last top-3 slot, not accidentes', () => {
     const scores = service.score({ productCategory: 'vida' });
-    expect(scores.some((s) => PRODUCTS.find((p) => p.id === s.productId)?.category === 'asistencia')).toBe(false);
+    expect(scores).toHaveLength(3);
+    const categories = scores.map((s) => PRODUCTS.find((p) => p.id === s.productId)?.category);
+    expect(categories).toEqual(['vida', 'vida', 'asistencia']);
+    expect(scores.some((s) => PRODUCTS.find((p) => p.id === s.productId)?.category === 'accidentes')).toBe(false);
   });
 });
 
@@ -278,6 +280,49 @@ describe('QuotingService INVARIANT — every NLP-reachable category yields a rec
       const scores = service.score({ productCategory });
       expect(scores.length).toBeGreaterThan(0);
     }
+  });
+});
+
+// 2026-07-24 business feedback: 7 products are now prioritized for sale (direct-sell,
+// require only basic cédula/nombre/correo) — vida, asistencias-multiples, exequial,
+// accidentes-exequial, asistencias-medicas, medicina-prepagada-gatos,
+// medicina-prepagada-perros. When multiple same-category products otherwise tie, a
+// prioritized product must outrank a non-prioritized one.
+describe('QuotingService — business-priority boost', () => {
+  const service = makeService();
+  const prioritizedIds = [
+    'vida', 'asistencias-multiples', 'exequial', 'accidentes-exequial',
+    'asistencias-medicas', 'medicina-prepagada-gatos', 'medicina-prepagada-perros',
+  ];
+
+  it('marks exactly the 7 prioritized products as businessPriority in the catalog', () => {
+    const flagged = PRODUCTS.filter((p) => p.businessPriority).map((p) => p.id).sort();
+    expect(flagged).toEqual([...prioritizedIds].sort());
+  });
+
+  it('a prioritized accidentes product outranks a non-prioritized one when otherwise tied', () => {
+    const scores = service.score({ productCategory: 'accidentes' });
+    const exequialScore = scores.find((s) => s.productId === 'accidentes-exequial')!.matchScore;
+    const personalesScore = scores.find((s) => s.productId === 'accidentes-personales')!.matchScore;
+    expect(exequialScore).toBeGreaterThan(personalesScore);
+  });
+
+  it('a prioritized vida product outranks a non-prioritized one when otherwise tied', () => {
+    const scores = service.score({ productCategory: 'vida' });
+    const vidaScore = scores.find((s) => s.productId === 'vida')!.matchScore;
+    const vidaAhorroScore = scores.find((s) => s.productId === 'vida-ahorro')!.matchScore;
+    expect(vidaScore).toBeGreaterThan(vidaAhorroScore);
+  });
+});
+
+// 2026-07-24 business feedback: "Seguro de vida" and both "Medicina prepagada"
+// (gatos/perros) products need conditional underwriting — age, pre-existing illnesses,
+// and clinical history — before they can be sold. Every other product is direct-sell
+// (cédula/nombre/correo only).
+describe('QuotingService — conditional underwriting flag', () => {
+  it('marks exactly vida + medicina-prepagada-gatos + medicina-prepagada-perros as requiring underwriting', () => {
+    const flagged = PRODUCTS.filter((p) => p.requiresUnderwriting).map((p) => p.id).sort();
+    expect(flagged).toEqual(['medicina-prepagada-gatos', 'medicina-prepagada-perros', 'vida'].sort());
   });
 });
 

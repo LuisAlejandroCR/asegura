@@ -77,6 +77,13 @@ export class QuotingService {
       }
     }
 
+    // 2026-07-24 business feedback: 7 products are the current sales priority — a small
+    // tie-breaker boost, never a hard filter, so a genuinely better-matching product
+    // (e.g. the right pet-species medicine) still wins on its own signals.
+    if (product.businessPriority) {
+      matchScore += 10;
+    }
+
     matchScore = Math.min(matchScore, 100);
 
     return {
