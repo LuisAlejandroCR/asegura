@@ -12,7 +12,7 @@ function App() {
         <div className="hero-glow" aria-hidden="true" />
         <div className="container hero-grid">
           <div className="hero-copy">
-            <img src="/logo.jpeg" alt="Asegura" className="logo" />
+            <img src="/logo.svg" alt="Asegura" className="logo" />
             <h1>
               Venta de seguros
               <br />
