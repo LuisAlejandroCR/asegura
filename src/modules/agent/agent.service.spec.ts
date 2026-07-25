@@ -1616,6 +1616,42 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     expect(sentText.toLowerCase()).toMatch(/aquí estoy|cuando quieras/);
   });
 
+  // Real live-test bug (2026-07-25): same bug class as the "stuck at abandoned despite
+  // completed purchase" fix (task #78) — but via a DIFFERENT code path that fix never
+  // touched. Task #78 only patched the top-level abandonIntent check, which explicitly
+  // skips QUOTE_PRESENTED (line ~135). A plain decline of a POST-PURCHASE cross-sell
+  // quote ("No, está bien.") goes through THIS branch instead (added by task #71), which
+  // unconditionally set nextState=ABANDONED with no hasCompletedPurchase check at all —
+  // so a customer who already has an active, paid policy and simply declines to buy a
+  // second one gets their conversation marked 'abandoned' again.
+  it('regression — a plain decline of a post-purchase cross-sell ends in COMPLETED, not ABANDONED, when hasCompletedPurchase is true', async () => {
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id, shownProductIds: [PRODUCTS[0].id], hasCompletedPurchase: true },
+      intent: makeIntent({ isNegative: true, wantsAlternative: false, isAffirmative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('No, está bien.'));
+    await service.handleMessage({});
+    expect(quoting.score).not.toHaveBeenCalled();
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.COMPLETED, expect.anything(),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).not.toMatch(/entendido\. cuando quieras retomar/);
+  });
+
+  it('regression — a plain decline still ends in ABANDONED when hasCompletedPurchase is not set (no prior purchase)', async () => {
+    const { service, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id, shownProductIds: [PRODUCTS[0].id] },
+      intent: makeIntent({ isNegative: true, wantsAlternative: false, isAffirmative: false }),
+    });
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.ABANDONED, expect.anything(),
+    );
+  });
+
   it('regression — explicitly asking for another option ("otra opción") still cycles to an alternative product, not a polite close', async () => {
     const p1 = PRODUCTS[0];
     const p2 = PRODUCTS[1];

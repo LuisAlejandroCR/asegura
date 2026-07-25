@@ -490,9 +490,17 @@ export class AgentService {
     // close as a valid response to "no" — only the alternative half was ever built. A bare
     // decline now ends the conversation politely instead of pushing another product.
     if (intent.isNegative && !intent.isAffirmative) {
+      // 2026-07-25 live-test bug: same class as the top-level abandonIntent check's
+      // hasCompletedPurchase branch above — but that check explicitly skips
+      // QUOTE_PRESENTED, so it never covered THIS branch. A customer who already has an
+      // active, paid policy and simply declines a post-purchase cross-sell quote was
+      // still getting the conversation marked ABANDONED instead of staying COMPLETED.
+      const terminalState = context.hasCompletedPurchase
+        ? ConversationState.COMPLETED
+        : ConversationState.ABANDONED;
       return {
-        text: STATE_RESPONSES[ConversationState.ABANDONED](context),
-        nextState: ConversationState.ABANDONED,
+        text: STATE_RESPONSES[terminalState](context),
+        nextState: terminalState,
       };
     }
 

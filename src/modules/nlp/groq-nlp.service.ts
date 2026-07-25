@@ -206,6 +206,18 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       intent.pets = deterministicPets;
     }
 
+    // Real live-test bug (2026-07-25): Groq classified "Otra opción." as
+    // isAffirmative=true instead of wantsAlternative — the conversation jumped straight
+    // to phone verification/purchase confirmation for the product the user was actually
+    // trying to switch away from. Unlike petType/petCount/pets above, wantsAlternative had
+    // no deterministic cross-check at all in this (primary) path — only fallbackIntent
+    // did. The two are mutually exclusive by definition, so an explicit alternative-
+    // request phrase always wins over the LLM's isAffirmative guess.
+    if (this.wantsAlternativeText(lower)) {
+      intent.wantsAlternative = true;
+      intent.isAffirmative = false;
+    }
+
     return intent;
   }
 

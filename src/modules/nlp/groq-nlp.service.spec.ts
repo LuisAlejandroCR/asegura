@@ -414,6 +414,50 @@ describe('GroqNlpService — wantsAlternative (fallback)', () => {
   });
 });
 
+// Real live-test bug (2026-07-25): user said "Otra opción." right after a quote was
+// shown. Groq (the primary path, not the fallback) classified it as isAffirmative=true
+// instead of wantsAlternative — the conversation jumped straight to phone verification /
+// purchase confirmation instead of showing a different product. postProcess had no
+// deterministic override for wantsAlternative at all (only the fallback path did), so a
+// wrong LLM guess went straight through uncorrected.
+describe('GroqNlpService.postProcess — wantsAlternative deterministic override (2026-07-25 live bug)', () => {
+  const service = makeService();
+
+  function wronglyAffirmative(): InsuranceIntent {
+    return {
+      productCategory: 'vida', petType: null, coverage: [], beneficiaries: 1,
+      urgency: 'exploring', isAffirmative: true, isNegative: false,
+      wantsAlternative: false, petResolution: null,
+    };
+  }
+
+  it('regression — "Otra opción." forces wantsAlternative=true and isAffirmative=false even when Groq said isAffirmative=true', () => {
+    const result = postProcess(service, wronglyAffirmative(), 'Otra opción.');
+    expect(result.wantsAlternative).toBe(true);
+    expect(result.isAffirmative).toBe(false);
+  });
+
+  it.each([
+    'otro',
+    'otra opción',
+    'diferente',
+    'muéstrame más',
+    'cambia',
+    'siguiente cotización',
+    'hay otra',
+  ])('"%s" forces wantsAlternative=true and isAffirmative=false via postProcess too', (text) => {
+    const result = postProcess(service, wronglyAffirmative(), text);
+    expect(result.wantsAlternative).toBe(true);
+    expect(result.isAffirmative).toBe(false);
+  });
+
+  it('does not force wantsAlternative when the text has no alternative-request keyword', () => {
+    const result = postProcess(service, wronglyAffirmative(), 'sí, me interesa');
+    expect(result.wantsAlternative).toBe(false);
+    expect(result.isAffirmative).toBe(true);
+  });
+});
+
 // ── petResolution extraction ──────────────────────────────────────────────────
 
 describe('GroqNlpService.postProcess — petResolution extraction', () => {
