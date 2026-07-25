@@ -218,7 +218,10 @@ def aplicar_reglas_vectorizado(df: pd.DataFrame) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    df = pd.read_parquet("afiliados_clustered.parquet")
+    # Lee directo la salida de preprocess.py -- este motor no usa CLUSTER (ver
+    # docstring del modulo), asi que correrlo aislado no requiere el paso de
+    # clustering de generar_full.py.
+    df = pd.read_csv("afiliados_prep.csv", sep=";")
     import time
     t0 = time.time()
     out = aplicar_reglas_vectorizado(df)
@@ -228,5 +231,5 @@ if __name__ == "__main__":
     print(out["TIER"].value_counts().sort_index())
     print()
     print(out["OFERTA_SECUNDARIA"].value_counts(dropna=False))
-    out.to_parquet("afiliados_con_oferta.parquet", index=False)
-    print("guardado afiliados_con_oferta.parquet")
+    out.to_csv("afiliados_con_oferta.csv", sep=";", index=False)
+    print("guardado afiliados_con_oferta.csv")

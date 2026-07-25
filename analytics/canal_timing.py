@@ -101,7 +101,7 @@ def calcular_canal_y_timing(df: pd.DataFrame) -> pd.DataFrame:
 
 if __name__ == "__main__":
     import time
-    df = pd.read_parquet("afiliados_con_oferta.parquet")
+    df = pd.read_csv("afiliados_con_oferta.csv", sep=";")
     t0 = time.time()
     out = calcular_canal_y_timing(df)
     print("tiempo canal/timing:", time.time() - t0)
@@ -110,5 +110,5 @@ if __name__ == "__main__":
     print(out["CANAL_TOUCH_INICIAL"].value_counts())
     print()
     print(out["VENTANA_CONTACTO"].value_counts())
-    out.to_parquet("afiliados_final.parquet", index=False)
-    print("guardado afiliados_final.parquet")
+    out.to_csv("afiliados_final.csv", sep=";", index=False)
+    print("guardado afiliados_final.csv")

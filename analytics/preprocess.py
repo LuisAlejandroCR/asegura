@@ -2,8 +2,14 @@
 Preprocesamiento de la base Usos_Productos_Afiliados_SIMULADO.csv
 para el motor de hiperpersonalizacion de seguros Colsubsidio.
 """
+import os
 import pandas as pd
 import numpy as np
+
+CSV_CANDIDATOS = [
+    "Usos_Productos_Afiliados_SIMULADO.csv",
+    "../Usos_Productos_Afiliados_SIMULADO.csv",
+]
 
 RANGO_EDAD_ORDER = {
     "Menor de 19 años": 0,
@@ -76,10 +82,11 @@ CLUSTER_ORD_COLS = ["RANGO_EDAD_ORD", "RANGO_SALARIAL_ORD"]
 
 
 if __name__ == "__main__":
-    df = load_raw("Usos_Productos_Afiliados_SIMULADO.csv")
+    csv_path = next((p for p in CSV_CANDIDATOS if os.path.exists(p)), CSV_CANDIDATOS[0])
+    df = load_raw(csv_path)
     d = preprocess(df)
     print(d.shape)
     print(d[CLUSTER_CAT_COLS + CLUSTER_ORD_COLS].isna().sum())
     print(d["CIUDAD_BUCKET"].value_counts())
-    d.to_parquet("afiliados_prep.parquet", index=False)
-    print("guardado afiliados_prep.parquet")
+    d.to_csv("afiliados_prep.csv", sep=";", index=False)
+    print("guardado afiliados_prep.csv")
