@@ -9,6 +9,7 @@ import { WompiService } from './wompi.service';
 import { PolicyService } from '../policy/policy.service';
 import { ConversationService } from '../agent/conversation.service';
 import { TelegramAdapter } from '../channel/telegram-adapter.service';
+import { ReminderService } from '../channel/reminder.service';
 import { WompiWebhookEvent } from './types';
 import { Policy } from '../policy/types';
 import { ConversationState, ConversationContext } from '../agent/types';
@@ -33,6 +34,7 @@ export class WompiWebhookController {
     private readonly policy: PolicyService,
     private readonly conversations: ConversationService,
     private readonly telegram: TelegramAdapter,
+    private readonly reminders: ReminderService,
   ) {}
 
   @Post()
@@ -173,6 +175,11 @@ export class WompiWebhookController {
       hasCompletedPurchase: true,
     };
     await this.conversations.saveState(conversation.id, ConversationState.DISCOVERY, followUpContext);
+
+    // 2026-07-25 feature request: this offer is sent from here, not from a Telegram
+    // message, so AgentService.handleMessage's own reminder scheduling never runs for
+    // it — arm the 30s "come back to chat" reminder here too.
+    this.reminders.schedule(conversation.id, conversation.user_id);
   }
 
   private async notifyPaymentFailed(policy: Policy): Promise<void> {

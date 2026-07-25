@@ -195,6 +195,14 @@ describe('GroqNlpService.fallbackIntent — intent extraction', () => {
   it('still sets abandonIntent for a clear, deliberate exit phrase ("cancelar")', () => {
     expect(fallback(service, 'quiero cancelar todo').abandonIntent).toBe(true);
   });
+
+  // Real live-test bug (screenshot, 2026-07-25): "terminar" sent right after a quote was
+  // shown wasn't recognized as an exit signal at all (missing from this list AND from the
+  // Groq prompt's abandonIntent examples), so it fell through to a neutral re-show of the
+  // same quote card instead of ending the conversation.
+  it('regression — sets abandonIntent for "terminar"', () => {
+    expect(fallback(service, 'terminar').abandonIntent).toBe(true);
+  });
 });
 
 // ── Per-pet detail extraction (fallback) ──────────────────────────────────────

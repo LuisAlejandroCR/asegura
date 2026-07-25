@@ -70,7 +70,7 @@ Ambos pueden ser false si el mensaje es neutral o informativo.
 
 abandonIntent: true SOLO cuando el usuario expresa una intención clara y deliberada de
 terminar TODA la conversación (ej: "cancelar", "olvídalo", "ya no quiero nada", "salir",
-"déjalo así", "lo veo después/luego"). NUNCA lo actives solo porque el mensaje contiene la
+"terminar", "déjalo así", "lo veo después/luego"). NUNCA lo actives solo porque el mensaje contiene la
 palabra "no" — "no me interesa este" (rechaza UNA opción, usa isNegative en su lugar),
 "no lo sé, ¿qué me ofreces?" (pide ayuda) y "se llama Bruno" (un nombre) NO son abandono.
 Ante la duda, abandonIntent es false.
@@ -387,7 +387,7 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
   private isAbandonText(lower: string): boolean {
     const exitPhrases = [
       'cancelar', 'olvídalo', 'olvidalo', 'ya no quiero', 'no quiero más', 'no quiero mas',
-      'salir', 'después', 'luego',
+      'salir', 'terminar', 'después', 'luego',
     ];
     return exitPhrases.some((p) => lower.includes(p));
   }

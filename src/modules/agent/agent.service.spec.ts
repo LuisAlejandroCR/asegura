@@ -1652,6 +1652,42 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     );
   });
 
+  // Real live-test bug (screenshot, 2026-07-25): user said "salir" then "terminar" right
+  // after a quote was shown, and got the IDENTICAL quote card re-shown verbatim both
+  // times, with zero acknowledgment. Root cause: handleQuotation never checked
+  // intent.abandonIntent at all — and the top-level abandonIntent check in
+  // processMessage explicitly excludes QUOTE_PRESENTED (it has its own richer branching
+  // for isAffirmative/isNegative/wantsAlternative), so an unambiguous exit word fell
+  // through every branch to the neutral catch-all at the bottom, which just re-shows the
+  // quote unchanged.
+  it('regression — "salir" ends the conversation instead of re-showing the same quote', async () => {
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id },
+      intent: makeIntent({ abandonIntent: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('salir'));
+    await service.handleMessage({});
+    expect(quoting.score).not.toHaveBeenCalled();
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.ABANDONED, expect.anything(),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain(PRODUCTS[0].name);
+  });
+
+  it('regression — abandonIntent in QUOTE_PRESENTED ends in COMPLETED, not ABANDONED, when hasCompletedPurchase is true', async () => {
+    const { service, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id, hasCompletedPurchase: true },
+      intent: makeIntent({ abandonIntent: true }),
+    });
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.COMPLETED, expect.anything(),
+    );
+  });
+
   it('regression — explicitly asking for another option ("otra opción") still cycles to an alternative product, not a polite close', async () => {
     const p1 = PRODUCTS[0];
     const p2 = PRODUCTS[1];
@@ -2390,6 +2426,47 @@ describe('AgentService — DISCOVERY polite decline of the post-purchase cross-s
     );
   });
 
+  // Real live-test bug (2026-07-25): user answered the cross-sell offer with "terminar",
+  // and the question "came back" instead of ending. Root cause traced to groq-nlp.service.ts:
+  // before this fix "terminar" wasn't in either the Groq prompt's abandonIntent examples or
+  // the fallback isAbandonText list, so intent.abandonIntent came back false — meaning the
+  // top-level abandonIntent check in processMessage (which already has the correct
+  // hasCompletedPurchase → COMPLETED branching from an earlier fix) never fired, and
+  // "terminar" fell through to handleDiscovery's clearlyDeclines check (isNegative ||
+  // /^no\b/), which it also doesn't match (it's an exit word, not a negation). This test
+  // covers the full path with abandonIntent now correctly true — the actual gap was in NLP
+  // classification, already fixed in groq-nlp.service.ts (see the "terminar" additions there).
+  it('regression — "terminar" (abandonIntent, not isNegative) ends the conversation via the top-level check instead of re-asking', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com', awaitingCrossSellResponse: true, hasCompletedPurchase: true },
+      intent: makeIntent({ isNegative: false, abandonIntent: true, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('terminar'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toMatch(/no logré entender/i);
+    expect(sentText).not.toContain('¿Quieres proteger algo más?');
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.COMPLETED, expect.anything(),
+    );
+  });
+
+  it('regression — bare "no" also ends the cross-sell offer politely (not just longer phrasings)', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com', awaitingCrossSellResponse: true, hasCompletedPurchase: true },
+      intent: makeIntent({ isNegative: true, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('no'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toMatch(/no logré entender/i);
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.COMPLETED, expect.objectContaining({ awaitingCrossSellResponse: undefined }),
+    );
+  });
+
   it('does not end the conversation when the user names a new category instead of declining', async () => {
     const { service, telegram, conversations, quoting } = buildService({
       state: ConversationState.DISCOVERY,
@@ -2580,4 +2657,58 @@ describe('AgentService INVARIANT — underwriting question matches catalog flag 
       }
     },
   );
+});
+
+// ── 30s "come back to chat" reminder (2026-07-25 feature request) ─────────────
+// This app is otherwise fully stateless (driven only by incoming Telegram messages) — the
+// reminder is the one place with an in-memory timer, scoped per conversation id. Every
+// incoming message must cancel any reminder pending for THIS conversation (proof the user
+// is still there) before scheduling a fresh one for the response about to go out —
+// except when the conversation just reached a terminal state, where nudging is pointless.
+describe('AgentService — 30s reminder scheduling', () => {
+  it('cancels any pending reminder for this conversation on every incoming message', async () => {
+    const { service, reminders } = buildService({ state: ConversationState.GREETING });
+    await service.handleMessage({});
+    expect(reminders.cancel).toHaveBeenCalledWith('conv-1');
+  });
+
+  it('schedules a reminder after a normal in-progress response (e.g. QUOTE_PRESENTED)', async () => {
+    const { service, telegram, reminders } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿ese es el único plan?'));
+    await service.handleMessage({});
+    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1');
+  });
+
+  it('does NOT schedule a reminder when a plain decline ends in ABANDONED', async () => {
+    const { service, reminders } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id },
+      intent: makeIntent({ isNegative: true, isAffirmative: false, wantsAlternative: false }),
+    });
+    await service.handleMessage({});
+    expect(reminders.schedule).not.toHaveBeenCalled();
+  });
+
+  it('does NOT schedule a reminder when a plain decline ends in COMPLETED (already purchased)', async () => {
+    const { service, reminders } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id, hasCompletedPurchase: true },
+      intent: makeIntent({ isNegative: true, isAffirmative: false, wantsAlternative: false }),
+    });
+    await service.handleMessage({});
+    expect(reminders.schedule).not.toHaveBeenCalled();
+  });
+
+  it('does NOT schedule a reminder when authorization is declined (REJECTED)', async () => {
+    const { service, reminders } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      intent: makeIntent({ isNegative: true, isAffirmative: false }),
+    });
+    await service.handleMessage({});
+    expect(reminders.schedule).not.toHaveBeenCalled();
+  });
 });

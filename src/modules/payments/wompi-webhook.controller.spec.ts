@@ -82,12 +82,16 @@ function buildController(overrides: { policies?: Policy[] } = {}) {
     sendDocument: jest.fn().mockResolvedValue(undefined),
     sendAnimation: jest.fn().mockResolvedValue(undefined),
   };
+  const reminders = {
+    schedule: jest.fn(),
+    cancel: jest.fn(),
+  };
 
   const controller = new WompiWebhookController(
-    wompi as any, policyService as any, conversations as any, telegram as any,
+    wompi as any, policyService as any, conversations as any, telegram as any, reminders as any,
   );
 
-  return { controller, wompi, policyService, conversations, telegram };
+  return { controller, wompi, policyService, conversations, telegram, reminders };
 }
 
 describe('WompiWebhookController — signature validation', () => {
@@ -237,6 +241,17 @@ describe('WompiWebhookController — post-purchase cross-sell (2026-07-24 "resto
 
     const discoveryCall = conversations.saveState.mock.calls.find((c: any[]) => c[1] === ConversationState.DISCOVERY);
     expect(discoveryCall?.[2]).toEqual(expect.objectContaining({ hasCompletedPurchase: true }));
+  });
+
+  // 2026-07-25 feature request: the post-purchase cross-sell offer ("¿Quieres proteger
+  // algo más?") is sent from this webhook, not from a Telegram message — AgentService's
+  // own reminder scheduling in handleMessage never runs for it, so this is the other
+  // place that must arm the 30s "come back to chat" reminder.
+  it('schedules a 30s reminder after sending the post-purchase cross-sell offer', async () => {
+    const { controller, conversations, reminders } = buildController();
+    conversations.findById.mockResolvedValue(makeConversation({ context: {} }));
+    await controller.handleWebhook(makeEvent());
+    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', '999888777');
   });
 
   it('offers a generic follow-up and leaves productCategory unset when nothing was deferred', async () => {

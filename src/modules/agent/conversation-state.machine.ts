@@ -50,9 +50,9 @@ export const STATE_RESPONSES: ResponsesMap = {
     const c = translate(ctx);
     if (!c.coverage || c.coverage.length === 0) {
       return (
-        'Para encontrarte el seguro ideal necesito entender tu situación:\n\n' +
-        '¿Tienes familia o personas que dependen de ti? ¿Qué es lo que más te preocupa proteger — tu salud, tu ingreso, tu hogar, tus mascotas?\n\n' +
-        'Cuéntame con tus palabras'
+        'Para encontrarte el seguro ideal comparteme un poco de tu historia:\n\n' +
+        '¿Tienes familia o personas que dependen de ti? ¿Qué es lo que más te preocupa proteger — tu salud, tu ingreso, tu hogar, tus mascotas?\n' +
+        'Puedes enviar tus respuestas en audio o texto'
       );
     }
     if (!c.beneficiaries || c.beneficiaries <= 0) {

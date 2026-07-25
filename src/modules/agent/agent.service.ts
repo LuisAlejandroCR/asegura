@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import * as path from 'path';
 import { INlpProvider, InsuranceIntent } from '../nlp/types';
 import { TelegramAdapter } from '../channel/telegram-adapter.service';
+import { ReminderService } from '../channel/reminder.service';
 import { NormalizedMessage } from '../channel/types';
 import { ConversationService } from './conversation.service';
 import { ConversationState, ConversationContext, PetDetail, DocumentType } from './types';
@@ -55,7 +56,14 @@ export class AgentService {
     private readonly quoting: QuotingService,
     private readonly policy: PolicyService,
     private readonly wompi: WompiService,
+    private readonly reminders: ReminderService,
   ) {}
+
+  private static readonly TERMINAL_STATES = new Set([
+    ConversationState.COMPLETED,
+    ConversationState.ABANDONED,
+    ConversationState.REJECTED,
+  ]);
 
   async handleMessage(raw: unknown): Promise<void> {
     const msg: NormalizedMessage = await this.telegram.normalize(raw);
@@ -76,6 +84,10 @@ export class AgentService {
     this.logger.log(`Message from ${msg.userId}: "${msg.text.slice(0, 80)}"`);
 
     const conv = await this.conversations.getOrCreate(msg.userId, msg.channel);
+    // 2026-07-25 feature request: any incoming message proves the user is still here —
+    // cancel whatever "come back to chat" reminder was pending before scheduling a fresh
+    // one below for the response about to go out.
+    this.reminders.cancel(conv.id);
     const lowerText = msg.text.toLowerCase().trim().replace(/[.,!?¡¿:;]+$/, '').trim();
     const rawText = msg.text.trim().replace(/[.,!?¡¿:;]+$/, '').trim();
     const intent: InsuranceIntent = msg.text
@@ -116,6 +128,14 @@ export class AgentService {
       }
     } else if (result.text) {
       await this.telegram.sendText(msg.userId, result.text);
+    }
+
+    // Arm the "come back to chat" reminder for whatever state the conversation is in now
+    // — skipped once it's actually over, since nudging someone who already finished (or
+    // was rejected/abandoned) has no point.
+    const finalState = result.nextState ?? conv.state;
+    if (!AgentService.TERMINAL_STATES.has(finalState)) {
+      this.reminders.schedule(conv.id, msg.userId);
     }
   }
 
@@ -416,6 +436,22 @@ export class AgentService {
 
   private handleQuotation(context: ConversationContext, text: string, intent: InsuranceIntent): ProcessResult {
     const currentProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
+
+    // Real live-test bug (screenshot, 2026-07-25): "salir" then "terminar", sent right
+    // after a quote was shown, got the IDENTICAL quote card re-shown verbatim both times
+    // — no branch below ever checked intent.abandonIntent. The top-level check in
+    // processMessage explicitly excludes QUOTE_PRESENTED (it has its own richer
+    // isAffirmative/isNegative/wantsAlternative branching), so an unambiguous exit word
+    // fell through everything to the neutral catch-all, which just re-shows the quote.
+    if (intent.abandonIntent) {
+      const terminalState = context.hasCompletedPurchase
+        ? ConversationState.COMPLETED
+        : ConversationState.ABANDONED;
+      return {
+        text: STATE_RESPONSES[terminalState](context),
+        nextState: terminalState,
+      };
+    }
 
     // 2026-07-24 "restore the flow": a quote in progress is never interrupted by a
     // mention of a DIFFERENT category anymore — it's deferred until after this purchase

@@ -72,12 +72,16 @@ function buildService(overrides: {
     createPaymentLink: jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.wompi.co/l/test', paymentLinkId: 'link-test' }),
     isEnabled: true,
   };
+  const reminders = {
+    schedule: jest.fn(),
+    cancel: jest.fn(),
+  };
   const service = new AgentService(
     nlp as any, telegram as any, conversations as any,
-    quoting as any, policy as any, wompi as any,
+    quoting as any, policy as any, wompi as any, reminders as any,
   );
 
-  return { service, nlp, telegram, conversations, quoting, policy, wompi };
+  return { service, nlp, telegram, conversations, quoting, policy, wompi, reminders };
 }
 
 export { makeMessage, makeIntent, extractPetResolutionMock, makeConversation, buildService };

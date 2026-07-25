@@ -46,4 +46,6 @@ analytics/*.parquet
 analytics/.ipynb_checkpoints/
 __pycache__/
 *.pyc
-analytics/README.md 
+analytics/afiliados_con_oferta.csv
+analytics/afiliados_prep.csv
+analytics/ofertas_clientes.csv
