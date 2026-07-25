@@ -134,9 +134,18 @@ export class AgentService {
       currentState !== ConversationState.GREETING &&
       currentState !== ConversationState.QUOTE_PRESENTED
     ) {
+      // Real live-test bug (confirmed directly in the production Supabase conversations
+      // table): two conversations that had ALREADY completed a real, Wompi-approved
+      // purchase ended up with state='abandoned' after the customer later declined to buy
+      // anything more — this check has no awareness a policy already exists.
+      // "Abandoned before buying anything" and "bought something, then declined more"
+      // must never share a conversation status.
+      const terminalState = context.hasCompletedPurchase
+        ? ConversationState.COMPLETED
+        : ConversationState.ABANDONED;
       return {
-        text: STATE_RESPONSES[ConversationState.ABANDONED](context),
-        nextState: ConversationState.ABANDONED,
+        text: STATE_RESPONSES[terminalState](context),
+        nextState: terminalState,
       };
     }
 
@@ -211,7 +220,15 @@ export class AgentService {
     // "no, quiero vida" still proceeds to quote vida, not end the conversation) — always
     // clears the flag either way so it can never linger and hijack an unrelated later "no".
     if (context.awaitingCrossSellResponse) {
-      const declining = intent.isNegative && !intent.productCategory;
+      // Real live-test bug: Groq's isNegative classification has no prompt example
+      // covering elliptical negations ("No, ningún otro. Gracias.", "No, no estoy
+      // interesado en ningún.") — both were misclassified as isNegative=false, so the
+      // decline went unrecognized, the one-shot flag was consumed anyway, and the
+      // conversation kept cycling instead of ending on the very first "no". A message
+      // that starts with the standalone word "no" is an unambiguous decline regardless
+      // of what the LLM extracted.
+      const clearlyDeclines = intent.isNegative || /^no\b/i.test(text.trim());
+      const declining = clearlyDeclines && !intent.productCategory;
       if (declining) {
         return {
           text: '¡Perfecto! Si más adelante quieres proteger algo más, aquí estoy 24/7. ¡Que tengas un excelente día! 👋',
@@ -220,6 +237,26 @@ export class AgentService {
         };
       }
       newContext.awaitingCrossSellResponse = undefined;
+    }
+
+    // Real live-test bug: a user answering plain "no" to the opening question ("¿Tienes
+    // familia o personas que dependen de ti?...") got the exact same question repeated
+    // verbatim (the generic "no logré entender" fallback below) instead of a warm pivot —
+    // "no dependents" is a valid, common answer, not unclear input that needs re-asking.
+    // Scoped to early/fresh DISCOVERY only (nothing gathered yet, and not the post-purchase
+    // cross-sell path handled above) so it never hijacks a later "no" mid-conversation.
+    if (
+      !context.awaitingCrossSellResponse &&
+      intent.isNegative &&
+      !intent.productCategory &&
+      !context.productCategory &&
+      !context.coverage?.length &&
+      !context.petType
+    ) {
+      return {
+        text: 'No hay problema — igual puedes protegerte a ti mismo. ¿Qué es lo que más te preocupa: tu salud, tu ingreso, tu hogar o tus mascotas?',
+        context: newContext,
+      };
     }
 
     if (!context.productCategory && intent.productCategory) newContext.productCategory = intent.productCategory;
@@ -475,13 +512,22 @@ export class AgentService {
     // Neutral/unclear message (e.g. a follow-up question) — re-show the actual quoted
     // product instead of the generic STATE_RESPONSES placeholder, which has no real
     // product name or price and reads as a broken response.
+    //
+    // Real live-test bug: a genuinely unparseable message ("2+2", sent live by two
+    // different users) silently got this same quote card re-shown with zero
+    // acknowledgment — indistinguishable from a legitimate follow-up question like "¿Ese
+    // es el único plan?". Only prefix a clarification when the raw text has NO letters at
+    // all — a real Spanish question always has plenty of them and must keep getting the
+    // plain, unprefixed re-show.
     if (currentProduct) {
+      const quoteText = this.formatQuote(
+        currentProduct,
+        { reasons: [], monthlyPremium: currentProduct.basePremium },
+        context,
+      );
+      const noRealWords = !/[a-zA-ZÀ-ÖØ-öø-ÿ]/.test(text);
       return {
-        text: this.formatQuote(
-          currentProduct,
-          { reasons: [], monthlyPremium: currentProduct.basePremium },
-          context,
-        ),
+        text: noRealWords ? `No entendí ese mensaje, ¿puedes intentarlo de nuevo?\n\n${quoteText}` : quoteText,
       };
     }
 
@@ -572,6 +618,17 @@ export class AgentService {
   // bug: a saved conversation context showed "nombre": "2+2" accepted as a valid full
   // name, since the field was previously stored verbatim with zero shape validation.
   private static readonly NAME_REGEX = /^[a-zA-ZÀ-ÖØ-öø-ÿ]+(?:['’\-][a-zA-ZÀ-ÖØ-öø-ÿ]+|\s+[a-zA-ZÀ-ÖØ-öø-ÿ]+)*$/;
+
+  // Real bug confirmed live in the production Supabase policies table: a policy's
+  // nombre column literally contained "Mi nombre es Michelle Gómez Gómez" — NAME_REGEX
+  // allows it (it's all letters/spaces, no digits/symbols) so the whole phrase passed
+  // validation and was stored verbatim. A user answering "¿Cuál es tu nombre completo?"
+  // naturally often restates the question as a lead-in — strip it before validating.
+  private static readonly NAME_PREAMBLE_REGEX = /^(mi nombre completo es|mi nombre es|me llamo|yo soy|soy)\s*/i;
+
+  private stripNamePreamble(text: string): string {
+    return text.trim().replace(AgentService.NAME_PREAMBLE_REGEX, '').trim();
+  }
 
   // Real live-test bug: dictating a cédula digit-by-digit by voice ("uno, dos, tres...")
   // gets transcribed with a comma between each individual digit ("1, 2, 3, 4, 5, 6, 7,
@@ -999,10 +1056,11 @@ export class AgentService {
       if (this.isFillerWord(rawText)) {
         return { text: '¿Cuál es tu nombre completo?' };
       }
-      if (!this.isValidHumanName(rawText)) {
+      const cleanedName = this.stripNamePreamble(rawText);
+      if (!this.isValidHumanName(cleanedName)) {
         return { text: 'Ese no parece un nombre válido — solo letras y espacios, sin números ni símbolos. ¿Cuál es tu nombre completo?' };
       }
-      newContext.nombre = rawText.trim();
+      newContext.nombre = cleanedName;
       return {
         text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext),
         context: newContext,

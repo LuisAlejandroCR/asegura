@@ -62,6 +62,17 @@ interface ConversationContext {
   // to DISCOVERY's generic "no entendí" acknowledgment, which read as the agent ignoring
   // a clear "I'm done" (real live-test bug, 2026-07-24).
   awaitingCrossSellResponse?: boolean;
+  // Real live-test bug: two production conversations that had ALREADY completed a real,
+  // Wompi-approved purchase ended up with conversations.state = 'abandoned' after the
+  // customer later declined to buy anything more — policyId/policyIds are NOT carried
+  // into the post-purchase followUpContext (they're purchase-specific, reset for the next
+  // one), and awaitingCrossSellResponse is a one-shot flag cleared after a single turn, so
+  // neither survives long enough to tell processMessage's abandonIntent check "this person
+  // already bought something" a few turns later. This flag is set once, permanently, by
+  // wompi-webhook.controller.ts on the first real payment approval and never cleared —
+  // "abandoned before buying anything" and "bought something, then declined more" must
+  // never share a conversation status.
+  hasCompletedPurchase?: boolean;
   // Set when the user is buying 2+ products together in one purchase (e.g. "quiero los
   // dos") — each gets its own policy row and PDF, sharing one combined Wompi payment.
   // Falls back to quoteProductId (single) when unset/empty. Nothing in the live agent

@@ -533,6 +533,47 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     });
   });
 
+  // Real bug confirmed live in the production Supabase policies table: a policy's
+  // nombre column literally contained "Mi nombre es Michelle Gómez Gómez" — NAME_REGEX
+  // allows it (it's all letters/spaces, no digits/symbols) so it passed validation and
+  // was stored verbatim, preamble included. A user answering "¿Cuál es tu nombre
+  // completo?" naturally often restates the question as a lead-in.
+  describe('regression — a self-introduction preamble is stripped before the nombre is stored', () => {
+    const cases: [string, string][] = [
+      ['Mi nombre es Michelle Gómez Gómez', 'Michelle Gómez Gómez'],
+      ['mi nombre completo es Juan Pérez', 'Juan Pérez'],
+      ['Me llamo Ana María', 'Ana María'],
+      ['Yo soy José Ñuñez', 'José Ñuñez'],
+      ['Soy Juan Pérez', 'Juan Pérez'],
+      ['Juan Pérez', 'Juan Pérez'], // no preamble at all — must pass through unchanged
+    ];
+
+    it.each(cases)('stores %j as %j', async (spoken, expectedNombre) => {
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.DATA_CAPTURE,
+        context: { cedula: '12345678' },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage(spoken));
+      await service.handleMessage({});
+      expect(conversations.saveState).toHaveBeenCalledWith(
+        'conv-1', ConversationState.DATA_CAPTURE,
+        expect.objectContaining({ nombre: expectedNombre }),
+      );
+    });
+
+    it('a preamble alone with no actual name left still rejects, it does not save an empty nombre', async () => {
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.DATA_CAPTURE,
+        context: { cedula: '12345678' },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('Me llamo'));
+      await service.handleMessage({});
+      expect(conversations.saveState).not.toHaveBeenCalledWith(
+        expect.anything(), expect.anything(), expect.objectContaining({ nombre: expect.anything() }),
+      );
+    });
+  });
+
   it('regression — text without a valid email format is never captured as the email', async () => {
     // Real live-test bug: once nombre was wrongly set to "Gracias." (see above), the
     // NEXT message ("Juan Pérez.") got captured as the email with zero format
@@ -1462,6 +1503,44 @@ describe('AgentService — PAYMENT webhook-driven confirmation', () => {
   });
 });
 
+// ── abandonIntent vs. an already-completed purchase ──────────────────────────────
+// Real live-test bug (confirmed directly in the production Supabase conversations
+// table): two conversations that had ALREADY completed a real, Wompi-approved purchase
+// ended up with state='abandoned' after the customer later declined to buy anything
+// more. processMessage's top-level abandonIntent check fires for any state except
+// GREETING/QUOTE_PRESENTED — including the post-purchase DISCOVERY follow-up — with no
+// awareness a policy already exists. "Abandoned before buying anything" and "bought
+// something, then declined more" must never share a conversation status.
+describe('AgentService — abandonIntent after an already-completed purchase', () => {
+  it('regression — abandonIntent ends as COMPLETED, not ABANDONED, when hasCompletedPurchase is true', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com', hasCompletedPurchase: true },
+      intent: makeIntent({ abandonIntent: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Ya no quiero nada más, olvídalo.'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.COMPLETED, expect.anything(),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toMatch(/cuando quieras retomar/i);
+  });
+
+  it('abandonIntent still abandons normally when no purchase was ever completed', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ abandonIntent: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Olvídalo, ya no quiero nada.'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.ABANDONED, expect.anything(),
+    );
+  });
+});
+
 // ── QUOTE_PRESENTED — no-repeat invariant ─────────────────────────────────────
 
 describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
@@ -1584,6 +1663,26 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain(petProduct.name);
     expect(sentText).not.toContain('precio accesible');
+  });
+
+  // Real live-test bug: a genuinely unparseable message ("2+2", sent live by two
+  // different users) silently got the exact same quote card re-shown with zero
+  // acknowledgment — indistinguishable from a legitimate follow-up question. Only a
+  // message with NO letters at all (never true for a real Spanish question) gets a
+  // clarification prefix — the regression above ("¿Ese es el único plan?", a real
+  // question) must keep being answered with a plain, unprefixed re-show.
+  it('regression — a message with no letters at all ("2+2") gets a clarification prefix, not a silent re-show', async () => {
+    const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: petProduct.id, productCategory: 'mascotas', petCount: 3 },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('2+2'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toMatch(/no entendí|no logré entender/i);
+    expect(sentText).toContain(petProduct.name);
   });
 });
 
@@ -2081,6 +2180,39 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
     expect(sentText).toMatch(/no logré entender|no te entendí|no entendí bien/i);
   });
 
+  // Real live-test bug: a user answering plain "no" to the opening question ("¿Tienes
+  // familia o personas que dependen de ti?...") got the exact same question repeated
+  // verbatim (the generic "no logré entender" fallback) instead of a warm pivot toward
+  // covering the person themselves — "no dependents" is a valid, common answer.
+  it('regression — a plain "no" to the opening discovery question pivots to personal coverage instead of repeating it', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ isNegative: true, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('no'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toMatch(/no logré entender/i);
+    expect(sentText).not.toContain('¿Tienes familia');
+    expect(sentText.toLowerCase()).toMatch(/protegerte a ti mismo|tu salud|tu ingreso/);
+  });
+
+  it('a plain "no" mid-conversation (progress already made) does NOT trigger the personal-coverage pivot', async () => {
+    // Guard: the pivot is scoped to fresh/early DISCOVERY only — once productCategory is
+    // already known, a later "no" must go through the normal alternative/decline handling
+    // elsewhere, not this opening-question-specific reframe.
+    const { service, telegram } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { productCategory: 'vida', coverage: ['protección'] },
+      intent: makeIntent({ isNegative: true, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('no'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toMatch(/protegerte a ti mismo/i);
+  });
+
   it('does not show the "no entendí" acknowledgment when partial progress was made', async () => {
     // productCategory was extracted this turn (progress) even though coverage/beneficiaries
     // are still missing — this must NOT be treated as an unclear/no-signal message.
@@ -2193,6 +2325,30 @@ describe('AgentService — DISCOVERY polite decline of the post-purchase cross-s
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).not.toMatch(/no logré entender/i);
     expect(sentText.toLowerCase()).toMatch(/gracias|perfecto|hasta luego|aquí estoy|cuando quieras/);
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.COMPLETED, expect.objectContaining({ awaitingCrossSellResponse: undefined }),
+    );
+  });
+
+  // Real live-test bug: Groq's isNegative classification has no prompt example covering
+  // elliptical negations like these, and misclassified both as isNegative=false — the
+  // decline went unrecognized, the one-shot awaitingCrossSellResponse flag was consumed
+  // anyway, and the conversation kept cycling (generic "no entendí" re-ask) instead of
+  // ending on the very first "no". A message that starts with the standalone word "no"
+  // is an unambiguous decline regardless of what the LLM extracted.
+  it.each([
+    'No, ningún otro. Gracias.',
+    'No, no estoy interesado en ningún.',
+  ])('regression — %j ends the conversation even when Groq misclassifies isNegative as false', async (spoken) => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com', awaitingCrossSellResponse: true },
+      intent: makeIntent({ isNegative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage(spoken));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toMatch(/no logré entender/i);
     expect(conversations.saveState).toHaveBeenCalledWith(
       'conv-1', ConversationState.COMPLETED, expect.objectContaining({ awaitingCrossSellResponse: undefined }),
     );
