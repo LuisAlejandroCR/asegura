@@ -4,7 +4,6 @@
 // auto-generated reference. Chat-based "sí" no longer confirms payment — this
 // webhook is the only path that notifies the user and sends the final PDF.
 import { Controller, Post, Body, UnauthorizedException, Logger } from '@nestjs/common';
-import * as path from 'path';
 import { WompiService } from './wompi.service';
 import { PolicyService } from '../policy/policy.service';
 import { ConversationService } from '../agent/conversation.service';
@@ -15,12 +14,6 @@ import { ConversationState, ConversationContext } from '../agent/types';
 import { STATE_RESPONSES, formatNameList } from '../agent/conversation-state.machine';
 
 const PROCESSED_STATUSES = ['paid', 'active'];
-
-// Static brand asset — referenced relative to the project root (not __dirname) because
-// nest-cli.json doesn't copy non-.ts assets into dist/, and the server runs `node dist/main`
-// from the project root, so `src/assets/` is reachable at runtime via process.cwd()
-// (same convention as pdf.service.ts's IMAGES_DIR and agent.service.ts's copy of this path).
-const SUCCESS_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'success-check.mp4');
 
 @Controller('webhooks/wompi')
 export class WompiWebhookController {
@@ -120,10 +113,6 @@ export class WompiWebhookController {
     } else {
       message = STATE_RESPONSES[ConversationState.POLICY_ISSUED](newContext);
     }
-    // 2026-07-24 feedback: the real Wompi approval is the actual "successfully paid"
-    // moment — gets the same branded success-checkmark video as the selfie and
-    // Tarjeta Colsubsidio moments.
-    await this.telegram.sendAnimation(conversation.user_id, SUCCESS_ANIMATION_PATH);
     await this.telegram.sendText(conversation.user_id, message);
 
     // This is the only PDF the user ever receives — the draft PDF before payment was
