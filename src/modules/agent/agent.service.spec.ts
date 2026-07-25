@@ -1515,6 +1515,47 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     }
   });
 
+  // Real live-test bug: after declining a cross-sell quote with a plain "No, está bien.",
+  // the agent kept cycling to ANOTHER alternative product instead of letting the user go
+  // — the OLD code treated `isNegative` exactly like `wantsAlternative` (any "no" always
+  // meant "show me something else"). AGENTS.md's own UX rule says a "no" gets an
+  // alternative OR a polite close — only "alternative" was ever implemented. A bare
+  // decline (isNegative, no explicit "show me more") must now end politely instead.
+  it('regression — a plain decline ("No, está bien.") ends politely instead of cycling to another product', async () => {
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id, shownProductIds: [PRODUCTS[0].id] },
+      intent: makeIntent({ isNegative: true, wantsAlternative: false, isAffirmative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('No, está bien.'));
+    await service.handleMessage({});
+    expect(quoting.score).not.toHaveBeenCalled();
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.ABANDONED, expect.anything(),
+    );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/aquí estoy|cuando quieras/);
+  });
+
+  it('regression — explicitly asking for another option ("otra opción") still cycles to an alternative product, not a polite close', async () => {
+    const p1 = PRODUCTS[0];
+    const p2 = PRODUCTS[1];
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: p1.id, shownProductIds: [p1.id] },
+      intent: makeIntent({ isNegative: true, wantsAlternative: true, isAffirmative: false }),
+    });
+    quoting.score.mockReturnValue([
+      { productId: p1.id, matchScore: 80, reasons: [], monthlyPremium: p1.basePremium, priority: 'high' },
+      { productId: p2.id, matchScore: 60, reasons: [], monthlyPremium: p2.basePremium, priority: 'medium' },
+    ]);
+    telegram.normalize.mockResolvedValue(makeMessage('muéstrame otra opción'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.QUOTE_PRESENTED, expect.objectContaining({ quoteProductId: p2.id }),
+    );
+  });
+
   it('"sí" in QUOTE_PRESENTED transitions to DATA_CAPTURE', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.QUOTE_PRESENTED,

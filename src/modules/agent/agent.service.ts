@@ -423,7 +423,7 @@ export class AgentService {
       };
     }
 
-    if (intent.wantsAlternative || (intent.isNegative && !intent.isAffirmative)) {
+    if (intent.wantsAlternative) {
       const allScores = this.quoting.score(context as AffiliateSignals);
       const seen = context.shownProductIds ?? (context.quoteProductId ? [context.quoteProductId] : []);
       const nextProduct = allScores.find((s) => !seen.includes(s.productId));
@@ -443,6 +443,19 @@ export class AgentService {
         text: 'No tengo más opciones en esta categoría. ¿Quieres que busquemos en otra?',
         nextState: ConversationState.DISCOVERY,
         context: { ...context, productCategory: undefined, coverage: undefined },
+      };
+    }
+
+    // Real live-test bug: a PLAIN decline ("No, está bien.") — no explicit request to see
+    // another option — was treated exactly like wantsAlternative, cycling through every
+    // remaining product in the category instead of ever letting the user go. AGENTS.md's
+    // own UX rule ("respetar y ofrecer alternativa O cierre educado") always had a polite
+    // close as a valid response to "no" — only the alternative half was ever built. A bare
+    // decline now ends the conversation politely instead of pushing another product.
+    if (intent.isNegative && !intent.isAffirmative) {
+      return {
+        text: STATE_RESPONSES[ConversationState.ABANDONED](context),
+        nextState: ConversationState.ABANDONED,
       };
     }
 
