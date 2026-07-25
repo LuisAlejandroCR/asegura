@@ -232,6 +232,79 @@ describe('GroqNlpService.fallbackIntent — pet name/age/breed extraction', () =
   });
 });
 
+// ── Multi-pet "Name, age, breed." period-separated extraction (2026-07-24 live bug) ──
+// Real live-test bug: a 3-pet voice message ("Bruna, 10 años, criollo. Ramón, 3 años,
+// cocker. Pancha, 10 años, doberman.") only yielded 2 pets — Bruna was silently dropped
+// (Groq's own extraction under-counted a compound sentence), and the user's later
+// attempt to provide the "missing" pet re-stated Pancha instead, producing a literal
+// duplicate that reached the paid, issued policy. This comma-triple, period-separated
+// shape is a completely different pattern from the "se llama X" one already handled —
+// existing extractPetName only matches "se llama"/"llamado"/"nombre es" phrasing, so it
+// returned null for this message entirely.
+describe('GroqNlpService.fallbackIntent — "Name, age, breed." period-separated multi-pet extraction', () => {
+  const service = makeService();
+
+  it('extracts all 3 pets from the exact real-world message shape', () => {
+    const result = fallback(service, 'Bruna, 10 años, criollo. Ramón, 3 años, cocker. Pancha, 10 años, doberman.');
+    expect(result.pets).toEqual([
+      { name: 'Bruna', age: '10 años', breed: 'criollo' },
+      { name: 'Ramón', age: '3 años', breed: 'cocker' },
+      { name: 'Pancha', age: '10 años', breed: 'doberman' },
+    ]);
+  });
+
+  it('extracts a single pet in the same comma-triple shape without a trailing period', () => {
+    const result = fallback(service, 'Rocky, 5 años, labrador');
+    expect(result.pets).toEqual([{ name: 'Rocky', age: '5 años', breed: 'labrador' }]);
+  });
+});
+
+// postProcess must override Groq's own `pets` array when Groq under-counted a
+// compound sentence — the SAME deterministic-wins-over-LLM policy already applied to
+// petCount/petType above, now extended to the pets list itself since an undercount here
+// corrupts who's actually insured on the final policy.
+describe('GroqNlpService.postProcess — pets undercount override (2026-07-24 live bug)', () => {
+  const service = makeService();
+  const text = 'Bruna, 10 años, criollo. Ramón, 3 años, cocker. Pancha, 10 años, doberman.';
+
+  function makeIntentWithPets(pets: { name: string; age: string | null; breed: string | null }[]) {
+    return {
+      productCategory: 'mascotas', petType: null, coverage: [], beneficiaries: 1,
+      urgency: 'exploring', isAffirmative: false, isNegative: false, wantsAlternative: false,
+      petResolution: null, pets,
+    } as any;
+  }
+
+  it('overrides a 2-pet Groq result with the deterministic 3-pet extraction when Groq dropped one', () => {
+    const groqIntent = makeIntentWithPets([
+      { name: 'Ramón', age: '3 años', breed: 'cocker' },
+      { name: 'Pancha', age: '10 años', breed: 'doberman' },
+    ]);
+    const result = postProcess(service, groqIntent, text);
+    expect(result.pets).toEqual([
+      { name: 'Bruna', age: '10 años', breed: 'criollo' },
+      { name: 'Ramón', age: '3 años', breed: 'cocker' },
+      { name: 'Pancha', age: '10 años', breed: 'doberman' },
+    ]);
+  });
+
+  it('does not touch a Groq pets array that already has at least as many entries as the deterministic parser found', () => {
+    const groqIntent = makeIntentWithPets([
+      { name: 'Bruna', age: '10 años', breed: 'criollo' },
+      { name: 'Ramón', age: '3 años', breed: 'cocker' },
+      { name: 'Pancha', age: '10 años', breed: 'doberman' },
+    ]);
+    const result = postProcess(service, groqIntent, text);
+    expect(result.pets).toEqual(groqIntent.pets);
+  });
+
+  it('leaves pets alone for a free-form single-pet message the deterministic parser cannot improve on', () => {
+    const groqIntent = makeIntentWithPets([{ name: 'Rocky', age: '5 años', breed: 'labrador' }]);
+    const result = postProcess(service, groqIntent, 'Rocky tiene 5 años y es labrador');
+    expect(result.pets).toEqual([{ name: 'Rocky', age: '5 años', breed: 'labrador' }]);
+  });
+});
+
 // ── Fuzz / property-based tests ───────────────────────────────────────────────
 
 describe('GroqNlpService FUZZ — petType invariants', () => {

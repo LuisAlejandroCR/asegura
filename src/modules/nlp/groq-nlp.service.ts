@@ -186,6 +186,18 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     const explicitPetCount = this.extractPetCountFromText(lower);
     if (explicitPetCount !== null) intent.petCount = explicitPetCount;
 
+    // Real live-test bug: a 3-pet message ("Bruna, 10 años, criollo. Ramón, 3 años,
+    // cocker. Pancha, 10 años, doberman.") came back from Groq with only 2 pets — Bruna
+    // silently dropped by the LLM on a compound sentence. The corrupted list made it all
+    // the way to the paid, issued policy. Same override policy as petCount above: only
+    // ever wins when it found strictly MORE structured pets than Groq did, so it never
+    // clobbers a correct LLM extraction of a shape this regex parser can't itself parse
+    // (e.g. "Rocky tiene 5 años y es labrador" has no comma-triple clauses at all).
+    const deterministicPets = this.extractPetsFromText(text);
+    if (deterministicPets.length > (intent.pets?.length ?? 0)) {
+      intent.pets = deterministicPets;
+    }
+
     return intent;
   }
 
@@ -272,11 +284,38 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       // Breed recognition needs real NLP (no fixed breed dictionary here) — left null in
       // the fallback path; the primary Groq path extracts it directly from context.
       petBreed: null,
-      // Fallback only ever reliably extracts one pet per message (no multi-pet regex
-      // splitting) — mirrors petName/petAge/petBreed as a single-element array so callers
-      // can rely on `pets` uniformly regardless of whether Groq or the fallback ran.
-      pets: this.extractPetName(text) ? [{ name: this.extractPetName(text), age: this.extractPetAge(lower), breed: null }] : [],
+      // Real live-test bug: a 3-pet message ("Bruna, 10 años, criollo. Ramón, 3 años,
+      // cocker. Pancha, 10 años, doberman.") uses a completely different shape than "se
+      // llama X" — a period-separated list of "Name, age, breed" clauses. Falls back to
+      // the single "se llama X" pattern above when nothing in that shape is found.
+      pets: this.extractPetsFromText(text).length > 0
+        ? this.extractPetsFromText(text)
+        : (this.extractPetName(text) ? [{ name: this.extractPetName(text), age: this.extractPetAge(lower), breed: null }] : []),
     };
+  }
+
+  // Splits on periods into one clause per pet ("Bruna, 10 años, criollo. Ramón, 3 años,
+  // cocker." → 2 clauses) and, within each clause, on commas ("Bruna" / "10 años" /
+  // "criollo") — the exact shape used when a user rattles off several pets by voice in
+  // one message. A leading capitalized word is the name; an "N años/meses" fragment is
+  // the age; everything else left over is the breed. Real live-test bug: this shape
+  // wasn't recognized at all before (extractPetName only matched "se llama X"), so a
+  // 3-pet message silently lost one pet with no deterministic cross-check, unlike
+  // petCount/petType above.
+  private extractPetsFromText(text: string): { name: string; age: string | null; breed: string | null }[] {
+    const clauses = text.split(/\.+/).map((c) => c.trim()).filter(Boolean);
+    const pets: { name: string; age: string | null; breed: string | null }[] = [];
+    for (const clause of clauses) {
+      const parts = clause.split(',').map((p) => p.trim()).filter(Boolean);
+      if (parts.length === 0) continue;
+      const nameMatch = parts[0].match(/^([A-ZÁÉÍÓÚÑ][a-zA-Záéíóúñ]*)/);
+      if (!nameMatch) continue;
+      const age = this.extractPetAge(clause.toLowerCase());
+      const remaining = parts.slice(1).filter((p) => !/^\d+\s*(años?|meses?)$/i.test(p));
+      const breed = remaining.length > 0 ? remaining.join(', ') : null;
+      pets.push({ name: nameMatch[1], age, breed });
+    }
+    return pets;
   }
 
   private extractPetName(text: string): string | null {
