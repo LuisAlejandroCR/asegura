@@ -9,34 +9,48 @@ import { TangramLogo } from './TangramLogo';
 const SVG_W = 760;
 const CX = 380;
 const TOP_MARGIN = 70;
-const SPIRAL_H = 1200;
+const SPIRAL_H = 1000;
 const BIFURCATION_H = 180;
 const CONTENT_H = TOP_MARGIN + SPIRAL_H + BIFURCATION_H;
-const TURNS = 9; // tight coil, not a lazy single wave — compressed pitch per loop
-const R_TOP = 160;
-const R_BOTTOM = 10;
-const ELLIPSE = 0.42;
+// TURNS/ELLIPSE are coupled, not independent: the wobble term's rate of change
+// (radius * ELLIPSE * TURNS * 2π) must stay below the steady per-turn descent rate
+// (SPIRAL_H / TURNS), or the path's y literally reverses direction and the coil
+// crosses itself (verified with a numeric dy/dt sweep — this exact combination
+// keeps a ~30% safety margin at the widest point, t=0, where radius is largest).
+const TURNS = 12;
+const R_TOP = 140;
+const R_BOTTOM = 8;
+const ELLIPSE = 0.07;
 const LABEL_GAP = 36;
 const RIGHT_LABEL_X = CX + R_TOP + LABEL_GAP;
 const LEFT_LABEL_X = CX - R_TOP - LABEL_GAP;
 
 const ZOOM_START = 0.84; // eased-progress point where descent stops and the zoom begins
 // The frozen camera centers here (fraction of spiral t), not at t=1 exactly — leaves
-// headroom so the last step label ("Paga fácil") and the bifurcation below the tip
-// are BOTH still in frame once the descent freezes and the zoom takes over.
-const FINAL_FOCUS_T = 0.95;
+// headroom so the tip and the two final-outcome labels beside it are comfortably framed
+// once the descent freezes and the zoom takes over.
+const FINAL_FOCUS_T = 0.97;
 const ZOOM_SCALE = 1.8;
 const DURATION_MS = 10000;
 const COUNTER_END = 0.16; // fraction of progress during which "35M colombianos" finishes counting
 const TARGET_POPULATION = 35000000;
 
+// Mid-spiral steps only — "Paga fácil" moved to the end (FINAL_OUTCOMES below) as one of
+// the two real bifurcated outcomes, not a step along the way.
 const STEPS = [
   { icon: '🎙️', label: 'Escribe', sub: 'o habla', t: 0.1, side: 'right' as const },
   { icon: '🔒', label: 'Autoriza datos', sub: 'Ley 1581', t: 0.28, side: 'left' as const },
   { icon: '👤', label: 'El agente', sub: 'te perfila', t: 0.46, side: 'right' as const },
   { icon: '🎯', label: 'Recomienda', sub: 'con razón', t: 0.64, side: 'left' as const },
-  { icon: '💳', label: 'Paga fácil', sub: 'Asegura', t: 0.82, side: 'right' as const },
 ];
+
+// The two real outcomes at the narrow end of the funnel: convert (pay) or stay a
+// qualified lead for follow-up. No connecting fork lines — just the tip, then these two
+// labels beside it once the zoom reveals them.
+const FINAL_OUTCOMES = {
+  left: { icon: '🎯', label: 'Leads calificados', sub: 'seguimiento automático' },
+  right: { icon: '💳', label: 'Paga fácil', sub: 'Asegura' },
+};
 
 function pointAt(t: number) {
   const angle = t * TURNS * Math.PI * 2;
@@ -112,8 +126,13 @@ function FunnelSpiral({ active }: FunnelSpiralProps) {
 
   const zoomP = eased <= ZOOM_START ? 0 : (eased - ZOOM_START) / (1 - ZOOM_START);
   const scale = 1 + (ZOOM_SCALE - 1) * zoomP;
+  // transform-origin is specified in the element's own LOCAL (untransformed) coordinate
+  // space, not screen space — CSS applies it as translate(origin) · transform-list ·
+  // translate(-origin), so adding translateY here (a bug: mixing screen-space and local-
+  // space coordinates) shifted the zoom's actual center away from the tip by however much
+  // the camera had already scrolled, landing the zoom on the wrong point entirely.
   const originX = TIP.x;
-  const originY = TIP.y + translateY;
+  const originY = TIP.y;
 
   const counterP = Math.min(progress / COUNTER_END, 1);
   const counterEase = 1 - Math.pow(1 - counterP, 3);
@@ -160,10 +179,6 @@ function FunnelSpiral({ active }: FunnelSpiralProps) {
               />
             );
           })}
-          <path d={`M${TIP.x},${TIP.y} L${LEFT_END.x},${LEFT_END.y}`} fill="none" stroke="#F3EEE3" strokeWidth={10} strokeLinecap="round" opacity={zoomP} />
-          <path d={`M${TIP.x},${TIP.y} L${RIGHT_END.x},${RIGHT_END.y}`} fill="none" stroke="#F3EEE3" strokeWidth={10} strokeLinecap="round" opacity={zoomP} />
-          <circle cx={LEFT_END.x} cy={LEFT_END.y} r={7} fill="#FFD700" opacity={zoomP} />
-          <circle cx={RIGHT_END.x} cy={RIGHT_END.y} r={7} fill="#FFD700" opacity={zoomP} />
         </svg>
 
         <div
@@ -221,30 +236,41 @@ function FunnelSpiral({ active }: FunnelSpiralProps) {
             position: 'absolute',
             left: LEFT_END.x,
             top: LEFT_END.y,
-            transform: 'translate(-100%, 0)',
+            transform: 'translate(-100%, -50%)',
             opacity: zoomP,
             transition: 'opacity .6s ease',
             textAlign: 'right',
-            width: 190,
-            paddingRight: 10,
+            whiteSpace: 'nowrap',
           }}
         >
-          <div style={{ fontSize: 16, fontWeight: 700, color: 'white' }}>📄 PDF + QR</div>
-          <div style={{ fontSize: 11, color: 'rgba(255,215,0,.7)' }}>al instante</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'white' }}>
+            {FINAL_OUTCOMES.left.icon} {FINAL_OUTCOMES.left.label}
+          </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,215,0,.7)' }}>{FINAL_OUTCOMES.left.sub}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3, justifyContent: 'flex-end' }}>
+            <span style={{ fontSize: 9, color: 'rgba(255,255,255,.4)' }}>Asegura</span>
+            <TangramLogo stroke="#001A4D" size={12} />
+          </div>
         </div>
         <div
           style={{
             position: 'absolute',
             left: RIGHT_END.x,
             top: RIGHT_END.y,
+            transform: 'translate(0, -50%)',
             opacity: zoomP,
             transition: 'opacity .6s ease',
-            width: 190,
-            paddingLeft: 10,
+            whiteSpace: 'nowrap',
           }}
         >
-          <div style={{ fontSize: 16, fontWeight: 700, color: 'white' }}>🎯 Leads calificados</div>
-          <div style={{ fontSize: 11, color: 'rgba(255,215,0,.7)' }}>seguimiento automático</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'white' }}>
+            {FINAL_OUTCOMES.right.icon} {FINAL_OUTCOMES.right.label}
+          </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,215,0,.7)' }}>{FINAL_OUTCOMES.right.sub}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
+            <TangramLogo stroke="#001A4D" size={12} />
+            <span style={{ fontSize: 9, color: 'rgba(255,255,255,.4)' }}>Asegura</span>
+          </div>
         </div>
       </div>
     </div>
