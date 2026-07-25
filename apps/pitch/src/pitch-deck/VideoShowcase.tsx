@@ -1,15 +1,15 @@
 // Real screen recordings of the deployed agent (not stock/placeholder footage) — same
 // clips used in the old scrolling pitch page's "Cómo funciona" grid. Step 0
-// ("paso-0-necesito") is intentionally excluded from this showcase; `n` keeps the real
-// paso-N numbering so labels/buttons still read "1..7", not a re-indexed "0..6".
+// ("paso-0-necesito") is intentionally excluded from this showcase; the displayed step
+// number is the array position + 1, so labels/buttons read "1..7" not "0..6".
 export const DEMO_STEPS = [
-  { n: 1, file: 'paso-1-saludo', label: 'Saludo' },
-  { n: 2, file: 'paso-2-cuentanos', label: 'Cuéntanos' },
-  { n: 3, file: 'paso-3-cotizacion', label: 'Cotización' },
-  { n: 4, file: 'paso-4-identidad', label: 'Identidad' },
-  { n: 5, file: 'paso-5-mascotas', label: 'Tus mascotas' },
-  { n: 6, file: 'paso-6-pago', label: 'Pago (sandbox)' },
-  { n: 7, file: 'paso-7-poliza', label: 'Póliza lista' },
+  { file: 'paso-1-saludo'},
+  { file: 'paso-2-cuentanos'},
+  { file: 'paso-3-cotizacion'},
+  { file: 'paso-4-identidad' },
+  { file: 'paso-5-mascotas' },
+  { file: 'paso-6-pago' },
+  { file: 'paso-7-poliza' },
 ];
 
 interface VideoShowcaseProps {
@@ -27,8 +27,8 @@ function VideoShowcase({ step, active }: VideoShowcaseProps) {
       style={{
         flex: '0 1 auto',
         aspectRatio: '9/16',
-        maxHeight: '52vh',
-        maxWidth: 260,
+        maxHeight: '90vh',
+        maxWidth: 500,
         background: '#0A1A2E',
         borderRadius: 16,
         border: '1.5px solid rgba(255,215,0,.2)',
@@ -87,7 +87,7 @@ function VideoShowcase({ step, active }: VideoShowcaseProps) {
           textAlign: 'center',
         }}
       >
-        {current.n}. {current.label}
+        Paso {step + 1}
       </div>
     </div>
   );
@@ -102,9 +102,9 @@ export function VideoStepPicker({ step, onSelect }: { step: number; onSelect: (n
           type="button"
           className={`video-step-btn${i === step ? ' active' : ''}`}
           onClick={() => onSelect(i)}
-          aria-label={s.label}
+          aria-label={`Paso ${i + 1}`}
         >
-          {s.n}
+          {i + 1}
         </button>
       ))}
     </div>
