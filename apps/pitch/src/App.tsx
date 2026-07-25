@@ -44,6 +44,24 @@ function App() {
         </div>
       </section>
 
+      {/* ── Historia: quién usa Asegura ──────────────────────────────────── */}
+      <section className="section persona">
+        <div className="container persona-grid">
+          <Reveal className="persona-card">
+            <span className="persona-emoji">🐱🐶🐶</span>
+            <h3>Bruna, Pancha y Ramón</h3>
+            <span className="persona-tag">1 gato, 2 perros — familia real de la demo</span>
+          </Reveal>
+          <Reveal delay={80} className="persona-story">
+            <p>
+              Juan tiene tres mascotas y nunca supo cuánto costaba asegurarlas hasta que le
+              escribió a Asegura. Tres minutos después, Bruna, Pancha y Ramón tenían seguro
+              real — con pago verificado y póliza en PDF, sin hablar con nadie.
+            </p>
+          </Reveal>
+        </div>
+      </section>
+
       {/* ── El problema ──────────────────────────────────────────────────── */}
       <section id="problema" className="section problema">
         <div className="container">
@@ -82,6 +100,21 @@ function App() {
               </span>
             </Reveal>
           </div>
+
+          <Reveal delay={100}>
+            <div className="market-funnel">
+              <div className="funnel-tier funnel-tam">
+                <span className="funnel-label">TAM</span>
+                <span className="funnel-value"><CountUp value="2.8M" /></span>
+                <span className="funnel-desc">afiliados Colsubsidio sin seguro hoy</span>
+              </div>
+              <div className="funnel-tier funnel-som">
+                <span className="funnel-label">Potencial (1%)</span>
+                <span className="funnel-value">$504M</span>
+                <span className="funnel-desc">COP/mes en primas, a $18.000/mes promedio</span>
+              </div>
+            </div>
+          </Reveal>
 
           <Reveal><h3>¿Por qué la gente NO compra seguros?</h3></Reveal>
           <Reveal delay={80}>
@@ -172,14 +205,14 @@ function App() {
           </div>
 
           <Reveal>
-            <div className="innovation-box">
-              <h3>Innovación</h3>
-              <ul>
-                <li>NLP conversacional (no menú IVR) — ningún competidor lo tiene</li>
-                <li>Acepta voz en español (Whisper) — ningún competidor lo tiene</li>
-                <li>Pago verificado vía webhook (no autoreportado) — ningún competidor lo tiene</li>
-                <li>Precios reales desde el primer mensaje — la web de Colsubsidio no los muestra</li>
-              </ul>
+            <div className="benefits-box">
+              <h3>Beneficios</h3>
+              <div className="benefit-pills">
+                <span className="pill">NLP conversacional — no menú IVR</span>
+                <span className="pill">Acepta voz en español (Whisper)</span>
+                <span className="pill">Pago verificado vía webhook</span>
+                <span className="pill">Precios reales desde el primer mensaje</span>
+              </div>
             </div>
           </Reveal>
         </div>
@@ -206,23 +239,38 @@ function App() {
       <section id="viabilidad" className="section viabilidad">
         <div className="container">
           <Reveal><span className="section-label">Viabilidad técnica · 20%</span></Reveal>
-          <Reveal delay={60}><h2>Demo en vivo</h2></Reveal>
-
+          <Reveal delay={60}><h2>¿Cómo funciona?</h2></Reveal>
           <Reveal delay={80}>
-            <div className="teaser-video-wrapper">
-              <video
-                className="teaser-video"
-                src="/pitch-teaser.mp4"
-                controls
-                muted
-                playsInline
-                preload="metadata"
-              />
-              <p className="teaser-caption">
-                Grabación real de la conversación completa — sin cortes de guion.
-              </p>
-            </div>
+            <p className="section-subtitle">
+              Grabación real de la conversación completa, paso a paso — sin cortes de guion.
+            </p>
           </Reveal>
+
+          <div className="steps-video-grid">
+            {[
+              ['paso-0-necesito', '0. "No sé qué necesito"'],
+              ['paso-1-saludo', '1. Saludo'],
+              ['paso-2-cuentanos', '2. Cuéntanos'],
+              ['paso-3-cotizacion', '3. Cotización'],
+              ['paso-4-identidad', '4. Identidad'],
+              ['paso-5-mascotas', '5. Tus mascotas'],
+              ['paso-6-pago', '6. Pago en ambiente de pruebas'],
+              ['paso-7-poliza', '7. Póliza lista'],
+            ].map(([file, label], i) => (
+              <Reveal delay={(i % 4) * 60} className="step-video-card" key={file}>
+                <video
+                  className="step-video"
+                  src={`/${file}.mp4`}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  preload="metadata"
+                />
+                <span className="step-video-label">{label}</span>
+              </Reveal>
+            ))}
+          </div>
 
           <Reveal delay={100}>
             <div className="comparison-table">
@@ -404,14 +452,6 @@ function App() {
               <li><strong>Hoy:</strong> vende seguros de Colsubsidio sin asesor</li>
               <li><strong>Mañana:</strong> compara y vende de CUALQUIER aseguradora</li>
             </ul>
-          </Reveal>
-
-          <Reveal delay={180}>
-            <div className="market-box">
-              <strong>Mercado potencial:</strong>
-              <br />
-              1% de 2.8M afiliados × $18.000/mes promedio = $504M COP/mes en primas
-            </div>
           </Reveal>
         </div>
       </section>

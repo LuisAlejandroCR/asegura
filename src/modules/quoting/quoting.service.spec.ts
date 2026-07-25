@@ -345,6 +345,27 @@ describe('QuotingService — hyper-personalization tier (dependents/income)', ()
     expect(vidaAhorro.reasons.some((r) => r.includes('ahorrar') || r.includes('Ahorro'))).toBe(true);
   });
 
+  // Regression: rangoSalarial is declared in AffiliateSignals but is NEVER populated by
+  // the live NLP schema (InsuranceIntent has no rangoSalarial field at all — confirmed by
+  // grep across groq-nlp.service.ts and nlp/types.ts) — it only ever existed as an offline
+  // CSV-calibration signal. The one live, user-stated income signal is `budget` (an
+  // explicit peso amount), already used for the "dentro de tu presupuesto" boost above.
+  // The tier bonus must react to the SAME effective budget, or it can never fire in
+  // production regardless of what a real user says.
+  it('dependents + high explicit budget (no rangoSalarial) also upgrades vida-ahorro above vida', () => {
+    const scores = service.score({ productCategory: 'vida', beneficiaries: 3, budget: 100_000 });
+    const vida = scores.find((s) => s.productId === 'vida')!;
+    const vidaAhorro = scores.find((s) => s.productId === 'vida-ahorro')!;
+    expect(vidaAhorro.matchScore).toBeGreaterThan(vida.matchScore);
+  });
+
+  it('no dependents + high explicit budget (no rangoSalarial) also upgrades accidentes-premium', () => {
+    const scores = service.score({ productCategory: 'accidentes', beneficiaries: 1, budget: 100_000 });
+    const std = scores.find((s) => s.productId === 'accidentes-personales')!;
+    const premium = scores.find((s) => s.productId === 'accidentes-premium')!;
+    expect(premium.matchScore).toBeGreaterThan(std.matchScore);
+  });
+
   it('dependents + low/unknown income keeps vida as the top recommendation, with a dependents-specific reason', () => {
     // Not compared against vida-ahorro's presence here: at low income, other
     // businessPriority + beneficiaries-boosted products (e.g. asistencias-medicas,

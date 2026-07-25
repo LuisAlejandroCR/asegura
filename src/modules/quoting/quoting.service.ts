@@ -91,8 +91,16 @@ export class QuotingService {
     // declared in the type but never populated live — the NLP schema only ever extracts a
     // PET's age (petAge / pets[].age), never a human affiliate's own age. Deferred until
     // a real DISCOVERY question captures it.
+    //
+    // Real bug found 2026-07-25 while writing the manual-verification script for this
+    // tier: this originally checked ONLY `budgetFromSalary(signals.rangoSalarial)` — but
+    // rangoSalarial is ALSO never populated live (InsuranceIntent has no such field; it
+    // only ever existed as an offline CSV-calibration signal, same class of bug as edad
+    // above). The only live income signal a user's own words can set is `budget` — reusing
+    // `effectiveBudget` (already computed above for the existing budget boost) so the tier
+    // actually reacts to what a real conversation can produce.
     const hasDependents = !!signals.beneficiaries && signals.beneficiaries > 1;
-    const highIncome = (this.budgetFromSalary(signals.rangoSalarial) ?? 0) >= 60000; // "Entre 3 y 4 SMLV"+
+    const highIncome = (effectiveBudget ?? 0) >= 60000; // "Entre 3 y 4 SMLV"+ equivalent
 
     if (product.category === 'vida') {
       if (hasDependents && highIncome && product.id === 'vida-ahorro') {
