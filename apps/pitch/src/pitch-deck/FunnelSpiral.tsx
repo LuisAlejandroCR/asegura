@@ -90,6 +90,13 @@ const LEFT_END = { x: TIP.x - 108, y: TIP.y + BIFURCATION_H };
 // the main flow continuing, not a side branch, so it gets only a small nudge clear of
 // the coil itself rather than the same offset as the branch.
 const RIGHT_END = { x: TIP.x + 26, y: TIP.y + 34 };
+// CSS scale() amplifies distance FROM the origin point — proportionally, not by a fixed
+// amount. With origin=TIP, RIGHT_END (26,34 away) barely moved while LEFT_END (108,180
+// away) drifted an extra ~140px at scale 1.8, sliding it out of frame (2026-07-25 bug
+// report: "Leads calificados missing", confirmed via a standalone scale-math check).
+// Anchoring the zoom on the midpoint between the two outcomes instead keeps both
+// drifting symmetrically, regardless of how differently offset they are from the tip.
+const ZOOM_ORIGIN = { x: (LEFT_END.x + RIGHT_END.x) / 2, y: (LEFT_END.y + RIGHT_END.y) / 2 };
 const DOTS = Array.from({ length: 72 }, (_, i) => pointAt(i / 71));
 
 interface FunnelSpiralProps {
@@ -138,8 +145,9 @@ function FunnelSpiral({ active }: FunnelSpiralProps) {
   // translate(-origin), so adding translateY here (a bug: mixing screen-space and local-
   // space coordinates) shifted the zoom's actual center away from the tip by however much
   // the camera had already scrolled, landing the zoom on the wrong point entirely.
-  const originX = TIP.x;
-  const originY = TIP.y;
+  // Origin is ZOOM_ORIGIN (the outcomes' midpoint), not TIP — see its definition above.
+  const originX = ZOOM_ORIGIN.x;
+  const originY = ZOOM_ORIGIN.y;
 
   const counterP = Math.min(progress / COUNTER_END, 1);
   const counterEase = 1 - Math.pow(1 - counterP, 3);
