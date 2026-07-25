@@ -360,8 +360,8 @@ export function Slide7Demo({ active }: SlideProps) {
           <VideoStepPicker step={step} onSelect={setStep} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
-          <div style={{ background: 'white', padding: 14, borderRadius: 12, display: 'inline-block' }}>
-            <img src="/qr-bot.svg" width={168} height={168} style={{ display: 'block' }} alt="QR Asegura Bot" />
+          <div style={{ background: 'white', padding: 16, borderRadius: 14, display: 'inline-block' }}>
+            <img src="/qr-bot.svg" width={220} height={220} style={{ display: 'block' }} alt="QR Asegura Bot" />
           </div>
           <div style={{ fontSize: 13, color: '#FFD700', fontWeight: 600 }}>t.me/asegura_bot</div>
           <div style={{ fontSize: 10, color: 'rgba(255,215,0,.45)' }}>Telegram · Disponible ahora</div>
@@ -528,8 +528,8 @@ export function Slide10Cierre(_: SlideProps) {
           El seguro que nunca duerme.
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-          <div style={{ background: 'white', padding: 10, borderRadius: 10, display: 'inline-block' }}>
-            <img src="/qr-bot.svg" width={100} height={100} style={{ display: 'block' }} alt="QR Asegura Bot" />
+          <div style={{ background: 'white', padding: 16, borderRadius: 14, display: 'inline-block' }}>
+            <img src="/qr-bot.svg" width={220} height={220} style={{ display: 'block' }} alt="QR Asegura Bot" />
           </div>
           <div style={{ fontSize: 13, color: '#FFD700' }}>t.me/asegura_bot</div>
         </div>

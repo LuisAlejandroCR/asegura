@@ -7,29 +7,35 @@ import { TangramLogo } from './TangramLogo';
 // only the camera transform and a handful of label opacities change per frame.
 
 const SVG_W = 760;
-const CX = 260;
+const CX = 380;
 const TOP_MARGIN = 70;
-const SPIRAL_H = 1900;
-const BIFURCATION_H = 230;
+const SPIRAL_H = 1200;
+const BIFURCATION_H = 180;
 const CONTENT_H = TOP_MARGIN + SPIRAL_H + BIFURCATION_H;
-const TURNS = 5.2;
-const R_TOP = 190;
-const R_BOTTOM = 12;
-const ELLIPSE = 0.38;
-const LABEL_X = CX + R_TOP + 50;
+const TURNS = 9; // tight coil, not a lazy single wave — compressed pitch per loop
+const R_TOP = 160;
+const R_BOTTOM = 10;
+const ELLIPSE = 0.42;
+const LABEL_GAP = 36;
+const RIGHT_LABEL_X = CX + R_TOP + LABEL_GAP;
+const LEFT_LABEL_X = CX - R_TOP - LABEL_GAP;
 
 const ZOOM_START = 0.84; // eased-progress point where descent stops and the zoom begins
+// The frozen camera centers here (fraction of spiral t), not at t=1 exactly — leaves
+// headroom so the last step label ("Paga fácil") and the bifurcation below the tip
+// are BOTH still in frame once the descent freezes and the zoom takes over.
+const FINAL_FOCUS_T = 0.95;
 const ZOOM_SCALE = 1.8;
 const DURATION_MS = 10000;
 const COUNTER_END = 0.16; // fraction of progress during which "35M colombianos" finishes counting
 const TARGET_POPULATION = 35000000;
 
 const STEPS = [
-  { icon: '🎙️', label: 'Escribe', sub: 'o habla', t: 0.1 },
-  { icon: '🔒', label: 'Autoriza datos', sub: 'Ley 1581', t: 0.28 },
-  { icon: '👤', label: 'El agente', sub: 'te perfila', t: 0.46 },
-  { icon: '🎯', label: 'Recomienda', sub: 'con razón', t: 0.64 },
-  { icon: '💳', label: 'Paga fácil', sub: 'Asegura', t: 0.82 },
+  { icon: '🎙️', label: 'Escribe', sub: 'o habla', t: 0.1, side: 'right' as const },
+  { icon: '🔒', label: 'Autoriza datos', sub: 'Ley 1581', t: 0.28, side: 'left' as const },
+  { icon: '👤', label: 'El agente', sub: 'te perfila', t: 0.46, side: 'right' as const },
+  { icon: '🎯', label: 'Recomienda', sub: 'con razón', t: 0.64, side: 'left' as const },
+  { icon: '💳', label: 'Paga fácil', sub: 'Asegura', t: 0.82, side: 'right' as const },
 ];
 
 function pointAt(t: number) {
@@ -59,11 +65,11 @@ function smoothstep(p: number): number {
   return p * p * (3 - 2 * p);
 }
 
-const SPIRAL_PATH = buildSpiralPath(420);
+const SPIRAL_PATH = buildSpiralPath(480);
 const TIP = pointAt(1);
 const LEFT_END = { x: TIP.x - 108, y: TIP.y + BIFURCATION_H };
 const RIGHT_END = { x: TIP.x + 108, y: TIP.y + BIFURCATION_H };
-const DOTS = Array.from({ length: 58 }, (_, i) => pointAt(i / 57));
+const DOTS = Array.from({ length: 72 }, (_, i) => pointAt(i / 71));
 
 interface FunnelSpiralProps {
   active: boolean;
@@ -100,7 +106,7 @@ function FunnelSpiral({ active }: FunnelSpiralProps) {
 
   const eased = smoothstep(progress);
   const descentP = Math.min(eased, ZOOM_START) / ZOOM_START;
-  const focusY = TOP_MARGIN + descentP * SPIRAL_H;
+  const focusY = TOP_MARGIN + descentP * FINAL_FOCUS_T * SPIRAL_H;
   const maxTranslate = Math.max(CONTENT_H - viewportH, 0);
   const translateY = -Math.min(Math.max(focusY - viewportH / 2, 0), maxTranslate);
 
@@ -140,7 +146,19 @@ function FunnelSpiral({ active }: FunnelSpiralProps) {
           ))}
           {STEPS.map((s) => {
             const p = pointAt(s.t);
-            return <line key={s.label} x1={p.x} y1={p.y} x2={LABEL_X - 8} y2={p.y} stroke="rgba(255,215,0,.35)" strokeWidth={1.5} opacity={eased >= s.t * ZOOM_START - 0.015 ? 1 : 0} />;
+            const targetX = s.side === 'right' ? RIGHT_LABEL_X - 8 : LEFT_LABEL_X + 8;
+            return (
+              <line
+                key={s.label}
+                x1={p.x}
+                y1={p.y}
+                x2={targetX}
+                y2={p.y}
+                stroke="rgba(255,215,0,.35)"
+                strokeWidth={1.5}
+                opacity={eased >= s.t * ZOOM_START - 0.015 ? 1 : 0}
+              />
+            );
           })}
           <path d={`M${TIP.x},${TIP.y} L${LEFT_END.x},${LEFT_END.y}`} fill="none" stroke="#F3EEE3" strokeWidth={10} strokeLinecap="round" opacity={zoomP} />
           <path d={`M${TIP.x},${TIP.y} L${RIGHT_END.x},${RIGHT_END.y}`} fill="none" stroke="#F3EEE3" strokeWidth={10} strokeLinecap="round" opacity={zoomP} />
@@ -170,14 +188,16 @@ function FunnelSpiral({ active }: FunnelSpiralProps) {
         {STEPS.map((s) => {
           const pos = pointAt(s.t);
           const visible = eased >= s.t * ZOOM_START - 0.015;
+          const isRight = s.side === 'right';
           return (
             <div
               key={s.label}
               style={{
                 position: 'absolute',
-                left: LABEL_X,
+                left: isRight ? RIGHT_LABEL_X : LEFT_LABEL_X,
                 top: pos.y,
-                transform: 'translateY(-50%)',
+                transform: `translate(${isRight ? '0' : '-100%'}, -50%)`,
+                textAlign: isRight ? 'left' : 'right',
                 opacity: visible ? 1 : 0,
                 transition: 'opacity .6s ease',
                 whiteSpace: 'nowrap',
@@ -187,9 +207,10 @@ function FunnelSpiral({ active }: FunnelSpiralProps) {
                 {s.icon} {s.label}
               </div>
               <div style={{ fontSize: 11, color: 'rgba(255,215,0,.65)' }}>{s.sub}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
-                <TangramLogo stroke="#001A4D" size={12} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3, justifyContent: isRight ? 'flex-start' : 'flex-end' }}>
+                {isRight && <TangramLogo stroke="#001A4D" size={12} />}
                 <span style={{ fontSize: 9, color: 'rgba(255,255,255,.4)' }}>Asegura</span>
+                {!isRight && <TangramLogo stroke="#001A4D" size={12} />}
               </div>
             </div>
           );

@@ -102,7 +102,7 @@ export function VideoStepPicker({ step, onSelect }: { step: number; onSelect: (n
           type="button"
           className={`video-step-btn${i === step ? ' active' : ''}`}
           onClick={() => onSelect(i)}
-          aria-label={`Paso ${i + 1}`}
+          
         >
           {i + 1}
         </button>
