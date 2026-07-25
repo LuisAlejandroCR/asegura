@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import * as path from 'path';
 import { INlpProvider, InsuranceIntent } from '../nlp/types';
 import { TelegramAdapter } from '../channel/telegram-adapter.service';
 import { NormalizedMessage } from '../channel/types';
@@ -25,7 +26,20 @@ interface ProcessResult {
   // When set, reacts to the triggering message with this emoji (2026-07-24 feedback — a
   // lightweight "animated success" touch, e.g. on the selfie photo itself).
   reaction?: string;
+  // Upgrades `reaction` to Telegram's "big" reaction (a much larger animated burst) —
+  // used for the phone/contact-share confirmation.
+  reactionBig?: boolean;
+  // When set, sends this local video file as a Telegram animation (2026-07-24 feedback —
+  // a real branded success-checkmark clip, used for the selfie-confirmed and
+  // Tarjeta Colsubsidio moments — heavier than `reaction`, so only where explicitly asked).
+  animation?: string;
 }
+
+// Static brand asset — referenced relative to the project root (not __dirname) because
+// nest-cli.json doesn't copy non-.ts assets into dist/, and the server runs `node dist/main`
+// from the project root, so `src/assets/` is reachable at runtime via process.cwd()
+// (same convention as pdf.service.ts's IMAGES_DIR).
+const SUCCESS_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'success-check.mp4');
 
 @Injectable()
 export class AgentService {
@@ -84,8 +98,12 @@ export class AgentService {
       await this.telegram.sendDocument(msg.userId, result.document.buffer, result.document.filename);
     }
 
+    if (result.animation) {
+      await this.telegram.sendAnimation(msg.userId, result.animation);
+    }
+
     if (result.reaction && msg.messageId !== undefined) {
-      await this.telegram.reactToMessage(msg.userId, msg.messageId, result.reaction);
+      await this.telegram.reactToMessage(msg.userId, msg.messageId, result.reaction, result.reactionBig);
     }
 
     if (result.requestContact && result.text) {
@@ -627,6 +645,10 @@ export class AgentService {
         return {
           text: 'Identidad verificada ✅\n\n📸 Por último, toca el clip 📎 y envíame una selfie ahora mismo para confirmar tu identidad.',
           context: verifiedContext,
+          // 2026-07-24 feedback: a "big" reaction (Telegram's is_big flag, a much larger
+          // animated burst) on the shared-contact message itself.
+          reaction: '✅',
+          reactionBig: true,
         };
       }
       const skippedContext: ConversationContext = {
@@ -671,9 +693,9 @@ export class AgentService {
         return {
           text: `✅ Identidad confirmada con tu foto.\n\n${this.firstDataCaptureQuestion(confirmedContext)}`,
           context: confirmedContext,
-          // 2026-07-24 feedback: "animated successfully check" — Telegram message
-          // reactions render with a small built-in animation, no hosted asset needed.
-          reaction: '✅',
+          // 2026-07-24 feedback: "animated successfully check" — the real branded
+          // success-checkmark video, not just a text reaction.
+          animation: SUCCESS_ANIMATION_PATH,
         };
       }
       const skippedContext: ConversationContext = {
@@ -1107,9 +1129,9 @@ export class AgentService {
         context: { ...context, checkoutUrl },
         // 2026-07-24 feedback: Tarjeta Colsubsidio has no real API/sandbox of its own —
         // precisely because there's nothing real to show for it, the "match found"
-        // moment gets a livelier confirmation than plain text. Still the exact same
+        // moment gets the real branded success-checkmark video. Still the exact same
         // real Wompi link, never a faked/instant "paid" claim.
-        ...(context.paymentMethodChoice === 'tarjeta_colsubsidio' && { reaction: '🎉' }),
+        ...(context.paymentMethodChoice === 'tarjeta_colsubsidio' && { animation: SUCCESS_ANIMATION_PATH }),
       };
     } catch (error) {
       this.logger.error(`Failed to create payment link: ${error}`);

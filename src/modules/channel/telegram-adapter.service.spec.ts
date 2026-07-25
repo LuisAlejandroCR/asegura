@@ -250,6 +250,39 @@ describe('TelegramAdapter.sendContactRequest (2026-07-24 KYC feedback)', () => {
 // 2026-07-24 feedback: "is there a way to show an animated successfully check pass
 // inside the chat?" — Telegram's native message reactions render with a small built-in
 // animation and need no hosted asset (GIF/sticker), unlike sendAnimation/sendSticker.
+// 2026-07-24 feedback: a real branded success-checkmark video (src/assets/success-check.mp4)
+// for the selfie-confirmed and payment-confirmed moments — heavier than a reaction, so
+// used only where the user explicitly asked for it.
+describe('TelegramAdapter.sendAnimation', () => {
+  function mockSendableBot() {
+    return { api: { sendAnimation: jest.fn().mockResolvedValue(undefined) } };
+  }
+
+  it('sends the animation file at the given path to the given user', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    const bot = mockSendableBot();
+    (adapter as any).bot = bot;
+
+    await adapter.sendAnimation('222', 'C:/fake/success-check.mp4');
+
+    expect(bot.api.sendAnimation).toHaveBeenCalledTimes(1);
+    expect(bot.api.sendAnimation.mock.calls[0][0]).toBe(222);
+  });
+
+  it('never throws if the send fails (non-critical, the real text confirmation still matters most)', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    const bot = { api: { sendAnimation: jest.fn().mockRejectedValue(new Error('network error')) } };
+    (adapter as any).bot = bot;
+
+    await expect(adapter.sendAnimation('222', 'C:/fake/success-check.mp4')).resolves.toBeUndefined();
+  });
+
+  it('does nothing when the bot is disabled (no token)', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    await expect(adapter.sendAnimation('222', 'C:/fake/success-check.mp4')).resolves.toBeUndefined();
+  });
+});
+
 describe('TelegramAdapter.reactToMessage', () => {
   function mockSendableBot() {
     return { api: { setMessageReaction: jest.fn().mockResolvedValue(undefined) } };
@@ -262,7 +295,30 @@ describe('TelegramAdapter.reactToMessage', () => {
 
     await adapter.reactToMessage('222', 4242, '✅');
 
-    expect(bot.api.setMessageReaction).toHaveBeenCalledWith(222, 4242, [{ type: 'emoji', emoji: '✅' }]);
+    expect(bot.api.setMessageReaction).toHaveBeenCalledWith(222, 4242, [{ type: 'emoji', emoji: '✅' }], expect.anything());
+  });
+
+  // 2026-07-24 feedback: the phone/contact-share confirmation gets a "big" reaction
+  // (Telegram's is_big flag triggers a much larger animated burst) instead of the small
+  // one used elsewhere.
+  it('passes is_big through as the 4th setMessageReaction argument when requested', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    const bot = mockSendableBot();
+    (adapter as any).bot = bot;
+
+    await adapter.reactToMessage('222', 4242, '✅', true);
+
+    expect(bot.api.setMessageReaction).toHaveBeenCalledWith(222, 4242, [{ type: 'emoji', emoji: '✅' }], { is_big: true });
+  });
+
+  it('passes is_big: undefined when not requested (Telegram treats this as false)', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    const bot = mockSendableBot();
+    (adapter as any).bot = bot;
+
+    await adapter.reactToMessage('222', 4242, '✅');
+
+    expect(bot.api.setMessageReaction).toHaveBeenCalledWith(222, 4242, [{ type: 'emoji', emoji: '✅' }], { is_big: undefined });
   });
 
   it('never throws if the reaction call fails (cosmetic, non-critical)', async () => {

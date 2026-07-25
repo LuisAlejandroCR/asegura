@@ -186,6 +186,22 @@ describe('AgentService — KYC phone verification gate', () => {
     expect(sentText.toLowerCase()).not.toMatch(/documento de identidad|cédula/);
   });
 
+  // 2026-07-24 feedback: the contact-share confirmation gets a "big" Telegram reaction
+  // (a much larger animated burst) on the shared-contact message itself.
+  it('reacts to the shared-contact message with a big reaction', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { awaitingPhoneVerification: true },
+    });
+    telegram.normalize.mockResolvedValue({
+      ...makeMessage(''),
+      contact: { phoneNumber: '+573001234567', firstName: 'Juan' },
+      messageId: 321,
+    });
+    await service.handleMessage({});
+    expect(telegram.reactToMessage).toHaveBeenCalledWith('u1', 321, expect.any(String), true);
+  });
+
   // Real bug found 2026-07-24 (confirmed independently by a live test session and a
   // teammate's findings report): this used to re-show the exact same "toca el botón"
   // prompt forever for ANY typed reply that wasn't the contact-share — a genuine
@@ -309,17 +325,16 @@ describe('AgentService — KYC cosmetic selfie step', () => {
   });
 
   // 2026-07-24 feedback: "is there a way to show an animated successfully check pass
-  // inside the chat?" — reacts to the selfie photo message itself with an emoji
-  // (Telegram's native message reactions render with a small built-in animation, no
-  // hosted GIF/sticker asset needed).
-  it('reacts to the selfie photo message with a checkmark emoji when confirmed', async () => {
+  // inside the chat?" — sends the real branded success-checkmark video when the selfie
+  // is confirmed, instead of just a text-only reaction.
+  it('sends the branded success animation when the selfie is confirmed', async () => {
     const { service, telegram } = buildService({
       state: ConversationState.DATA_CAPTURE,
       context: { phoneVerified: true, awaitingSelfie: true },
     });
     telegram.normalize.mockResolvedValue({ ...makeMessage(''), photo: { width: 1080, height: 1080 }, messageId: 555 });
     await service.handleMessage({});
-    expect(telegram.reactToMessage).toHaveBeenCalledWith('u1', 555, expect.any(String));
+    expect(telegram.sendAnimation).toHaveBeenCalledWith('u1', expect.stringContaining('success-check.mp4'));
   });
 
   it('does not re-trigger once selfieProvided is already true', async () => {
@@ -907,10 +922,9 @@ describe('AgentService — payment method choice (Tarjeta Colsubsidio vs Link de
 
   // 2026-07-24 feedback: "Tarjeta Colsubsidio" has no real API/sandbox of its own (unlike
   // Wompi) — precisely BECAUSE there's nothing real to show for it, the "match found"
-  // moment needs a livelier confirmation than plain text. Reuses the same
-  // reactToMessage mechanism as the selfie step. The real Wompi link is still generated
-  // and sent exactly as before — this never skips or fakes the actual payment.
-  it('reacts to the "Tarjeta Colsubsidio" choice message with a celebratory emoji, same real Wompi link underneath', async () => {
+  // moment gets the real branded success-checkmark video. The real Wompi link is still
+  // generated and sent exactly as before — this never skips or fakes the actual payment.
+  it('sends the branded success animation when "Tarjeta Colsubsidio" is chosen, same real Wompi link underneath', async () => {
     const { service, telegram, wompi } = buildService({
       state: ConversationState.DATA_CAPTURE,
       context: {
@@ -921,11 +935,11 @@ describe('AgentService — payment method choice (Tarjeta Colsubsidio vs Link de
     });
     telegram.normalize.mockResolvedValue({ ...makeMessage('tarjeta colsubsidio'), messageId: 777 });
     await service.handleMessage({});
-    expect(telegram.reactToMessage).toHaveBeenCalledWith('u1', 777, expect.any(String));
+    expect(telegram.sendAnimation).toHaveBeenCalledWith('u1', expect.stringContaining('success-check.mp4'));
     expect(wompi.createPaymentLink).toHaveBeenCalled();
   });
 
-  it('does NOT react when "link de pago" is chosen instead', async () => {
+  it('does NOT send the animation when "link de pago" is chosen instead', async () => {
     const { service, telegram } = buildService({
       state: ConversationState.DATA_CAPTURE,
       context: {
@@ -936,7 +950,7 @@ describe('AgentService — payment method choice (Tarjeta Colsubsidio vs Link de
     });
     telegram.normalize.mockResolvedValue({ ...makeMessage('link de pago'), messageId: 778 });
     await service.handleMessage({});
-    expect(telegram.reactToMessage).not.toHaveBeenCalled();
+    expect(telegram.sendAnimation).not.toHaveBeenCalled();
   });
 });
 

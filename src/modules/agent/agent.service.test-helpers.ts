@@ -54,6 +54,7 @@ function buildService(overrides: {
     sendDocument: jest.fn().mockResolvedValue(undefined),
     sendContactRequest: jest.fn().mockResolvedValue(undefined),
     reactToMessage: jest.fn().mockResolvedValue(undefined),
+    sendAnimation: jest.fn().mockResolvedValue(undefined),
   };
   const conversations = {
     getOrCreate: jest.fn().mockResolvedValue(makeConversation(state, context)),
