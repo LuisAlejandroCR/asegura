@@ -1,14 +1,15 @@
-// Real screen recordings of the deployed agent (not stock/placeholder footage) —
-// same 8 clips used in the old scrolling pitch page's "Cómo funciona" grid.
+// Real screen recordings of the deployed agent (not stock/placeholder footage) — same
+// clips used in the old scrolling pitch page's "Cómo funciona" grid. Step 0
+// ("paso-0-necesito") is intentionally excluded from this showcase; `n` keeps the real
+// paso-N numbering so labels/buttons still read "1..7", not a re-indexed "0..6".
 export const DEMO_STEPS = [
-  { file: 'paso-0-necesito', label: '"No sé qué necesito"' },
-  { file: 'paso-1-saludo', label: 'Saludo' },
-  { file: 'paso-2-cuentanos', label: 'Cuéntanos' },
-  { file: 'paso-3-cotizacion', label: 'Cotización' },
-  { file: 'paso-4-identidad', label: 'Identidad' },
-  { file: 'paso-5-mascotas', label: 'Tus mascotas' },
-  { file: 'paso-6-pago', label: 'Pago (sandbox)' },
-  { file: 'paso-7-poliza', label: 'Póliza lista' },
+  { n: 1, file: 'paso-1-saludo', label: 'Saludo' },
+  { n: 2, file: 'paso-2-cuentanos', label: 'Cuéntanos' },
+  { n: 3, file: 'paso-3-cotizacion', label: 'Cotización' },
+  { n: 4, file: 'paso-4-identidad', label: 'Identidad' },
+  { n: 5, file: 'paso-5-mascotas', label: 'Tus mascotas' },
+  { n: 6, file: 'paso-6-pago', label: 'Pago (sandbox)' },
+  { n: 7, file: 'paso-7-poliza', label: 'Póliza lista' },
 ];
 
 interface VideoShowcaseProps {
@@ -24,9 +25,10 @@ function VideoShowcase({ step, active }: VideoShowcaseProps) {
   return (
     <div
       style={{
-        flex: 1,
+        flex: '0 1 auto',
         aspectRatio: '9/16',
-        maxHeight: '72vh',
+        maxHeight: '52vh',
+        maxWidth: 260,
         background: '#0A1A2E',
         borderRadius: 16,
         border: '1.5px solid rgba(255,215,0,.2)',
@@ -85,7 +87,7 @@ function VideoShowcase({ step, active }: VideoShowcaseProps) {
           textAlign: 'center',
         }}
       >
-        {step + 1}. {current.label}
+        {current.n}. {current.label}
       </div>
     </div>
   );
@@ -102,7 +104,7 @@ export function VideoStepPicker({ step, onSelect }: { step: number; onSelect: (n
           onClick={() => onSelect(i)}
           aria-label={s.label}
         >
-          {i}
+          {s.n}
         </button>
       ))}
     </div>

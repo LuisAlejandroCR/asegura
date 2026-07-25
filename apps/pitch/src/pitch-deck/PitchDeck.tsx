@@ -11,9 +11,8 @@ import {
   Slide6Explora,
   Slide7Demo,
   Slide8Impacto,
-  Slide9Comparacion,
-  Slide10Equipo,
-  Slide11Cierre,
+  Slide9Equipo,
+  Slide10Cierre,
 } from './slides';
 
 interface SlideDef {
@@ -32,9 +31,8 @@ const SLIDES: SlideDef[] = [
   { Component: Slide6Explora, dark: false, bg: '#FFFFFF' },
   { Component: Slide7Demo, dark: true, bg: '#000D1A' },
   { Component: Slide8Impacto, dark: false, bg: '#FFFFFF' },
-  { Component: Slide9Comparacion, dark: false, bg: '#FFFFFF' },
-  { Component: Slide10Equipo, dark: true, bg: '#001A4D' },
-  { Component: Slide11Cierre, dark: true, bg: '#001A4D' },
+  { Component: Slide9Equipo, dark: true, bg: '#001A4D' },
+  { Component: Slide10Cierre, dark: true, bg: '#001A4D' },
 ];
 
 const TOTAL = SLIDES.length;

@@ -171,41 +171,6 @@ html, body {
   font-weight: 700;
 }
 
-/* ── Comparison table (Slide 9) ────────────────────────────────────────── */
-.deck-table-wrapper {
-  overflow-x: auto;
-  margin: 24px auto 0;
-  border: 1px solid var(--border-mid);
-  border-radius: var(--r);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-sm);
-  max-width: 900px;
-}
-
-.deck-table-wrapper table { width: 100%; border-collapse: collapse; font-size: 13px; }
-
-.deck-table-wrapper th {
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  padding: 12px 14px;
-  border-bottom: 2px solid var(--border-mid);
-  text-align: left;
-}
-
-.deck-table-wrapper td {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-muted);
-}
-
-.deck-table-wrapper tr:last-child td { border-bottom: none; }
-
-.deck-check { color: var(--green); font-weight: 800; text-align: center; }
-.deck-cross { color: #CF222E; text-align: center; }
-
 /* ── Video step picker (Slide 7) ───────────────────────────────────────── */
 .video-steps { display: flex; gap: 6px; flex-wrap: wrap; }
 

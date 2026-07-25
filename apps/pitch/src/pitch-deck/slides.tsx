@@ -102,19 +102,7 @@ export function Slide2Solucion(_: SlideProps) {
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
-          <TangramLogo stroke="#FFFFFF" size={72} />
-          <div style={{ fontSize: 58, fontWeight: 800, color: '#003087', lineHeight: 1, letterSpacing: '-2px' }}>
-            segura
-          </div>
-        </div>
-        <div style={{ width: 480, maxWidth: '80vw', height: 1.5, background: '#003087', opacity: 0.2, marginBottom: 10 }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'rgba(0,48,135,.55)' }}>
-          <span>Seguros automatizados</span>
-          <span style={{ color: '#FFD700', fontSize: 16 }}>·</span>
-          <ColsubK size={12} />
-          <span style={{ fontWeight: 700, color: '#003087' }}>Colsubsidio</span>
-        </div>
+        <img src="/logo.jpeg" alt="Asegura — Seguros automatizados · Colsubsidio" style={{ height: 96, width: 'auto', display: 'block' }} />
       </div>
       <div
         style={{
@@ -383,10 +371,11 @@ export function Slide7Demo({ active }: SlideProps) {
         maxWidth: 1200,
         display: 'flex',
         alignItems: 'center',
+        justifyContent: 'center',
         gap: 60,
       }}
     >
-      <div style={{ flex: '0 0 38%' }}>
+      <div style={{ flex: '0 0 38%', maxWidth: 420 }}>
         <div style={{ fontSize: 30, fontWeight: 700, color: 'white', lineHeight: 1.2, marginBottom: 8 }}>Pruébalo ahora.</div>
         <div style={{ fontSize: 15, color: '#FFD700', marginBottom: 32 }}>Flujo real. Sin guión. Sin trampa.</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 24 }}>
@@ -499,63 +488,7 @@ export function Slide8Impacto({ active }: SlideProps) {
   );
 }
 
-/* ── Slide 9 — Comparación competitiva ─────────────────────────────────── */
-const COMPETITORS = ['Asegura', 'Falabella', 'SURA', 'MAPFRE', 'Configuro'];
-const COMPARISON_ROWS: [string, boolean[]][] = [
-  ['Venta completa en chat', [true, false, false, false, false]],
-  ['24/7 sin asesor', [true, false, false, false, false]],
-  ['< 3 minutos', [true, false, false, false, false]],
-  ['Entiende voz', [true, false, false, false, false]],
-  ['Explica por qué', [true, false, false, false, false]],
-  ['Pago verificado', [true, false, false, false, false]],
-];
-
-export function Slide9Comparacion(_: SlideProps) {
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%,-50%)',
-        width: '100%',
-        maxWidth: 900,
-        textAlign: 'center',
-      }}
-    >
-      <div style={{ fontSize: 26, fontWeight: 700, color: '#003087', marginBottom: 8 }}>Nadie más hace esto en Colombia.</div>
-      <div style={{ fontSize: 13, color: 'rgba(0,48,135,.55)', marginBottom: 8 }}>
-        Comparado con las aseguradoras y marketplaces más grandes del país.
-      </div>
-      <div className="deck-table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th></th>
-              {COMPETITORS.map((c) => (
-                <th key={c}>{c}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {COMPARISON_ROWS.map(([label, values]) => (
-              <tr key={label}>
-                <td style={{ textAlign: 'left', fontWeight: 600 }}>{label}</td>
-                {values.map((v, i) => (
-                  <td key={i} className={v ? 'deck-check' : 'deck-cross'}>
-                    {v ? '✓' : '✗'}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-/* ── Slide 10 — Equipo ─────────────────────────────────────────────────── */
+/* ── Slide 9 — Equipo ──────────────────────────────────────────────────── */
 const TEAM: [string, string, string, string][] = [
   ['JO', 'Juan Ospina', 'Administrador de Empresas', 'Estrategia & Pitch'],
   ['AL', 'Alejo', 'Ingeniero de Software', 'Tech Lead & Arquitecto'],
@@ -564,7 +497,7 @@ const TEAM: [string, string, string, string][] = [
   ['MP', 'María del Pilar', 'Economista', 'Mercado & Viabilidad'],
 ];
 
-export function Slide10Equipo(_: SlideProps) {
+export function Slide9Equipo(_: SlideProps) {
   return (
     <div
       style={{
@@ -623,8 +556,8 @@ export function Slide10Equipo(_: SlideProps) {
   );
 }
 
-/* ── Slide 11 — Cierre ─────────────────────────────────────────────────── */
-export function Slide11Cierre(_: SlideProps) {
+/* ── Slide 10 — Cierre ─────────────────────────────────────────────────── */
+export function Slide10Cierre(_: SlideProps) {
   return (
     <>
       <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-52%)', textAlign: 'center' }}>
