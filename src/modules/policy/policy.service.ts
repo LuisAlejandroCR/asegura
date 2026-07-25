@@ -6,6 +6,7 @@ import { PdfService } from './pdf.service';
 import { PRODUCTS } from '../quoting/products.data';
 import { computeTotalPremium } from '../quoting/pricing';
 import { ConversationContext } from '../agent/types';
+import { classifyPetsBySpecies } from '../agent/breed-matcher';
 import { Policy } from './types';
 
 export interface IssuedPolicy {
@@ -25,6 +26,18 @@ export class PolicyService {
     const product = PRODUCTS.find((p) => p.id === context.quoteProductId);
     const monthlyPremium = product ? computeTotalPremium(product, context.petCount) : 0;
 
+    // Real live-test bug: a mixed household (1 cat + 2 dogs) issues one policy per
+    // species, but both PDFs listed all 3 pets — the FULL context.pets array was stored
+    // verbatim for every policy, regardless of which species-restricted product it's
+    // for. Filter to just the pets of the product's own species when it's restricted;
+    // a generic product (eligibility.pet === 'any', or no pet eligibility at all) keeps
+    // every pet, unfiltered, exactly as before.
+    let petsForPolicy = context.pets ?? null;
+    if (product && (product.eligibility.pet === 'gato' || product.eligibility.pet === 'perro') && context.pets?.length) {
+      const species = classifyPetsBySpecies(context.pets, context.petSpeciesCounts);
+      petsForPolicy = context.pets.filter((_, i) => species[i] === product.eligibility.pet);
+    }
+
     const { data, error } = await this.supabase.db
       .from('policies')
       .insert({
@@ -36,7 +49,7 @@ export class PolicyService {
         email: context.email ?? null,
         monthly_premium: monthlyPremium,
         pet_count: context.petCount ?? null,
-        pets: context.pets ?? null,
+        pets: petsForPolicy,
         status: 'pending_payment',
       })
       .select('id')

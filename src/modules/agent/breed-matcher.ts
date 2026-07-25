@@ -5,20 +5,26 @@
 // genuinely unlisted or unrecognizable breed shouldn't be silently forced into the wrong
 // common one).
 
-const KNOWN_BREEDS = [
-  // Perros
+const DOG_BREEDS = [
   'Labrador', 'Golden Retriever', 'Pastor Alemán', 'Bulldog', 'Bulldog Francés',
   'Chihuahua', 'Poodle', 'Cocker Spaniel', 'Beagle', 'Boxer', 'Rottweiler',
   'Doberman', 'Dálmata', 'Husky Siberiano', 'Pug', 'Schnauzer', 'Shih Tzu',
   'Yorkshire Terrier', 'Pitbull', 'Salchicha', 'Border Collie', 'San Bernardo',
   'Gran Danés', 'Bichón', 'Maltés', 'Basset Hound', 'Akita', 'Chow Chow',
   'Xoloitzcuintle',
-  // Gatos
+];
+
+const CAT_BREEDS = [
   'Siamés', 'Persa', 'Angora', 'Bengalí', 'Maine Coon', 'Sphynx', 'Ragdoll',
   'Británico de pelo corto', 'Abisinio', 'Himalayo', 'Bombay', 'Azul Ruso',
-  // Mestizo/mixto — respuestas válidas, no se "corrigen" a una raza pura
-  'Criollo', 'Mestizo', 'Común',
 ];
+
+// Valid answers, not "corrected" to a purebred name — but also not species-specific, so
+// a pet with one of these breeds can't be classified by breed alone (see
+// classifyPetsBySpecies below).
+const AMBIGUOUS_BREEDS = ['Criollo', 'Mestizo', 'Común'];
+
+const KNOWN_BREEDS = [...DOG_BREEDS, ...CAT_BREEDS, ...AMBIGUOUS_BREEDS];
 
 // Fuzzy match is loose on purpose: breed is descriptive only (doesn't affect price,
 // eligibility, or coverage in this catalog), so failing to fix an obviously garbled
@@ -78,4 +84,35 @@ function matchBreed(input: string | null | undefined): string {
   return bestMatch && bestScore <= MATCH_THRESHOLD ? bestMatch : input.trim();
 }
 
-export { matchBreed, KNOWN_BREEDS };
+// Real live-test bug: a mixed household (1 cat + 2 dogs) issued two species-specific
+// policies (medicina-prepagada-gatos/perros), but both final PDFs listed ALL 3 pets —
+// PolicyService.issue() stored the whole context.pets array verbatim for every policy.
+// Classifies each pet by its (already breed-matched) breed name: an exact dog/cat breed
+// is unambiguous; an ambiguous breed (Criollo/Mestizo/Común, or a genuinely unrecognized
+// one) falls back to whichever species still has unfilled slots per speciesCounts — so
+// classification always lands on a real species instead of silently dropping a pet.
+function classifyPetsBySpecies(
+  pets: { name: string; age: string; breed: string }[],
+  speciesCounts?: { gato?: number; perro?: number },
+): ('gato' | 'perro')[] {
+  const provisional: ('gato' | 'perro' | null)[] = pets.map((p) => {
+    if (DOG_BREEDS.includes(p.breed)) return 'perro';
+    if (CAT_BREEDS.includes(p.breed)) return 'gato';
+    return null;
+  });
+
+  let gatoRemaining = (speciesCounts?.gato ?? 0) - provisional.filter((s) => s === 'gato').length;
+  let perroRemaining = (speciesCounts?.perro ?? 0) - provisional.filter((s) => s === 'perro').length;
+
+  return provisional.map((s) => {
+    if (s) return s;
+    if (gatoRemaining > 0) { gatoRemaining--; return 'gato'; }
+    if (perroRemaining > 0) { perroRemaining--; return 'perro'; }
+    // No species counts to fall back on (e.g. missing/zeroed speciesCounts) — default to
+    // gato rather than throw; this only matters for a genuinely ambiguous breed on a
+    // household this function otherwise can't classify at all.
+    return 'gato';
+  });
+}
+
+export { matchBreed, KNOWN_BREEDS, DOG_BREEDS, CAT_BREEDS, classifyPetsBySpecies };

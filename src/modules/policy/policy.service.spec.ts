@@ -80,6 +80,58 @@ describe('PolicyService.issue', () => {
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ pets }));
   });
 
+  // Real live-test bug: a mixed household (1 cat + 2 dogs) issued TWO policies (one per
+  // species product) but both PDFs showed ALL 3 pets — the cat's certificate listed the
+  // dogs and vice versa, because issue() stored the ENTIRE context.pets array verbatim
+  // for every policy regardless of which species-restricted product it was for.
+  it('regression — a cat-only product only stores the cat, not the whole mixed household', async () => {
+    const { supabase, insert } = makeInsertSupabaseMock({ data: { id: 'pol-1' } });
+    const service = new PolicyService(supabase, makePdfMock());
+    const pets = [
+      { name: 'Bruna', age: '10 años', breed: 'Criollo' },
+      { name: 'Ramón', age: '3 años', breed: 'Doberman' },
+      { name: 'Pancha', age: '8 años', breed: 'Cocker Spaniel' },
+    ];
+    await service.issue('conv-1', {
+      quoteProductId: 'medicina-prepagada-gatos', cedula: '123456789', nombre: 'Juan Pérez',
+      petCount: 1, pets, petSpeciesCounts: { gato: 1, perro: 2 },
+    } as any);
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({ pets: [{ name: 'Bruna', age: '10 años', breed: 'Criollo' }] }),
+    );
+  });
+
+  it('regression — a dog-only product only stores the dogs, not the whole mixed household', async () => {
+    const { supabase, insert } = makeInsertSupabaseMock({ data: { id: 'pol-1' } });
+    const service = new PolicyService(supabase, makePdfMock());
+    const pets = [
+      { name: 'Bruna', age: '10 años', breed: 'Criollo' },
+      { name: 'Ramón', age: '3 años', breed: 'Doberman' },
+      { name: 'Pancha', age: '8 años', breed: 'Cocker Spaniel' },
+    ];
+    await service.issue('conv-1', {
+      quoteProductId: 'medicina-prepagada-perros', cedula: '123456789', nombre: 'Juan Pérez',
+      petCount: 2, pets, petSpeciesCounts: { gato: 1, perro: 2 },
+    } as any);
+    const savedPets = insert.mock.calls[0][0].pets;
+    expect(savedPets).toHaveLength(2);
+    expect(savedPets.map((p: any) => p.name).sort()).toEqual(['Pancha', 'Ramón']);
+  });
+
+  it('a non-species-restricted product (asistencia-veterinaria) still stores every pet, unfiltered', async () => {
+    const { supabase, insert } = makeInsertSupabaseMock({ data: { id: 'pol-1' } });
+    const service = new PolicyService(supabase, makePdfMock());
+    const pets = [
+      { name: 'Bruna', age: '10 años', breed: 'Criollo' },
+      { name: 'Ramón', age: '3 años', breed: 'Doberman' },
+    ];
+    await service.issue('conv-1', {
+      quoteProductId: 'asistencia-veterinaria', cedula: '123456789', nombre: 'Juan Pérez',
+      petCount: 2, pets, petSpeciesCounts: { gato: 1, perro: 1 },
+    } as any);
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ pets }));
+  });
+
   it('stores pets as null when none were collected', async () => {
     const { supabase, insert } = makeInsertSupabaseMock({ data: { id: 'pol-1' } });
     const service = new PolicyService(supabase, makePdfMock());
