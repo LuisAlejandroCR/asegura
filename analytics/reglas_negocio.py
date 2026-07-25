@@ -198,18 +198,19 @@ def aplicar_reglas_vectorizado(df: pd.DataFrame) -> pd.DataFrame:
         default=razon_tier4,
     )
 
+ 
     # Oferta secundaria (cross-sell, no compite con la principal)
-    sec_medica = np.where((d["HOTELES"] == 1) | (d["AGENCIAS"] == 1), "Asistencias múltiples", "Asistencias médicas")
+    sec_medica = np.where((d["HOTELES"] == 1) | (d["AGENCIAS"] == 1), "Asistencias múltiples", "Asistencias médicas").astype(object)
 
     sec1_mask = d["DROGUERIA"] == 1
     sec2_mask = d["VIVIENDA"] == 1
 
-    sec_list = np.where(sec1_mask, sec_medica, "")
+    sec_list = np.where(sec1_mask, sec_medica, "").astype(object)
     sec_list = np.where(sec2_mask, np.where(sec1_mask, sec_list + "; Seguro de hogar", "Seguro de hogar"), sec_list)
     d["OFERTA_SECUNDARIA"] = np.where(sec_list == "", None, sec_list)
 
-    just1 = np.where(sec1_mask, "usa droguería Colsubsidio (consumo activo de salud) -> propenso a " + sec_medica, "")
-    just2 = np.where(sec2_mask, "ya usó crédito de vivienda Colsubsidio -> alta propensión a seguro de hogar", "")
+    just1 = np.where(sec1_mask, "usa droguería Colsubsidio (consumo activo de salud) -> propenso a " + sec_medica, "").astype(object)
+    just2 = np.where(sec2_mask, "ya usó crédito de vivienda Colsubsidio -> alta propensión a seguro de hogar", "").astype(object)
     just_combo = np.where((sec1_mask) & (sec2_mask), just1 + " | " + just2, np.where(sec1_mask, just1, just2))
     d["JUSTIFICACION_SECUNDARIA"] = np.where(just_combo == "", None, just_combo)
 
