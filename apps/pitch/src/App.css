@@ -340,8 +340,8 @@ tr:last-child td { border-bottom: none; }
   line-height: 1.6;
 }
 
-/* ── Innovation Box ───────────────────────────────────────────────────── */
-.innovation-box {
+/* ── Benefits Box ─────────────────────────────────────────────────────── */
+.benefits-box {
   background: var(--accent-light);
   border: 1px solid rgba(0, 103, 177, 0.2);
   border-radius: var(--r);
@@ -349,7 +349,7 @@ tr:last-child td { border-bottom: none; }
   margin: 28px 0;
 }
 
-.innovation-box h3 {
+.benefits-box h3 {
   font-family: var(--font);
   font-size: 15px;
   font-weight: 800;
@@ -357,19 +357,131 @@ tr:last-child td { border-bottom: none; }
   margin-bottom: 14px;
 }
 
-.innovation-box ul { list-style: none; }
+.benefit-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
-.innovation-box li {
-  padding: 7px 0;
-  font-size: 14px;
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid rgba(0, 103, 177, 0.25);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-deep);
+}
+
+/* ── Persona / story hook ─────────────────────────────────────────────── */
+.persona {
+  padding: clamp(32px, 5vw, 56px) 0;
+}
+
+.persona-grid {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 28px;
+  align-items: center;
+}
+
+@media (max-width: 720px) {
+  .persona-grid { grid-template-columns: 1fr; text-align: center; }
+}
+
+.persona-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-sm);
+  padding: 28px 24px;
+  text-align: center;
+}
+
+.persona-emoji {
+  font-size: 40px;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.persona-card h3 {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.persona-tag {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.persona-story p {
+  font-size: clamp(15px, 1.6vw, 18px);
+  color: var(--text-muted);
+  line-height: 1.65;
+  max-width: 560px;
+}
+
+@media (max-width: 720px) {
+  .persona-story p { margin: 0 auto; }
+}
+
+/* ── Market funnel (TAM → potencial) ──────────────────────────────────── */
+.market-funnel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin: 8px 0 28px;
+}
+
+.funnel-tier {
+  border-radius: var(--r);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.funnel-tam {
+  background: var(--bg-card);
+  border: 1px solid var(--border-mid);
+  box-shadow: var(--shadow-sm);
+}
+
+.funnel-som {
+  background: var(--accent);
+}
+
+.funnel-label {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.funnel-som .funnel-label { color: rgba(253, 248, 238, 0.75); }
+
+.funnel-value {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.funnel-som .funnel-value { color: var(--cta-fg); }
+
+.funnel-desc {
+  font-size: 13px;
   color: var(--text-muted);
 }
 
-.innovation-box li::before {
-  content: '✓ ';
-  color: var(--green);
-  font-weight: 800;
-}
+.funnel-som .funnel-desc { color: rgba(253, 248, 238, 0.8); }
 
 /* ── Products Grid ────────────────────────────────────────────────────── */
 .products-grid {
@@ -422,8 +534,7 @@ tr:last-child td { border-bottom: none; }
 /* ── Info Boxes ───────────────────────────────────────────────────────── */
 .reto-box,
 .stack-box,
-.sandbox-info,
-.market-box {
+.sandbox-info {
   background: rgba(255, 208, 0, 0.08);
   border: 1px solid rgba(255, 208, 0, 0.3);
   border-radius: var(--r);
@@ -451,6 +562,38 @@ tr:last-child td { border-bottom: none; }
   font-size: 15px;
   line-height: 1.6;
   box-shadow: var(--shadow-sm);
+}
+
+/* ── Cómo funciona: step video grid ───────────────────────────────────── */
+.steps-video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  margin: 8px 0 32px;
+}
+
+.step-video-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.step-video {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  border-radius: var(--r);
+  border: 1px solid var(--border-mid);
+  box-shadow: var(--shadow-sm);
+  background: #16161a;
+  display: block;
+  object-fit: cover;
+}
+
+.step-video-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
 }
 
 /* ── Comparison Table ─────────────────────────────────────────────────── */

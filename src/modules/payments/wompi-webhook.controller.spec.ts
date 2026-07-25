@@ -224,6 +224,21 @@ describe('WompiWebhookController — post-purchase cross-sell (2026-07-24 "resto
     );
   });
 
+  // Real live-test bug: conversations that had already completed a real, Wompi-approved
+  // purchase ended up with conversations.state = 'abandoned' after the customer later
+  // declined to buy anything more — neither policyId/policyIds (purchase-specific, reset
+  // for the next one) nor awaitingCrossSellResponse (a one-shot flag) survive long enough
+  // to tell a LATER abandonIntent check "this person already bought something". This durable
+  // flag must be set once, permanently, on every real payment approval.
+  it('sets hasCompletedPurchase: true in the new post-purchase DISCOVERY context', async () => {
+    const { controller, conversations } = buildController();
+    conversations.findById.mockResolvedValue(makeConversation({ context: {} }));
+    await controller.handleWebhook(makeEvent());
+
+    const discoveryCall = conversations.saveState.mock.calls.find((c: any[]) => c[1] === ConversationState.DISCOVERY);
+    expect(discoveryCall?.[2]).toEqual(expect.objectContaining({ hasCompletedPurchase: true }));
+  });
+
   it('offers a generic follow-up and leaves productCategory unset when nothing was deferred', async () => {
     const { controller, telegram, conversations } = buildController();
     conversations.findById.mockResolvedValue(makeConversation({ context: {} }));

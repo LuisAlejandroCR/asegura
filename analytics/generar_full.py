@@ -17,6 +17,12 @@ CSV_CANDIDATOS = [
     "../afiliados.csv",
 ]
 CSV_PATH = next((p for p in CSV_CANDIDATOS if os.path.exists(p)), CSV_CANDIDATOS[0])
+
+# Corriendo desde analytics/ o desde la raiz del repo, ambos casos deben resolver
+# al mismo directorio de salida.
+OUTPUT_DIR = "." if os.path.exists("preprocess.py") else "analytics"
+OUTPUT_PATH_PARQUET = os.path.join(OUTPUT_DIR, "afiliados_final.parquet")
+OUTPUT_PATH_CSV = os.path.join(OUTPUT_DIR, "afiliados_final.csv")
 print("Cargando:", CSV_PATH)
 
 df_raw = pd.read_csv(CSV_PATH, sep=";")
@@ -47,5 +53,10 @@ t0 = time.time()
 df_final = calcular_canal_y_timing(df_reglas)
 print(f"Canal/timing aplicado: {time.time()-t0:.2f}s")
 
-df_final.to_parquet("afiliados_final.parquet", index=False)
-print("Guardado afiliados_final.parquet:", len(df_final), "filas")
+df_final.to_parquet(OUTPUT_PATH_PARQUET, index=False)
+print("Guardado", OUTPUT_PATH_PARQUET, ":", len(df_final), "filas")
+
+# CSV (";"-separado, mismo formato que el input) -- lo consume validar_calibracion.py
+# para comparar contra las columnas de resultado real agregadas por el generador.
+df_final.to_csv(OUTPUT_PATH_CSV, sep=";", index=False)
+print("Guardado", OUTPUT_PATH_CSV, ":", len(df_final), "filas")
