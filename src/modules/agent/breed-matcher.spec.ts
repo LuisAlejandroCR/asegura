@@ -41,6 +41,12 @@ describe('matchBreed — edge cases', () => {
     }
   });
 
+  // Real gap: a breed input with no actual letters (pure digits/symbols) fell through
+  // to `input.trim()` and printed verbatim on the final policy PDF (e.g. breed: "12345").
+  it.each(['12345', '!!!', '----', '$$$'])('returns "no especificada" for digit/symbol-only breed %j, not the raw input', (input) => {
+    expect(matchBreed(input)).toBe('no especificada');
+  });
+
   it('leaves a genuinely unlisted breed mostly unchanged rather than force-matching something wrong', () => {
     // "Xoloitzcuintle" is a real breed not in our common-breeds list — should not be
     // silently mangled into an unrelated common breed just because nothing matches well.
@@ -61,6 +67,16 @@ describe('matchBreed FUZZ', () => {
     const inputs = ['x', 'zz', 'qwertyuiop', 'labra2dor', 'Pérez', '  perro  '];
     for (const input of inputs) {
       expect(matchBreed(input).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('a random digit/symbol-only string (no letters at all) always returns "no especificada" (50 random samples)', () => {
+    const pool = '0123456789!@#$%^&*()_+-=';
+    for (let i = 0; i < 50; i++) {
+      const len = 1 + Math.floor(Math.random() * 20);
+      let garbage = '';
+      for (let j = 0; j < len; j++) garbage += pool[Math.floor(Math.random() * pool.length)];
+      expect(matchBreed(garbage)).toBe('no especificada');
     }
   });
 });

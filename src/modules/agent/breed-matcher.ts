@@ -51,7 +51,9 @@ function matchBreed(input: string | null | undefined): string {
   if (!input || !input.trim()) return 'no especificada';
 
   const normalizedInput = normalize(input);
-  if (!normalizedInput) return input.trim();
+  // No actual letters at all (pure digits/symbols) — never print raw garbage on the
+  // final policy PDF, treat it the same as "not provided".
+  if (!normalizedInput) return 'no especificada';
 
   let bestMatch: string | null = null;
   let bestScore = Infinity;

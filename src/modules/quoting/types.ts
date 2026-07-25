@@ -7,6 +7,13 @@ interface InsuranceProduct {
   url: string;
   coverages: string[];
   eligibility: { minAge?: number; maxAge?: number; family?: boolean; pet?: string };
+  // 2026-07-24 business feedback: these 7 products are the current priority for sale —
+  // used as a small scoring tie-breaker, never a hard filter.
+  businessPriority?: boolean;
+  // 2026-07-24 business feedback: requires conditional underwriting (age, pre-existing
+  // illnesses, clinical history) before the policy can be issued — checked by
+  // AgentService's DATA_CAPTURE flow, not by the scoring engine itself.
+  requiresUnderwriting?: boolean;
 }
 
 interface InsuranceScore {

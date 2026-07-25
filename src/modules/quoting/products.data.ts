@@ -30,6 +30,8 @@ export const PRODUCTS: InsuranceProduct[] = [
     url: 'https://www.colsubsidio.com/seguros/familiares/vida',
     coverages: ['Protección por fallecimiento', 'Cobertura familiar', 'Indemnización por incapacidad'],
     eligibility: { minAge: 18, maxAge: 65 },
+    businessPriority: true,
+    requiresUnderwriting: true,
   },
   {
     id: 'asistencias-multiples',
@@ -40,6 +42,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     url: 'https://www.colsubsidio.com/seguros/familiares/asistencias-multiples',
     coverages: ['Asistencia en el hogar', 'Asistencia vehículo', 'Asistencia jurídica telefónica', 'Orientación familiar'],
     eligibility: {},
+    businessPriority: true,
   },
   {
     id: 'exequial',
@@ -50,6 +53,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     url: 'https://www.colsubsidio.com/seguros/familiares/exequial',
     coverages: ['Servicios exequiales', 'Traslado nacional', 'Apoyo funerario familiar'],
     eligibility: {},
+    businessPriority: true,
   },
   {
     id: 'accidentes-exequial',
@@ -60,6 +64,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     url: 'https://www.colsubsidio.com/seguros/familiares/accidente-exequial',
     coverages: ['Cobertura por accidentes', 'Servicios exequiales', 'Protección familiar'],
     eligibility: {},
+    businessPriority: true,
   },
   {
     id: 'vida-ahorro',
@@ -80,6 +85,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     url: 'https://www.colsubsidio.com/seguros/familiares/asistencias-medicas',
     coverages: ['Asistencia médica telefónica', 'Consultas virtuales', 'Descuentos en medicamentos', 'Orientación nutricional'],
     eligibility: { family: true },
+    businessPriority: true,
   },
   {
     id: 'asistencia-veterinaria',
@@ -100,6 +106,8 @@ export const PRODUCTS: InsuranceProduct[] = [
     url: 'https://www.colsubsidio.com/seguros/mascotas/medicina-prepagada',
     coverages: ['Medicina prepagada para gatos', 'Consultas ilimitadas', 'Cirugías', 'Hospitalización', 'Exámenes diagnósticos'],
     eligibility: { pet: 'gato' },
+    businessPriority: true,
+    requiresUnderwriting: true,
   },
   {
     id: 'medicina-prepagada-perros',
@@ -110,5 +118,12 @@ export const PRODUCTS: InsuranceProduct[] = [
     url: 'https://www.colsubsidio.com/seguros/mascotas/medicina-prepagada',
     coverages: ['Medicina prepagada para perros', 'Consultas ilimitadas', 'Cirugías', 'Hospitalización', 'Exámenes diagnósticos'],
     eligibility: { pet: 'perro' },
+    // 2026-07-24 feedback listed only "gatos condicionado" explicitly, but its own
+    // exception clause said "gatos/perros condicionado" — both VetPlus prepagada
+    // products share the identical underwriting requirement (age/illness/clinical
+    // history), so perros is included for consistency. Flag before the demo if perros
+    // was deliberately meant to be excluded.
+    businessPriority: true,
+    requiresUnderwriting: true,
   },
 ];
