@@ -2739,6 +2739,82 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     );
   });
 
+  // Real live-test bug (2026-07-26, screenshot): "Ambos." → agent asks "¿cuántos gatos y
+  // cuántos perros tienes?" → user answers "Una gata y dos perros." (both counts in ONE
+  // message) — but the NLP layer also classified this same message's petResolution as
+  // 'perro' (mentioning "perros" read as a species choice, not a count-question answer),
+  // which narrowed straight to a SINGLE product (medicina-prepagada-perros x2) and
+  // silently dropped the cat from the quote entirely — no combined quote, no ask, the cat
+  // just vanished. Giving counts for BOTH species in one message is itself unambiguous
+  // evidence the user wants BOTH insured, regardless of what petResolution says.
+  it('regression — reporting both species counts in one message ("Una gata y dos perros") quotes BOTH products, even if petResolution is misread as a single species', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { petType: 'mixto', productCategory: 'mascotas' },
+      // Simulates the real misclassification: petResolution='perro' even though the
+      // message also names "una gata" — the exact NLP quirk that caused the live bug.
+      intent: makeIntent({ productCategory: 'mascotas', petResolution: 'perro' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Una gata y dos perros.'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('gatos');
+    expect(sentText).toContain('perros');
+    expect(sentText).toContain('81.800');
+    expect(sentText).toContain('96.600');
+    // 1 gato x 81.800 + 2 perros x 96.600 = 275.000 (both products shown, not perros-only)
+    expect(sentText).toContain('275.000');
+    expect(sentText).not.toContain('¿Quieres el seguro para los gatos');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.selectedProductIds).toEqual(
+      expect.arrayContaining(['medicina-prepagada-gatos', 'medicina-prepagada-perros']),
+    );
+  });
+
+  // Same bug as above, but split across TWO messages instead of one — completing a
+  // partial count ("un gato" then "dos perros") also mentions the completing species,
+  // which can equally get petResolution misread as a narrowing ('perro') rather than a
+  // count supplement. The fix must clear it based on the MERGED per-species counts
+  // (both known after this turn), not just on what the current message alone mentioned.
+  it('regression — completing a split count answer ("un gato" then "dos perros") quotes BOTH products, even if the 2nd message\'s petResolution is misread as a single species', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { petType: 'mixto', productCategory: 'mascotas', petSpeciesCounts: { gato: 1, perro: 0 } },
+      intent: makeIntent({ productCategory: 'mascotas', petResolution: 'perro' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('dos perros'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('gatos');
+    expect(sentText).toContain('perros');
+    expect(sentText).toContain('275.000');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.selectedProductIds).toEqual(
+      expect.arrayContaining(['medicina-prepagada-gatos', 'medicina-prepagada-perros']),
+    );
+  });
+
+  // Real live-test feedback (2026-07-26): once both per-species counts are known, asking
+  // "¿quieres el seguro para los gatos, los perros, o para todos?" is a redundant extra
+  // step — reporting a count for a species already answers "do you want it insured".
+  it('regression — once both species counts are known, quotes both products immediately instead of asking an extra "gatos, perros o todos?" question', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { petType: 'mixto', productCategory: 'mascotas', petSpeciesCounts: { gato: 1, perro: 0 } },
+      intent: makeIntent({ productCategory: 'mascotas', petResolution: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('dos perros'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('¿Quieres el seguro para los gatos');
+    expect(sentText).toContain('gatos');
+    expect(sentText).toContain('perros');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.selectedProductIds).toEqual(
+      expect.arrayContaining(['medicina-prepagada-gatos', 'medicina-prepagada-perros']),
+    );
+  });
+
   // Real live-test bug (2026-07-26): after the correct combined mixed-species quote
   // above, "otro" searched for a totally unrelated THIRD product (e.g.
   // asistencia-veterinaria) and priced it against the raw cross-species petCount (3) —

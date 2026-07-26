@@ -690,17 +690,24 @@ export class AgentService {
         };
       }
 
-      // 2026-07-26: when answering a partial-count question ("¿cuántos perros tienes?"),
-      // petResolution matches the missing species (count=0). Treat it as a count
-      // supplement, not a species narrowing — clear resolution so the partial-count
-      // else-if below captures the merged counts instead. Only fires when the KNOWN
-      // species has a positive count and the OTHER is still 0 — if both are already
-      // known, let the user's deliberate narrowing through.
+      // 2026-07-26: when answering a count question ("¿cuántos perros tienes?"), the
+      // species mentioned in the answer often ALSO sets petResolution — but naming a
+      // species while stating its count is not the same as deliberately choosing "solo
+      // esa especie". Real live-test bug (2026-07-26, screenshot): "Una gata y dos
+      // perros." (both counts in ONE message, answering "¿cuántos gatos y cuántos
+      // perros tienes?") got petResolution misread as 'perro' — the narrow original
+      // guard here only cleared it for a PARTIAL count still missing one species; once
+      // BOTH counts are merged into `newContext.petSpeciesCounts` (whether given
+      // together in one message or completed across two), any single-species
+      // petResolution is spurious and must be cleared the same way — reaching "both
+      // counts known" while still in this mixto-clarification loop always means the
+      // user wants BOTH insured. (Without this, the household silently lost the OTHER
+      // pet from the quote entirely: 1 gato + 2 perros in, only "medicina-prepagada-
+      // perros" ×2 out, no ask, no combined quote.) A genuine deliberate narrowing
+      // ("solo perros") is a different, later step — handled once a combined quote is
+      // already on screen, by handleQuotation's own "solo perros"/"solo gatos" guard.
       const p = newContext.petSpeciesCounts;
-      if (p && intent.petResolution && (
-        (p.gato && !p.perro && intent.petResolution === 'perro') ||
-        (p.perro && !p.gato && intent.petResolution === 'gato')
-      )) {
+      if (p?.gato && p?.perro && (intent.petResolution === 'gato' || intent.petResolution === 'perro')) {
         intent.petResolution = null;
       }
 
@@ -713,11 +720,15 @@ export class AgentService {
       } else if (intent.petType && intent.petType !== 'mixto') {
         newContext.petType = intent.petType;
       } else if (newContext.petSpeciesCounts?.gato && newContext.petSpeciesCounts?.perro) {
-        // User just gave species counts in response to "cuántos gatos y perros"
-        return {
-          text: `Entendido, tienes ${newContext.petSpeciesCounts.gato} gato${newContext.petSpeciesCounts.gato !== 1 ? 's' : ''} y ${newContext.petSpeciesCounts.perro} perro${newContext.petSpeciesCounts.perro !== 1 ? 's' : ''}. ¿Quieres el seguro para los gatos, los perros, o para todos?`,
-          context: newContext,
-        };
+        // Real live-test feedback (2026-07-26): once BOTH counts are known, giving a
+        // count for a species IS the signal the user wants it insured — asking yet
+        // another "¿gatos, perros, o todos?" after already answering "cuántos tienes" is
+        // a redundant extra step. Go straight to the combined quote (both products,
+        // each priced against its own species count); narrowing to a single species
+        // stays available afterward via handleQuotation's own "solo perros"/"solo gatos"
+        // guard once the combined quote is on screen.
+        if (!newContext.coverage?.length) newContext.coverage = ['medicina veterinaria'];
+        return this.buildMixedSpeciesQuote(newContext);
       } else if (newContext.petSpeciesCounts?.gato !== undefined || newContext.petSpeciesCounts?.perro !== undefined) {
         // Partial counts — one species known, the other needs to be asked
         const p = newContext.petSpeciesCounts!;
