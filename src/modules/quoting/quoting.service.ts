@@ -1,15 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { PRODUCTS } from './products.data';
-import { AffiliateSignals, InsuranceProduct, InsuranceScore } from './types';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { AffiliateSignals, IProductRepository, InsuranceProduct, InsuranceScore } from './types';
 
 @Injectable()
 export class QuotingService {
   private readonly logger = new Logger(QuotingService.name);
 
+  constructor(@Inject('IProductRepository') private readonly catalog: IProductRepository) {}
+
   score(signals: AffiliateSignals): InsuranceScore[] {
     const scores: InsuranceScore[] = [];
 
-    for (const product of PRODUCTS) {
+    for (const product of this.catalog.getProducts()) {
       const score = this.evaluateProduct(product, signals);
       if (score.matchScore > 0) {
         scores.push(score);
@@ -24,7 +25,7 @@ export class QuotingService {
     const scores = this.score(signals);
     if (scores.length === 0) return null;
     const top = scores[0];
-    const product = PRODUCTS.find((p) => p.id === top.productId);
+    const product = this.catalog.getProduct(top.productId);
     return product ? { product, score: top } : null;
   }
 

@@ -1,9 +1,16 @@
 import { QuotingService } from './quoting.service';
-import { AffiliateSignals } from './types';
+import { AffiliateSignals, IProductRepository, InsuranceProduct } from './types';
 import { PRODUCTS } from './products.data';
 
+function makeFakeCatalog(products: InsuranceProduct[] = PRODUCTS): IProductRepository {
+  return {
+    getProducts: () => products,
+    getProduct: (id) => products.find((p) => p.id === id),
+  };
+}
+
 function makeService(): QuotingService {
-  return new QuotingService();
+  return new QuotingService(makeFakeCatalog());
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────

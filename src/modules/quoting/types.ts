@@ -59,4 +59,14 @@ interface AffiliateSignals {
   urgency?: 'immediate' | 'exploring';
 }
 
-export { InsuranceProduct, InsuranceScore, AffiliateSignals };
+// 2026-07-26 — the adapter-pattern boundary (CLAUDE.md rule #6) between QuotingService's
+// scoring engine and wherever the catalog actually lives (today: products.data.ts;
+// tomorrow: catalog/products/*.yaml once its schema carries every field evaluateProduct()
+// needs; later: Supabase). QuotingService depends on this interface only — see
+// product-catalog.service.ts for the current implementation.
+interface IProductRepository {
+  getProducts(): InsuranceProduct[];
+  getProduct(id: string): InsuranceProduct | undefined;
+}
+
+export { InsuranceProduct, InsuranceScore, AffiliateSignals, IProductRepository };
