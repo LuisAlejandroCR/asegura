@@ -570,6 +570,46 @@ describe('QuotingService — dependents field precedence (Step 2)', () => {
   });
 });
 
+// ── Urgency wakes non-underwriting products (2026-07-26, Matriz 2 C05) ─────────
+// Already inferred by the NLP layer from words like "urgente"/"ya" (InsuranceIntent.
+// urgency), but never previously read here. requiresUnderwriting products (vida,
+// medicina-prepagada-*) genuinely take longer to activate (age/illness info required
+// before the policy can be issued — see AgentService's DATA_CAPTURE flow), so someone
+// who needs protection NOW is honestly better served by a direct-sell product.
+describe('QuotingService — urgency wakes non-underwriting products (Matriz 2)', () => {
+  const service = makeService();
+
+  it('urgency=immediate boosts a non-underwriting product with a real reason', () => {
+    const scores = service.score({ productCategory: 'accidentes', urgency: 'immediate' });
+    const std = scores.find((s) => s.productId === 'accidentes-personales')!;
+    expect(std.reasons.some((r) => r.includes('se activa de inmediato'))).toBe(true);
+  });
+
+  it('urgency=immediate does NOT boost a product that requires underwriting (vida)', () => {
+    const scores = service.score({ productCategory: 'vida', urgency: 'immediate' });
+    const vida = scores.find((s) => s.productId === 'vida')!;
+    expect(vida.reasons.some((r) => r.includes('se activa de inmediato'))).toBe(false);
+  });
+
+  it('urgency=exploring does not add the boost', () => {
+    const scores = service.score({ productCategory: 'accidentes', urgency: 'exploring' });
+    const std = scores.find((s) => s.productId === 'accidentes-personales')!;
+    expect(std.reasons.some((r) => r.includes('se activa de inmediato'))).toBe(false);
+  });
+
+  it('no urgency signal at all does not add the boost (back-compat — nothing populated this before today)', () => {
+    const scores = service.score({ productCategory: 'accidentes' });
+    const std = scores.find((s) => s.productId === 'accidentes-personales')!;
+    expect(std.reasons.some((r) => r.includes('se activa de inmediato'))).toBe(false);
+  });
+
+  it('pinned-literals invariant: matchScore with urgency=immediate is exactly 10 points higher than without it, for a non-underwriting product', () => {
+    const without = service.score({ productCategory: 'accidentes' }).find((s) => s.productId === 'accidentes-personales')!.matchScore;
+    const withUrgency = service.score({ productCategory: 'accidentes', urgency: 'immediate' }).find((s) => s.productId === 'accidentes-personales')!.matchScore;
+    expect(withUrgency).toBe(without + 10);
+  });
+});
+
 // ── Fuzz tests ────────────────────────────────────────────────────────────────
 
 describe('QuotingService FUZZ', () => {

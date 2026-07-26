@@ -39,6 +39,7 @@ export class QuotingService {
     tier: 100,
     family: 90,
     species: 80,
+    urgency: 65,
     budget: 60,
     coverage: 40,
     categoryExact: 20,
@@ -94,6 +95,19 @@ export class QuotingService {
         matchScore += matched * 5;
         addReason(QuotingService.REASON_WEIGHT.coverage, `Coberturas: ${product.coverages.slice(0, 2).join(', ')}`);
       }
+    }
+
+    // 2026-07-26 (Matriz 2, C05: "¿Necesitas la protección en los próximos días?") —
+    // already inferred by the NLP layer from words like "urgente"/"ya", never previously
+    // read here. `requiresUnderwriting` products (vida, medicina-prepagada-*) need age/
+    // pre-existing-illness info collected before the policy can even be issued (see
+    // AgentService's DATA_CAPTURE flow) — genuinely slower to activate, a real,
+    // catalog-honest distinction (rule #12), not an invented one. A direct-sell product
+    // that can be issued right away is the better fit for someone who said they need
+    // protection now.
+    if (signals.urgency === 'immediate' && !product.requiresUnderwriting) {
+      matchScore += 10;
+      addReason(QuotingService.REASON_WEIGHT.urgency, 'Necesitas protección ya — este seguro no requiere trámites adicionales, se activa de inmediato');
     }
 
     // 2026-07-24 business feedback: 7 products are the current sales priority — a small

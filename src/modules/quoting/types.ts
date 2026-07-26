@@ -51,6 +51,12 @@ interface AffiliateSignals {
   // undefined means the dependents question was never asked/answered — evaluateProduct
   // falls back to the beneficiaries heuristic only in that undefined case.
   dependents?: number;
+  // 2026-07-26 (Matriz 2, C05: "¿Necesitas la protección en los próximos días?") —
+  // already inferred by the NLP layer from words like "urgente"/"ya" (InsuranceIntent,
+  // nlp/types.ts) but never previously captured into context or read by scoring. No new
+  // question needed to wake this: it's a byproduct of language already used in a normal
+  // DISCOVERY reply.
+  urgency?: 'immediate' | 'exploring';
 }
 
 export { InsuranceProduct, InsuranceScore, AffiliateSignals };

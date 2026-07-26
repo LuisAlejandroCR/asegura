@@ -70,6 +70,15 @@ describe('pickPersistentFields', () => {
   it('deliberately excludes productCategory — a fresh inquiry may want something different', () => {
     expect(PERSISTENT_FIELDS).not.toContain('productCategory');
   });
+
+  it('carries forward rangoSalarial and serieId from an affiliate CSV lookup — re-doing it on every restart would be pointless', () => {
+    const result = pickPersistentFields({ rangoSalarial: 'Entre 4 y 6 SMLV', serieId: '42' });
+    expect(result).toEqual({ rangoSalarial: 'Entre 4 y 6 SMLV', serieId: '42' });
+  });
+
+  it('deliberately excludes awaitingAffiliateId — a one-shot gate, not a durable fact', () => {
+    expect(PERSISTENT_FIELDS).not.toContain('awaitingAffiliateId');
+  });
 });
 
 describe('hasRememberedProfile', () => {

@@ -20,6 +20,9 @@ const PERSISTENT_FIELDS = [
   'dependents', 'beneficiaries', 'budget',
   'cedula', 'documentType', 'nombre', 'email', 'phoneVerified', 'verifiedPhone',
   'hasCompletedPurchase', 'policyIds',
+  // 2026-07-26 — the affiliate's own historical salary band never changes turn to turn;
+  // re-doing the ID lookup on every restart would be pointless when we already have it.
+  'rangoSalarial', 'serieId',
 ] as const satisfies readonly (keyof ConversationContext)[];
 
 function pickPersistentFields(context: ConversationContext): ConversationContext {
