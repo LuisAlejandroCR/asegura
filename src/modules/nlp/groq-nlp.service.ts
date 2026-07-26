@@ -3,6 +3,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { INlpProvider, InsuranceIntent } from './types';
 
+// Tags a 429 specifically so extractIntent can retry once instead of falling straight to
+// fallbackIntent() like any other Groq failure (network error, 5xx, malformed JSON).
+class GroqRateLimitError extends Error {}
+
 @Injectable()
 export class GroqNlpService implements INlpProvider {
   private readonly logger = new Logger(GroqNlpService.name);
@@ -22,8 +26,35 @@ export class GroqNlpService implements INlpProvider {
     }
   }
 
+  // 2026-07-26 live-test bug: a real Groq free-tier TPM rate limit (429) hit mid-
+  // conversation degraded that turn straight to fallbackIntent() — the weaker keyword-
+  // only matcher — with zero attempt to recover, even though Groq's own error body says
+  // "Please try again in 2.1s". One short, fixed retry (not a full backoff library —
+  // this is a real-time chat, latency matters) recovers most of these momentary blips
+  // before giving up. Any OTHER error (network, 5xx, malformed JSON) still falls
+  // straight to the fallback on the first attempt, unchanged.
+  private static readonly RATE_LIMIT_RETRY_DELAY_MS = 2_500;
+
   async extractIntent(text: string): Promise<InsuranceIntent> {
     try {
+      return await this.callGroq(text);
+    } catch (err) {
+      if (err instanceof GroqRateLimitError) {
+        this.logger.warn(`Groq rate-limited, retrying once in ${GroqNlpService.RATE_LIMIT_RETRY_DELAY_MS}ms: ${err.message}`);
+        await new Promise((resolve) => setTimeout(resolve, GroqNlpService.RATE_LIMIT_RETRY_DELAY_MS));
+        try {
+          return await this.callGroq(text);
+        } catch (retryErr) {
+          this.logger.warn(`Groq retry failed, using fallback: ${retryErr}`);
+          return this.fallbackIntent(text);
+        }
+      }
+      this.logger.warn(`Groq extraction failed, using fallback: ${err}`);
+      return this.fallbackIntent(text);
+    }
+  }
+
+  private async callGroq(text: string): Promise<InsuranceIntent> {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -106,17 +137,17 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       });
 
       if (!response.ok) {
-        throw new Error(`Groq API error: ${response.status} ${await response.text()}`);
+        const body = await response.text();
+        if (response.status === 429) {
+          throw new GroqRateLimitError(`Groq API error: 429 ${body}`);
+        }
+        throw new Error(`Groq API error: ${response.status} ${body}`);
       }
 
       const data = await response.json() as any;
       const content = data.choices[0].message.content;
       const intent = JSON.parse(content) as InsuranceIntent;
       return this.postProcess(intent, text);
-    } catch (err) {
-      this.logger.warn(`Groq extraction failed, using fallback: ${err}`);
-      return this.fallbackIntent(text);
-    }
   }
 
   private postProcess(intent: InsuranceIntent, text: string): InsuranceIntent {

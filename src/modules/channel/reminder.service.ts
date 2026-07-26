@@ -25,6 +25,18 @@ const REMINDER_TEXT = '¿Sigues ahí? Aquí estoy cuando quieras continuar 😊'
 // don't keep counting a truly-dead chat as still "in progress". 3 more minutes after the
 // nudge (4 total since the user's last message) before giving up.
 const CLOSE_DELAY_MS = 180_000;
+
+// Real live-test bug (2026-07-26): a user who received a real Wompi payment link (valid
+// for 30 minutes — see the "El link vence en 30 minutos" text sent alongside it) had
+// their conversation auto-closed to ABANDONED after the same generic 4-minute window as
+// any other prompt — while the link was still perfectly payable. Closing the chat before
+// the payment window itself even expires is misleading (the conversation says "closed"
+// while a real charge could still land) and forces the user to restart from scratch if
+// they come back to pay a few minutes later. 60s nudge + 33 more minutes = 34 minutes
+// total from the last message — past Wompi's own 30-minute expiry plus a small buffer,
+// same margin pattern as the regular 4-minute window (1 extra minute past the 3-minute
+// nudge-to-close gap there).
+const PAYMENT_CLOSE_DELAY_MS = 33 * 60 * 1000;
 // Real live-test bug (2026-07-25/26, screenshot): the auto-close above updated the DB
 // (ABANDONED + abandonReason) but never told the USER anything — from the chat's own
 // point of view, nothing happened at all after the nudge, no matter how long you waited.
@@ -52,16 +64,24 @@ export class ReminderService {
   // Keyed by conversation id, not userId — a user could in principle run multiple
   // conversations (different channels), and conversation id is already the stable,
   // unique identifier used everywhere else in this codebase (saveState, etc.).
-  schedule(conversationId: string, userId: string): void {
+  //
+  // hasPendingPayment: true when a real Wompi checkoutUrl was just sent and is still
+  // unconfirmed — uses PAYMENT_CLOSE_DELAY_MS instead of the default so the conversation
+  // doesn't auto-abandon while the link itself is still payable. Defaults to false so
+  // every other call site (including the post-purchase cross-sell reminder scheduled
+  // from wompi-webhook.controller.ts once a payment IS confirmed) keeps today's behavior
+  // unchanged.
+  schedule(conversationId: string, userId: string, hasPendingPayment = false): void {
     this.cancel(conversationId);
     const nudgeTimer = setTimeout(() => {
       this.nudgeTimers.delete(conversationId);
       void this.telegram.sendText(userId, REMINDER_TEXT);
 
+      const closeDelay = hasPendingPayment ? PAYMENT_CLOSE_DELAY_MS : CLOSE_DELAY_MS;
       const closeTimer = setTimeout(() => {
         this.closeTimers.delete(conversationId);
         void this.closeIfStillStalled(conversationId, userId);
-      }, CLOSE_DELAY_MS);
+      }, closeDelay);
       this.closeTimers.set(conversationId, closeTimer);
     }, REMINDER_DELAY_MS);
     this.nudgeTimers.set(conversationId, nudgeTimer);

@@ -33,6 +33,87 @@ describe('GroqNlpService — boot-time configuration warning', () => {
   });
 });
 
+// 2026-07-26 live-test bug: a real Groq free-tier TPM rate limit (429) hit mid-
+// conversation degraded that turn straight to the weaker keyword-only fallbackIntent(),
+// with zero attempt to recover, even though Groq's own error body says "Please try again
+// in 2.1s". One short, fixed retry should recover most of these before giving up.
+describe('GroqNlpService.extractIntent — 429 rate-limit retry', () => {
+  const validIntentJson = JSON.stringify({
+    productCategory: 'vida', petType: null, petCount: null, coverage: [], beneficiaries: 1,
+    urgency: 'exploring', budget: null, abandonIntent: false, priceObjection: false,
+    isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null,
+    petName: null, petAge: null, petBreed: null, pets: [],
+  });
+
+  function mockResponse(status: number, body: unknown) {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      text: jest.fn().mockResolvedValue(typeof body === 'string' ? body : JSON.stringify(body)),
+      json: jest.fn().mockResolvedValue(body),
+    };
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    (global as any).fetch = undefined;
+    jest.useRealTimers();
+  });
+
+  it('retries once on a 429 and succeeds if the retry succeeds — no fallback used', async () => {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(mockResponse(429, { error: { message: 'Rate limit reached', code: 'rate_limit_exceeded' } }))
+      .mockResolvedValueOnce(mockResponse(200, { choices: [{ message: { content: validIntentJson } }] }));
+    (global as any).fetch = fetchMock;
+
+    const config = { get: jest.fn((key: string, def?: unknown) => (key === 'LLM_API_KEY' ? 'gsk_test' : def ?? '')) } as any;
+    const service = new GroqNlpService(config);
+
+    const resultPromise = service.extractIntent('quiero un seguro de vida');
+    await jest.advanceTimersByTimeAsync(2_500);
+    const result = await resultPromise;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.productCategory).toBe('vida');
+  });
+
+  it('falls back to fallbackIntent when the retry ALSO fails', async () => {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(mockResponse(429, { error: { message: 'Rate limit reached', code: 'rate_limit_exceeded' } }))
+      .mockResolvedValueOnce(mockResponse(429, { error: { message: 'Rate limit reached', code: 'rate_limit_exceeded' } }));
+    (global as any).fetch = fetchMock;
+
+    const config = { get: jest.fn((key: string, def?: unknown) => (key === 'LLM_API_KEY' ? 'gsk_test' : def ?? '')) } as any;
+    const service = new GroqNlpService(config);
+
+    const resultPromise = service.extractIntent('no tengo mascotas');
+    await jest.advanceTimersByTimeAsync(2_500);
+    const result = await resultPromise;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // fallbackIntent's own keyword logic for this exact phrase — confirms the fallback
+    // path actually ran, not a crash or an empty object.
+    expect(result.productCategory).toBeNull();
+  });
+
+  it('does NOT retry a non-429 error — falls straight to fallback on the first failure', async () => {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(mockResponse(500, { error: { message: 'internal error' } }));
+    (global as any).fetch = fetchMock;
+
+    const config = { get: jest.fn((key: string, def?: unknown) => (key === 'LLM_API_KEY' ? 'gsk_test' : def ?? '')) } as any;
+    const service = new GroqNlpService(config);
+
+    const result = await service.extractIntent('hola');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result).toBeDefined();
+  });
+});
+
 function baseMascotas(petType: InsuranceIntent['petType'] = null): InsuranceIntent {
   return { productCategory: 'mascotas', petType, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null };
 }

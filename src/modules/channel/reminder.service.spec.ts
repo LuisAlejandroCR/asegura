@@ -175,4 +175,50 @@ describe('ReminderService', () => {
       expect(conversations.saveState).not.toHaveBeenCalled();
     });
   });
+
+  // Real live-test bug (2026-07-26, screenshot): a real Wompi payment link is valid for
+  // 30 minutes ("El link vence en 30 minutos"), but the conversation auto-abandoned on
+  // the regular 4-minute (60s nudge + 180s grace) window regardless — closing the chat
+  // while the link was still perfectly payable.
+  describe('hasPendingPayment — extended auto-close while a Wompi link is still valid', () => {
+    it('does NOT auto-close at the regular 4-minute mark when hasPendingPayment is true', async () => {
+      const telegram = makeTelegram();
+      const conversations = makeConversations({ state: ConversationState.PAYMENT, context: { checkoutUrl: 'https://checkout.wompi.co/l/test' } });
+      const service = new ReminderService(telegram, conversations);
+
+      service.schedule('conv-1', 'user-1', true);
+      await jest.advanceTimersByTimeAsync(60_000 + 180_000); // the old, regular close point
+
+      expect(conversations.saveState).not.toHaveBeenCalled();
+      // Only the 60s nudge — no close message yet.
+      expect(telegram.sendText).toHaveBeenCalledTimes(1);
+    });
+
+    it('auto-closes at 34 minutes total (60s nudge + 33min grace) when hasPendingPayment is true', async () => {
+      const telegram = makeTelegram();
+      const conversations = makeConversations({ state: ConversationState.PAYMENT, context: { checkoutUrl: 'https://checkout.wompi.co/l/test' } });
+      const service = new ReminderService(telegram, conversations);
+
+      service.schedule('conv-1', 'user-1', true);
+      await jest.advanceTimersByTimeAsync(60_000 + 33 * 60_000);
+
+      expect(conversations.saveState).toHaveBeenCalledWith(
+        'conv-1',
+        ConversationState.ABANDONED,
+        expect.anything(),
+      );
+      expect(telegram.sendText).toHaveBeenCalledTimes(2);
+    });
+
+    it('hasPendingPayment defaults to false — unchanged 4-minute behavior when omitted', async () => {
+      const telegram = makeTelegram();
+      const conversations = makeConversations({ state: ConversationState.DISCOVERY, context: {} });
+      const service = new ReminderService(telegram, conversations);
+
+      service.schedule('conv-1', 'user-1');
+      await jest.advanceTimersByTimeAsync(60_000 + 180_000);
+
+      expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.ABANDONED, expect.anything());
+    });
+  });
 });

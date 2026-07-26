@@ -239,7 +239,10 @@ export class AgentService {
     // was rejected/abandoned) has no point.
     const finalState = result.nextState ?? conv.state;
     if (!AgentService.TERMINAL_STATES.has(finalState)) {
-      this.reminders.schedule(conv.id, msg.userId);
+      // A real, still-unconfirmed Wompi link (checkoutUrl) means the conversation must
+      // not auto-abandon on the regular 4-minute window — see PAYMENT_CLOSE_DELAY_MS.
+      const finalContext = result.context ?? conv.context;
+      this.reminders.schedule(conv.id, msg.userId, !!finalContext?.checkoutUrl);
     }
   }
 
@@ -861,6 +864,19 @@ export class AgentService {
     }
 
     if (intent.wantsAlternative) {
+      // Real live-test bug (2026-07-26): "otro" during an active mixed-species purchase
+      // (context.selectedProductIds has BOTH medicina-prepagada products, from
+      // buildMixedSpeciesQuote) used to search for a totally unrelated THIRD product
+      // (e.g. asistencia-veterinaria) and price it against the raw cross-species
+      // petCount — a wildly wrong total, AND a real consent mismatch: saying "sí" right
+      // after would have confirmed the ORIGINAL 2-product purchase (this branch never
+      // touched selectedProductIds), not the different product just shown. There's no
+      // single "next best" alternative to a combined multi-species quote, so just
+      // re-anchor on the one already active instead of hunting for a swap-in.
+      if (context.selectedProductIds && context.selectedProductIds.length > 1) {
+        return { text: this.formatMixedSpeciesQuote(context) };
+      }
+
       const allScores = this.quoting.score(context as AffiliateSignals);
       const seen = context.shownProductIds ?? (context.quoteProductId ? [context.quoteProductId] : []);
       const nextProduct = allScores.find((s) => !seen.includes(s.productId));
@@ -946,6 +962,20 @@ export class AgentService {
     // es el único plan?". Only prefix a clarification when the raw text has NO letters at
     // all — a real Spanish question always has plenty of them and must keep getting the
     // plain, unprefixed re-show.
+    // Real live-test bug (2026-07-26): an unclear turn during an active mixed-species
+    // purchase re-showed the single currentProduct (context.quoteProductId — arbitrarily
+    // just ONE of the two active products) priced against the raw cross-species
+    // petCount, instead of the actual combined 2-product quote the user was looking at.
+    // Checked before the single-product branch below so it takes priority.
+    if (context.selectedProductIds && context.selectedProductIds.length > 1) {
+      const quoteText = this.formatMixedSpeciesQuote(context);
+      const noRealWords = !/[a-zA-ZÀ-ÖØ-öø-ÿ]/.test(text);
+      return {
+        text: noRealWords ? `No entendí ese mensaje, ¿puedes intentarlo de nuevo?\n\n${quoteText}` : quoteText,
+        unclearReply: true,
+      };
+    }
+
     if (currentProduct) {
       const quoteText = this.formatQuote(
         currentProduct,
@@ -1838,9 +1868,16 @@ export class AgentService {
     const cov = product.coverages.slice(0, 3).map((c) => `✅ ${c}`).join('\n');
     const reason = score.reasons[0] ?? 'se ajusta a lo que buscas';
     const isPet = product.category === 'mascotas';
-    const petCount = (isPet && context?.petCount && context.petCount > 0) ? context.petCount : null;
+    // Real live-test bug (2026-07-26): a mixed household (e.g. 1 gato + 2 perros) got a
+    // re-shown single product priced against the RAW cross-species context.petCount (3),
+    // not its own species' count — e.g. medicina-prepagada-gatos × 3 instead of × 1. Uses
+    // the same species-aware helper buildMixedSpeciesQuote already relies on, so ANY call
+    // site (fallback re-show, back-reference, this one) prices a species-restricted
+    // product correctly even outside the dedicated mixed-species flow.
+    const effectivePetCount = context ? this.petCountForProduct(context, product) : context?.petCount;
+    const petCount = (isPet && effectivePetCount && effectivePetCount > 0) ? effectivePetCount : null;
     const pricePerUnit = product.basePremium;
-    const total = computeTotalPremium(product, context?.petCount);
+    const total = computeTotalPremium(product, effectivePetCount ?? undefined);
 
     let priceBlock: string;
     if (isPet && petCount && petCount > 1) {
@@ -1894,13 +1931,12 @@ export class AgentService {
     );
   }
 
-  // Real live-test bug: a mixed household (e.g. 2 dogs + 1 cat) was quoted a SINGLE
-  // species-restricted product multiplied by the TOTAL pet count, silently charging the
-  // other species at the wrong rate. Quotes BOTH medicina-prepagada products together,
-  // each priced against its own species count — reuses the existing multi-product
-  // (selectedProductIds) purchase machinery, so confirmation/payment/policy issuance
-  // downstream needs no special-casing.
-  private buildMixedSpeciesQuote(context: ConversationContext): ProcessResult {
+  // Extracted from buildMixedSpeciesQuote (2026-07-26) so a RE-SHOW of an already-active
+  // mixed-species purchase (wantsAlternative "otro", an unclear neutral fallback) can
+  // reuse the exact same species-correct summary instead of falling through to a
+  // single-product re-show priced against the raw cross-species petCount. Pure text
+  // builder — never mutates context, since a re-show must not touch the purchase state.
+  private formatMixedSpeciesQuote(context: ConversationContext): string {
     const gatoProduct = PRODUCTS.find((p) => p.id === 'medicina-prepagada-gatos')!;
     const perroProduct = PRODUCTS.find((p) => p.id === 'medicina-prepagada-perros')!;
     const gatoCount = this.petCountForProduct(context, gatoProduct) ?? 1;
@@ -1915,20 +1951,29 @@ export class AgentService {
       `💰 *$${product.basePremium.toLocaleString('es-CO')}/mes por mascota* (${count} ${count === 1 ? 'mascota' : 'mascotas'}): *$${total.toLocaleString('es-CO')}/mes*\n` +
       `👉 Ver detalles: ${product.url}`;
 
-    const text =
+    return (
       `📋 *Tu cotización personalizada*\n\n` +
       `${productBlock(gatoProduct, gatoCount, gatoTotal)}\n\n` +
       `${productBlock(perroProduct, perroCount, perroTotal)}\n\n` +
       `💰 *Total para tu familia: $${grandTotal.toLocaleString('es-CO')}/mes*\n\n` +
-      `¿Te interesa o prefieres que busquemos otra opción?`;
+      `¿Te interesa o prefieres que busquemos otra opción?`
+    );
+  }
 
-    const selectedProductIds = [gatoProduct.id, perroProduct.id];
+  // Real live-test bug: a mixed household (e.g. 2 dogs + 1 cat) was quoted a SINGLE
+  // species-restricted product multiplied by the TOTAL pet count, silently charging the
+  // other species at the wrong rate. Quotes BOTH medicina-prepagada products together,
+  // each priced against its own species count — reuses the existing multi-product
+  // (selectedProductIds) purchase machinery, so confirmation/payment/policy issuance
+  // downstream needs no special-casing.
+  private buildMixedSpeciesQuote(context: ConversationContext): ProcessResult {
+    const selectedProductIds = ['medicina-prepagada-gatos', 'medicina-prepagada-perros'];
     return {
-      text,
+      text: this.formatMixedSpeciesQuote(context),
       nextState: ConversationState.QUOTE_PRESENTED,
       context: {
         ...context,
-        quoteProductId: gatoProduct.id,
+        quoteProductId: selectedProductIds[0],
         selectedProductIds,
         shownProductIds: [...new Set([...(context.shownProductIds ?? []), ...selectedProductIds])],
       },

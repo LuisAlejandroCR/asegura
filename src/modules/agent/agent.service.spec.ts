@@ -2548,6 +2548,59 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     );
   });
 
+  // Real live-test bug (2026-07-26): after the correct combined mixed-species quote
+  // above, "otro" searched for a totally unrelated THIRD product (e.g.
+  // asistencia-veterinaria) and priced it against the raw cross-species petCount (3) —
+  // wrong total, AND a consent mismatch: saying "sí" right after would silently confirm
+  // the ORIGINAL 2-product purchase, not the different product just shown.
+  it('regression — "otro" during an active mixed-species purchase re-shows the combined quote instead of a 3rd unrelated product', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: {
+        quoteProductId: 'medicina-prepagada-gatos',
+        selectedProductIds: ['medicina-prepagada-gatos', 'medicina-prepagada-perros'],
+        shownProductIds: ['medicina-prepagada-gatos', 'medicina-prepagada-perros'],
+        petCount: 3,
+        petSpeciesCounts: { gato: 1, perro: 2 },
+        productCategory: 'mascotas',
+      },
+      intent: makeIntent({ wantsAlternative: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('otro'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('gatos');
+    expect(sentText).toContain('perros');
+    expect(sentText).toContain('275.000');
+    expect(sentText).not.toContain('asistencia veterinaria');
+    expect(sentText).not.toContain('43.500');
+    // Never touched selectedProductIds — no accidental context change from a re-show.
+    expect(conversations.saveState).not.toHaveBeenCalled();
+  });
+
+  it('regression — an unclear reply during an active mixed-species purchase re-shows the combined quote, not a single mispriced product', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: {
+        quoteProductId: 'medicina-prepagada-gatos',
+        selectedProductIds: ['medicina-prepagada-gatos', 'medicina-prepagada-perros'],
+        shownProductIds: ['medicina-prepagada-gatos', 'medicina-prepagada-perros'],
+        petCount: 3,
+        petSpeciesCounts: { gato: 1, perro: 2 },
+        productCategory: 'mascotas',
+      },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Ayudro?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('gatos');
+    expect(sentText).toContain('perros');
+    expect(sentText).toContain('275.000');
+    // The old bug: single product (gatos, $81.800) x total cross-species count (3).
+    expect(sentText).not.toContain('245.400');
+  });
+
   it('"el gato" after mixto clarification sets petType gato', async () => {
     const { service, telegram, conversations, quoting } = buildService({
       state: ConversationState.DISCOVERY,
@@ -3460,7 +3513,32 @@ describe('AgentService — 30s reminder scheduling', () => {
     });
     telegram.normalize.mockResolvedValue(makeMessage('¿ese es el único plan?'));
     await service.handleMessage({});
-    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1');
+    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1', false);
+  });
+
+  // Real live-test bug (2026-07-26): a real Wompi payment link is valid for 30 minutes
+  // ("El link vence en 30 minutos"), but the conversation auto-abandoned on the regular
+  // 4-minute window regardless — closing the chat while the link was still payable.
+  it('schedules with hasPendingPayment=true when the context has an active checkoutUrl', async () => {
+    const { service, telegram, reminders } = buildService({
+      state: ConversationState.PAYMENT,
+      context: { checkoutUrl: 'https://checkout.wompi.co/l/test123' },
+      intent: makeIntent({ isNegative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿ya casi?'));
+    await service.handleMessage({});
+    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1', true);
+  });
+
+  it('schedules with hasPendingPayment=false when there is no active checkoutUrl', async () => {
+    const { service, telegram, reminders } = buildService({
+      state: ConversationState.PAYMENT,
+      context: {},
+      intent: makeIntent({ isNegative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿cómo pago?'));
+    await service.handleMessage({});
+    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1', false);
   });
 
   it('does NOT schedule a reminder when a plain decline ends in ABANDONED', async () => {
