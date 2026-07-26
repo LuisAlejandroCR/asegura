@@ -6,6 +6,14 @@ import FunnelSpiral from './FunnelSpiral';
 import VideoShowcase, { VideoStepPicker } from './VideoShowcase';
 import WhyPicker from '../components/WhyPicker';
 
+import juanImg from '../asegura-knowledge-base/descubrimientos/asegura-knowledge-base/descubrimientos/reference/team_images/juan.png';
+import alejoImg from '../asegura-knowledge-base/descubrimientos/reference/team_images/alejo.jpeg';
+import maiteImg from '../asegura-knowledge-base/descubrimientos/reference/team_images/maite.png';
+import cristianImg from '../asegura-knowledge-base/descubrimientos/reference/team_images/cristian.png';
+import mariaImg from '../asegura-knowledge-base/descubrimientos/reference/team_images/maria.png';
+
+
+
 export interface SlideProps {
   active: boolean;
 }
@@ -442,7 +450,7 @@ export function Slide8Impacto({ active }: SlideProps) {
 /* ── Slide 9 — Equipo ──────────────────────────────────────────────────── */
 const TEAM: [string, string, string, string][] = [
   ['JO', 'Juan Ospina', 'Administrador de Empresas', 'Estrategia & Pitch'],
-  ['AL', 'Alejo', 'Ingeniero de Software', 'Tech Lead & Arquitecto'],
+  [alejoImg, 'Alejo', 'Ingeniero de Software', 'Tech Lead & Arquitecto'],
   ['MG', 'Maite Gómez', 'Especialista en Analítica', 'Datos & Propensión'],
   ['CG', 'Cristian Gómez', 'Ingeniero de Software', 'Desarrollo & Integraciones'],
   ['MP', 'María del Pilar', 'Economista', 'Mercado & Viabilidad'],
