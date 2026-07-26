@@ -783,7 +783,7 @@ export class AgentService {
     // First time detecting mixed pets — ask clarification before quoting
     if (newContext.petType === 'mixto') {
       return {
-        text: '¡Qué bonita familia de mascotas! 🐱🐶 ¿Para cuál quieres el seguro? ¿Solo el gato, solo los perros, o quieres cotizar para todos por separado?',
+        text: '¡Qué bonita familia de mascotas! 🐱🐶 ¿Para cuál quieres el seguro? ¿Solo los gatos, solo los perros, o quieres cotizar para todos por separado?',
         context: newContext,
       };
     }
