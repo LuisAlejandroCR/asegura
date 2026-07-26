@@ -48,7 +48,7 @@ Wompi confirma el pago automáticamente vía webhook — verificado, no autorepo
 PDF de póliza enviado al chat, con QR de verificación
 ```
 
-Sin formularios. Sin menús obligatorios. Sin salir del chat. La confirmación de pago la valida Wompi directamente — nadie puede activar una póliza sin haber pagado realmente. Si preguntas por algo fuera del catálogo (por ejemplo, seguro vehicular), el agente lo dice honestamente y te ofrece las alternativas reales disponibles, en vez de ignorar la pregunta.
+Sin formularios. Sin menús obligatorios. Sin salir del chat. La confirmación de pago la valida Wompi directamente — nadie puede activar una póliza sin haber pagado realmente. Si preguntas por algo fuera del catálogo (por ejemplo, seguro vehicular), el agente lo dice honestamente y te ofrece las alternativas reales disponibles, en vez de ignorar la pregunta. Si el agente no logra entenderte tras varios intentos, escala automáticamente la conversación a un asesor humano — nunca te deja atrapado repitiendo lo mismo.
 
 ---
 
