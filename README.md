@@ -103,6 +103,8 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 
 ▶ **Pitch web:** `https://asegura-app.vercel.app/`
 
+▶ **Pitch video:** `https://www.youtube.com/watch?v=DP3Fhnv6wqY`
+
 ---
 
 ## Verificación de póliza
