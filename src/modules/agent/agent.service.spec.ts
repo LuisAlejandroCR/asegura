@@ -3079,6 +3079,160 @@ describe('AgentService — DISCOVERY mixed pets', () => {
   });
 });
 
+// ── QUOTE_PRESENTED — switching species after narrowing a mixed-species quote ──
+// Real live-test bug (2026-07-26, screenshot): "solo perros" worked (narrowed the
+// combined gato+perro quote down to just perros), but a FOLLOW-UP "solo gato" — trying
+// to switch to the OTHER species — just re-showed the SAME perros quote, and asking to
+// see "todos" (both) again didn't restore the combined quote either. Root cause: the
+// switching guard gated on `context.selectedProductIds.length > 1`, true only for the
+// ORIGINAL combined quote — once narrowed to one species, selectedProductIds.length
+// becomes 1, so the guard never fired again for any later switch. This describe block
+// had zero test coverage before this fix — the gap that let it ship broken.
+describe('AgentService — QUOTE_PRESENTED switching species in a mixed household', () => {
+  it('regression — "solo gato" after already narrowing to "solo perros" switches to the cat quote, not a repeat of perros', async () => {
+    const gatoProduct = PRODUCTS.find(p => p.id === 'medicina-prepagada-gatos')!;
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: {
+        quoteProductId: 'medicina-prepagada-perros',
+        selectedProductIds: ['medicina-prepagada-perros'], // already narrowed to perros
+        shownProductIds: ['medicina-prepagada-gatos', 'medicina-prepagada-perros'],
+        petType: 'perro',
+        petSpeciesCounts: { gato: 1, perro: 2 },
+        productCategory: 'mascotas',
+      },
+      intent: makeIntent({ petResolution: 'gato' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('solo el gato'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(gatoProduct.name);
+    expect(sentText).toContain('81.800');
+    expect(sentText).not.toContain('96.600');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.petType).toBe('gato');
+    expect(savedContext.selectedProductIds).toEqual(['medicina-prepagada-gatos']);
+    expect(savedContext.quoteProductId).toBe('medicina-prepagada-gatos');
+  });
+
+  it('regression — "todos" after narrowing to a single species restores the combined quote for both', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: {
+        quoteProductId: 'medicina-prepagada-perros',
+        selectedProductIds: ['medicina-prepagada-perros'],
+        shownProductIds: ['medicina-prepagada-gatos', 'medicina-prepagada-perros'],
+        petType: 'perro',
+        petSpeciesCounts: { gato: 1, perro: 2 },
+        productCategory: 'mascotas',
+      },
+      intent: makeIntent({ petResolution: 'all' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('quiero ver todos de nuevo'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('gatos');
+    expect(sentText).toContain('perros');
+    expect(sentText).toContain('275.000');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.selectedProductIds).toEqual(
+      expect.arrayContaining(['medicina-prepagada-gatos', 'medicina-prepagada-perros']),
+    );
+  });
+
+  it('switching species from the ORIGINAL combined quote still works (unchanged behavior)', async () => {
+    const perroProduct = PRODUCTS.find(p => p.id === 'medicina-prepagada-perros')!;
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: {
+        quoteProductId: 'medicina-prepagada-gatos',
+        selectedProductIds: ['medicina-prepagada-gatos', 'medicina-prepagada-perros'],
+        shownProductIds: ['medicina-prepagada-gatos', 'medicina-prepagada-perros'],
+        petSpeciesCounts: { gato: 1, perro: 2 },
+        productCategory: 'mascotas',
+      },
+      intent: makeIntent({ petResolution: 'perro' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('solo los perros'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(perroProduct.name);
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.selectedProductIds).toEqual(['medicina-prepagada-perros']);
+  });
+});
+
+// ── DATA_CAPTURE — pet-count collection respects a narrowed single-species purchase ──
+// Real live-test bug (2026-07-26, screenshot): after narrowing a mixed household ("1
+// gata + 2 perros") down to "solo perros", the per-pet details summary still showed 3
+// pets (Bruna the cat included) instead of 2 (only the dogs) — firstDataCaptureQuestion
+// and the pet-collection loop both used the raw combined context.petCount as "how many
+// pets to collect", the same bug class already fixed for pricing (petCountForProduct)
+// but never applied to pet-name collection.
+describe('AgentService — DATA_CAPTURE pet count respects species narrowing', () => {
+  it('regression — after narrowing to "solo perros", only 2 pets (not the combined 3) are asked for', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        selectedProductIds: ['medicina-prepagada-perros'],
+        quoteProductId: 'medicina-prepagada-perros',
+        petSpeciesCounts: { gato: 1, perro: 2 },
+        petCount: 3, // stale combined total from before narrowing
+        productCategory: 'mascotas',
+        phoneVerified: true, selfieProvided: true,
+      },
+      intent: makeIntent({ pets: [{ name: 'Ramón', age: '3 años', breed: 'doberman' }] }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Ramón, 3 años, doberman.'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('mascota 2 de 2');
+    expect(sentText).not.toContain('de 3');
+  });
+
+  it('regression — a combined (unnarrowed) purchase still asks for the full 3 pets (unchanged behavior)', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        selectedProductIds: ['medicina-prepagada-gatos', 'medicina-prepagada-perros'],
+        quoteProductId: 'medicina-prepagada-gatos',
+        petSpeciesCounts: { gato: 1, perro: 2 },
+        petCount: 3,
+        productCategory: 'mascotas',
+        phoneVerified: true, selfieProvided: true,
+      },
+      intent: makeIntent({ pets: [{ name: 'Bruna', age: '10 años', breed: 'criollo' }] }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Bruna, 10 años, criollo.'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('mascota 2 de 3');
+  });
+
+  // Cross-sell combo (vida + a pet product) must never count the non-pet product
+  // toward "how many pets to collect" — regression guard for the fix's own scoping.
+  it('regression — a vida+mascotas cross-sell combo counts only the pet product\'s own pets, not one extra for vida', async () => {
+    const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+    const { service, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        selectedProductIds: [vidaProduct.id, 'asistencia-veterinaria'],
+        quoteProductId: vidaProduct.id,
+        petCount: 1,
+        pets: [{ name: 'Max', age: '3 años', breed: 'Labrador' }],
+        cedula: '123456789', nombre: 'Juan Pérez', email: 'juan@test.com',
+      },
+      intent: makeIntent({ isAffirmative: true }),
+    });
+    await service.handleMessage({});
+    // With 1 pet already collected and totalPetsForPurchase correctly excluding the
+    // vida product, this must proceed past pet-collection (to cédula/name/email, already
+    // set here, straight to confirmation) instead of getting stuck asking for a 2nd pet.
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.pets).toEqual([{ name: 'Max', age: '3 años', breed: 'Labrador' }]);
+  });
+});
+
 // ── DISCOVERY — productCategory inference + ages loop regression ──────────────
 
 describe('AgentService — DISCOVERY productCategory inference', () => {

@@ -1050,24 +1050,37 @@ export class AgentService {
       };
     }
 
-    // Narrow a combined multi-species quote to a single species when the user says
-    // "solo perros" / "solo gatos" after seeing the combined quote for both.
-    if (context.selectedProductIds && context.selectedProductIds.length > 1 && (intent.petResolution === 'gato' || intent.petResolution === 'perro')) {
-      const species = intent.petResolution;
-      const speciesProductId = species === 'gato' ? 'medicina-prepagada-gatos' : 'medicina-prepagada-perros';
-      const speciesProduct = PRODUCTS.find((p) => p.id === speciesProductId);
-      if (speciesProduct) {
-        return {
-          text: this.formatQuote(speciesProduct, { reasons: [], monthlyPremium: speciesProduct.basePremium }, context),
-          nextState: ConversationState.QUOTE_PRESENTED,
-          context: {
-            ...context,
-            petType: species,
-            selectedProductIds: [speciesProductId],
-            quoteProductId: speciesProductId,
-            shownProductIds: [...new Set([...(context.shownProductIds ?? []), speciesProductId])],
-          },
-        };
+    // Switch between species (or back to both) in a genuinely mixed household — "solo
+    // perros"/"solo gatos" after the combined quote, but ALSO switching again later
+    // ("solo gato" after already narrowing to perros, or "todos"/"ambos" to see the
+    // combined quote again). Real live-test bug (2026-07-26): this used to gate on
+    // `context.selectedProductIds.length > 1` — true only for the ORIGINAL combined
+    // quote, so once narrowed to a single species (selectedProductIds.length becomes 1),
+    // saying the OTHER species' name again just fell through and re-showed the SAME
+    // narrowed quote, with no way back to the other species or to "todos". Gating on
+    // `petSpeciesCounts` having BOTH species known — a fact that doesn't change when the
+    // user narrows — lets switching work at any point, not just from the very first turn.
+    if (context.petSpeciesCounts?.gato && context.petSpeciesCounts?.perro) {
+      if (intent.petResolution === 'all') {
+        return this.buildMixedSpeciesQuote(context);
+      }
+      if (intent.petResolution === 'gato' || intent.petResolution === 'perro') {
+        const species = intent.petResolution;
+        const speciesProductId = species === 'gato' ? 'medicina-prepagada-gatos' : 'medicina-prepagada-perros';
+        const speciesProduct = PRODUCTS.find((p) => p.id === speciesProductId);
+        if (speciesProduct) {
+          return {
+            text: this.formatQuote(speciesProduct, { reasons: [], monthlyPremium: speciesProduct.basePremium }, context),
+            nextState: ConversationState.QUOTE_PRESENTED,
+            context: {
+              ...context,
+              petType: species,
+              selectedProductIds: [speciesProductId],
+              quoteProductId: speciesProductId,
+              shownProductIds: [...new Set([...(context.shownProductIds ?? []), speciesProductId])],
+            },
+          };
+        }
       }
     }
 
@@ -1453,6 +1466,32 @@ export class AgentService {
     return context.petCount;
   }
 
+  // Real live-test bug (2026-07-26): the per-pet NAME/age/breed collection loop
+  // (firstDataCaptureQuestion, handleDataCapture below) used the raw combined
+  // `context.petCount` as "how many pets to collect" — same bug class as
+  // petCountForProduct above, but for pet name collection instead of pricing. After
+  // narrowing a mixed household ("1 gata + 2 perros") down to "solo perros" (a
+  // dogs-only purchase, selectedProductIds=['medicina-prepagada-perros']),
+  // context.petCount stayed at the stale combined total (3) — so the loop asked for 3
+  // pets' details instead of 2, sweeping the cat into a dogs-only policy's pet list.
+  // Sums petCountForProduct across every product actually in THIS purchase (both, for a
+  // genuine combined quote; just the one, once narrowed) instead of trusting the raw total.
+  private totalPetsForPurchase(context: ConversationContext): number {
+    const productIds = context.selectedProductIds?.length
+      ? context.selectedProductIds
+      : (context.quoteProductId ? [context.quoteProductId] : []);
+    // Only the mascotas product(s) in this purchase need pet details — a cross-sell
+    // combo (e.g. vida + asistencia-veterinaria) must not count the non-pet product
+    // toward "how many pets to collect" (petCountForProduct's own petCount fallback
+    // would otherwise add a phantom pet for every non-pet product in the purchase).
+    const products = productIds
+      .map((id) => PRODUCTS.find((p) => p.id === id))
+      .filter((p): p is InsuranceProduct => !!p && p.category === 'mascotas');
+    if (products.length === 0) return context.petCount ?? 1;
+    const total = products.reduce((sum, p) => sum + (this.petCountForProduct(context, p) ?? 1), 0);
+    return total || 1;
+  }
+
   private isValidHumanName(text: string): boolean {
     const trimmed = text.trim();
     return trimmed.length >= 2 && trimmed.length <= 80 && AgentService.NAME_REGEX.test(trimmed);
@@ -1510,7 +1549,7 @@ export class AgentService {
   // The real first DATA_CAPTURE question once identity verification (phone + selfie)
   // is done — per-pet details for a mascotas purchase, otherwise cédula.
   private firstDataCaptureQuestion(context: ConversationContext): string {
-    const totalPets = context.petCount ?? 1;
+    const totalPets = this.totalPetsForPurchase(context);
     return this.isPetSelected(context)
       ? `Para emitir la póliza necesito los datos de cada mascota (puedes contarme de todas a la vez o una por una). Mascota 1 de ${totalPets}: ¿nombre, edad y raza?`
       : STATE_RESPONSES[ConversationState.DATA_CAPTURE](context);
@@ -1712,7 +1751,7 @@ export class AgentService {
     // Accepts either one pet per message (petName/petAge/petBreed) or several at once
     // (pets[]) — the user can describe all their pets in one turn if they want to.
     if (this.isPetSelected(context)) {
-      const totalPets = context.petCount ?? 1;
+      const totalPets = this.totalPetsForPurchase(context);
       const pets = context.pets ?? [];
       if (pets.length < totalPets) {
         const extracted = (intent.pets && intent.pets.length > 0)
