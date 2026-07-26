@@ -199,12 +199,13 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     if (hasCatExt && !hasDogExt) intent.petResolution = 'gato';
     else if (hasDogExt && !hasCatExt) intent.petResolution = 'perro';
     else if (hasAll) intent.petResolution = 'all';
+    else if (hasCat && hasDog) intent.petResolution = null;
     // else: keep LLM's petResolution (could be null or a contextual guess like "perro" for "lomito")
 
     // Guardrail: infer productCategory when LLM returned null but petType or keywords are present.
     // LLMs often miss productCategory for short or context-dependent pet messages.
     if (!intent.productCategory) {
-      if (intent.petType || hasCat || hasDog || safeLower.includes('mascota')) {
+      if (intent.petType || hasCat || hasDog || hasAll || safeLower.includes('mascota')) {
         intent.productCategory = 'mascotas';
       }
     }
