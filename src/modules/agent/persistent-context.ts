@@ -15,8 +15,25 @@ import { ConversationContext } from './types';
 // authorization flow starts, never assumed) and `productCategory` (what someone wants
 // THIS time can differ from last time -- only the underlying facts that inform scoring
 // persist, not the last-asked category).
+//
+// 2026-07-26 -- also deliberately excludes `petType`, `petSpeciesCounts`, and `pets`
+// (real live-test bug, screenshot): these used to persist on the same "durable fact"
+// reasoning as dependents/budget, but that broke the very question they answer. Tapping
+// "Mi mascota" on a FRESH post-restart conversation set productCategory='mascotas' fresh
+// (never persisted, same as always) while a stale `petType` (e.g. narrowed to 'perro' by
+// an earlier, unrelated inquiry) and `petSpeciesCounts` from before silently survived --
+// together they satisfied every gate in handleDiscovery's mixto-clarification flow with
+// zero re-confirmation, jumping straight to a one-species quote for a species/count
+// breakdown the user never restated this conversation. Unlike dependents/budget/cedula
+// (facts about the PERSON that don't change turn to turn), petType/petSpeciesCounts/pets
+// describe THIS SPECIFIC inquiry's resolution -- exactly like productCategory, a fresh
+// mascota inquiry may legitimately differ (a different pet, a different species split)
+// and must always re-ask, never silently reuse. `petCount` (a plain total, often
+// pre-filled straight from the affiliate CSV's own PET_COUNT column -- a genuine
+// standalone fact about the person, not derived from this conversation) still persists;
+// it never gates or skips the species question on its own.
 const PERSISTENT_FIELDS = [
-  'petType', 'petCount', 'pets', 'petSpeciesCounts',
+  'petCount',
   'dependents', 'beneficiaries', 'budget',
   'cedula', 'documentType', 'nombre', 'email', 'phoneVerified', 'verifiedPhone',
   'hasCompletedPurchase', 'policyIds',

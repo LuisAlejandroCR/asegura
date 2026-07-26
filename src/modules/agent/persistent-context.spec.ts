@@ -2,9 +2,8 @@ import { pickPersistentFields, hasRememberedProfile, PERSISTENT_FIELDS } from '.
 import { ConversationContext } from './types';
 
 describe('pickPersistentFields', () => {
-  it('carries forward durable profile facts (pets, dependents, budget, KYC, purchase history)', () => {
+  it('carries forward durable profile facts (petCount, dependents, budget, KYC, purchase history)', () => {
     const context: ConversationContext = {
-      petType: 'gato',
       petCount: 2,
       dependents: 3,
       budget: 50000,
@@ -44,14 +43,14 @@ describe('pickPersistentFields', () => {
 
   it('mixes both correctly — only the persistent subset survives, unrelated session state is dropped', () => {
     const context: ConversationContext = {
-      petType: 'perro',
+      petCount: 2,
       dependents: 0,
       productCategory: 'mascotas',
       quoteProductId: 'medicina-prepagada-perros',
       awaitingPhoneVerification: true,
     };
     const result = pickPersistentFields(context);
-    expect(result).toEqual({ petType: 'perro', dependents: 0 });
+    expect(result).toEqual({ petCount: 2, dependents: 0 });
   });
 
   it('a real 0 value (e.g. dependents=0, "vivo solo") is preserved, not dropped as falsy', () => {
@@ -80,6 +79,23 @@ describe('pickPersistentFields', () => {
   it('deliberately excludes awaitingAffiliateId — a one-shot gate, not a durable fact', () => {
     expect(PERSISTENT_FIELDS).not.toContain('awaitingAffiliateId');
   });
+
+  // Real live-test bug (2026-07-26, screenshot): tapping "Mi mascota" on a FRESH
+  // restarted conversation jumped straight to a stale one-species quote with zero
+  // re-confirmation — petType (narrowed to 'perro' by an earlier, unrelated inquiry) and
+  // petSpeciesCounts silently satisfied every gate in handleDiscovery's mixto flow.
+  // Unlike dependents/budget/cedula (facts about the PERSON), these describe THIS
+  // SPECIFIC inquiry's resolution — same reasoning as productCategory above, a fresh
+  // mascota inquiry may legitimately differ and must always re-ask.
+  it('deliberately excludes petType, petSpeciesCounts, and pets — a fresh mascota inquiry must re-confirm species/counts, never silently reuse stale ones', () => {
+    expect(PERSISTENT_FIELDS).not.toContain('petType');
+    expect(PERSISTENT_FIELDS).not.toContain('petSpeciesCounts');
+    expect(PERSISTENT_FIELDS).not.toContain('pets');
+    // petCount (a plain total, often pre-filled from the affiliate CSV's own PET_COUNT
+    // column) is a genuine standalone fact and still persists — it never gates or skips
+    // the species question on its own.
+    expect(PERSISTENT_FIELDS).toContain('petCount');
+  });
 });
 
 describe('hasRememberedProfile', () => {
@@ -92,7 +108,7 @@ describe('hasRememberedProfile', () => {
   });
 
   it('true when any single persistent field is set', () => {
-    expect(hasRememberedProfile({ petType: 'gato' })).toBe(true);
+    expect(hasRememberedProfile({ petCount: 2 })).toBe(true);
   });
 
   it('true even when the only persistent fact is dependents=0 (a real, deliberate answer)', () => {
