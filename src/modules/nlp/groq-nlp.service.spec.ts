@@ -191,16 +191,16 @@ describe('GroqNlpService.postProcess — pet type detection', () => {
     expect(postProcess(service, intent, 'quiero el seguro').petType).toBe('gato');
   });
 
-  it('regression — resets mixto to null when text has no pet keywords ("para todos")', () => {
-    // Groq might return 'mixto' for "para todos" but there are no cat/dog keywords
-    // postProcess must reject this guess, otherwise the clarification loop re-triggers
+  // 2026-07-26 live-test bug: "ambos" was incorrectly nullified → re-asked first
+  // question. "todos", "para todos", "ambos" all mean "both types" — mixto is correct.
+  it('preserves mixto for "para todos" (means both types)', () => {
     const intent = baseMascotas('mixto');
-    expect(postProcess(service, intent, 'para todos').petType).toBeNull();
+    expect(postProcess(service, intent, 'para todos').petType).toBe('mixto');
   });
 
-  it('regression — resets mixto to null for bare "todos"', () => {
+  it('preserves mixto for bare "todos" (means both types)', () => {
     const intent = baseMascotas('mixto');
-    expect(postProcess(service, intent, 'todos').petType).toBeNull();
+    expect(postProcess(service, intent, 'todos').petType).toBe('mixto');
   });
 });
 

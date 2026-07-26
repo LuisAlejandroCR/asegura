@@ -180,16 +180,22 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     // left petType stuck at null — the mixto clarification never fired and the conversation
     // looped on the generic DISCOVERY question. Skip entirely when Groq set an unrelated,
     // explicit category (e.g. 'vida') — a passing mention of pets shouldn't hijack that.
+    const hasAll = safeLower.includes('todos') || safeLower.includes('ambos')
+      || safeLower.includes('los dos') || safeLower.includes('las dos') || safeLower.includes('para todos');
     if (intent.productCategory === 'mascotas' || intent.productCategory == null) {
       if (hasCat && hasDog) intent.petType = 'mixto';
       else if (hasCat) intent.petType = 'gato';
       else if (hasDog) intent.petType = 'perro';
-      else if (intent.petType === 'mixto') intent.petType = null;
+      // 2026-07-26 live-test bug: "Ambos" has no cat/dog keywords (hasCat=false,
+      // hasDog=false) so the mixto-nullification above would silently drop Groq's
+      // correct petType='mixto' — re-asking the question in a loop. "Ambos" (and
+      // "todos", "los dos", "las dos", "para todos") all mean "both types", so
+      // mixto is the right answer; only nullify when the LLM hallucinated a
+      // mixto without textual support.
+      else if (intent.petType === 'mixto' && !hasAll) intent.petType = null;
     }
     const hasCatExt = hasCat || safeLower.includes('gatita') || safeLower.includes('minino');
     const hasDogExt = hasDog || safeLower.includes('lomito') || safeLower.includes('peludo') || safeLower.includes('perrita');
-    const hasAll = safeLower.includes('todos') || safeLower.includes('ambos') || safeLower.includes('los dos') || safeLower.includes('las dos') || safeLower.includes('para todos');
-
     if (hasCatExt && !hasDogExt) intent.petResolution = 'gato';
     else if (hasDogExt && !hasCatExt) intent.petResolution = 'perro';
     else if (hasAll) intent.petResolution = 'all';
