@@ -3032,4 +3032,82 @@ describe('AgentService — terminal-state restart', () => {
     // No state transition — same terminal row, KYC data untouched.
     expect(conversations.saveState).not.toHaveBeenCalled();
   });
+
+  // 2026-07-26 persistent memory — "la siguiente conversación nunca debe empezar desde
+  // cero" (Diseño preguntas.docx). Durable profile facts survive an ABANDONED/REJECTED
+  // restart; session-scoped state (the quote in progress, one-shot gates) still resets.
+  describe('persistent memory across a restart', () => {
+    it('carries forward pets/dependents/budget/KYC/purchase-history facts, drops session-scoped state', async () => {
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.ABANDONED,
+        context: {
+          petType: 'gato',
+          dependents: 2,
+          budget: 40000,
+          cedula: '12345678',
+          nombre: 'Ana Torres',
+          email: 'ana@example.com',
+          phoneVerified: true,
+          hasCompletedPurchase: true,
+          policyIds: ['pol-1'],
+          // session-scoped — must NOT survive:
+          productCategory: 'mascotas',
+          quoteProductId: 'medicina-prepagada-gatos',
+          shownProductIds: ['medicina-prepagada-gatos'],
+          discoveryFilter: true,
+          askedDependents: true,
+          autorizado: true,
+        },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('¿sigues ahí?'));
+      await service.handleMessage({});
+      const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+      expect(savedContext).toEqual({
+        petType: 'gato',
+        dependents: 2,
+        budget: 40000,
+        cedula: '12345678',
+        nombre: 'Ana Torres',
+        email: 'ana@example.com',
+        phoneVerified: true,
+        hasCompletedPurchase: true,
+        policyIds: ['pol-1'],
+      });
+    });
+
+    it('the GREETING text acknowledges a remembered profile instead of a plain "¡Hola!"', async () => {
+      const { service, telegram } = buildService({
+        state: ConversationState.ABANDONED,
+        context: { petType: 'perro', dependents: 1 },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('sigo aquí'));
+      await service.handleMessage({});
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).toContain('perfil de una conversación anterior');
+    });
+
+    it('personalizes the greeting by first name when nombre survived the restart', async () => {
+      const { service, telegram } = buildService({
+        state: ConversationState.ABANDONED,
+        context: { nombre: 'Carlos Ramírez', phoneVerified: true },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('hola de nuevo'));
+      await service.handleMessage({});
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).toContain('¡Hola de nuevo, Carlos!');
+    });
+
+    it('a genuinely fresh profile (no persistent facts at all) keeps the plain, unpersonalized greeting', async () => {
+      const { service, telegram } = buildService({
+        state: ConversationState.ABANDONED,
+        context: { productCategory: 'vida' }, // session-scoped only, nothing persistent
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('sigo aquí'));
+      await service.handleMessage({});
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).not.toContain('perfil de una conversación anterior');
+      expect(sentText).not.toContain('¡Hola de nuevo');
+      expect(sentText).toContain('¡Hola!');
+    });
+  });
 });

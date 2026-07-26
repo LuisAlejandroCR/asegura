@@ -1,5 +1,6 @@
 import { ConversationState, ConversationContext } from './types';
 import { PRODUCTS } from '../quoting/products.data';
+import { hasRememberedProfile } from './persistent-context';
 
 type TransitionMap = Partial<Record<ConversationState, ConversationState[]>>;
 
@@ -36,11 +37,27 @@ export const STATE_RESPONSES: ResponsesMap = {
   // arrive with social-media attention spans and bounce. Combined into one short
   // message; the Ley 1581 disclosure is kept (legally required) but folded into a
   // parenthetical instead of its own centered paragraph.
-  [ConversationState.GREETING]: () =>
-    '¡Hola! Soy Asegura 🛡️ — encuentro tu seguro ideal en 3 minutos, sin formularios ni asesores.\n\n' +
-    'Para cotizarte necesito tu autorización para consultar tu perfil de afiliado ' +
-    '(*Ley 1581* · [política de datos](https://colsubsidio.com/transparencia-acceso-informacion/tratamiento-datos-personales)).\n\n' +
-    'Escríbeme *"sí"* para empezar.',
+  // 2026-07-26 persistent memory (Diseño preguntas.docx: "la siguiente conversación
+  // nunca debe empezar desde cero") — a returning user whose durable profile facts
+  // survived a restart (see persistent-context.ts) gets an honest acknowledgment: only
+  // ever states that SOME profile carried over, never invents specifics not actually in
+  // context (rule #12). Personalizes by first name when we already have it (KYC nombre
+  // survives restarts too) — same pattern already used in POLICY_ISSUED's greeting.
+  [ConversationState.GREETING]: (ctx) => {
+    const c = translate(ctx);
+    const firstName = c.nombre?.split(' ')[0];
+    const greetingLine = firstName ? `¡Hola de nuevo, ${firstName}!` : '¡Hola!';
+    const rememberedLine = hasRememberedProfile(c)
+      ? '\n\nYa tengo parte de tu perfil de una conversación anterior, así que esto debería ser más rápido.'
+      : '';
+    return (
+      `${greetingLine} Soy Asegura 🛡️ — encuentro tu seguro ideal en 3 minutos, sin formularios ni asesores.` +
+      rememberedLine + '\n\n' +
+      'Para cotizarte necesito tu autorización para consultar tu perfil de afiliado ' +
+      '(*Ley 1581* · [política de datos](https://colsubsidio.com/transparencia-acceso-informacion/tratamiento-datos-personales)).\n\n' +
+      'Escríbeme *"sí"* para empezar.'
+    );
+  },
 
   [ConversationState.AUTHORIZATION]: () =>
     '¿Autorizas el tratamiento de tus datos según la *Ley 1581 de 2012*? Escríbeme *"sí"* para continuar.\n\n' +

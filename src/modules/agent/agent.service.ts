@@ -7,6 +7,7 @@ import { NormalizedMessage } from '../channel/types';
 import { ConversationService } from './conversation.service';
 import { ConversationState, ConversationContext, PetDetail, DocumentType } from './types';
 import { STATE_RESPONSES, formatNameList } from './conversation-state.machine';
+import { pickPersistentFields } from './persistent-context';
 import { QuotingService } from '../quoting/quoting.service';
 import { PolicyService } from '../policy/policy.service';
 import { WompiService } from '../payments/wompi.service';
@@ -261,10 +262,17 @@ export class AgentService {
         // would force a paying customer to redo verification. Left on the keyword-only
         // path; a proper "resume as returning customer" flow is separate future scope.
         if (currentState === ConversationState.ABANDONED || currentState === ConversationState.REJECTED) {
+          // 2026-07-26 persistent memory (Diseño preguntas.docx: "la siguiente
+          // conversación nunca debe empezar desde cero") -- carry forward the durable
+          // profile facts (pets, dependents, budget, KYC, purchase history) instead of
+          // wiping to {}. Session-scoped state (the quote in progress, one-shot KYC
+          // gates, discoveryFilter, productCategory) still resets, since a fresh inquiry
+          // may want something different this time.
+          const remembered = pickPersistentFields(context);
           return {
-            text: STATE_RESPONSES[ConversationState.GREETING]({}),
+            text: STATE_RESPONSES[ConversationState.GREETING](remembered),
             nextState: ConversationState.GREETING,
-            context: {},
+            context: remembered,
           };
         }
         if (text.includes('hola') || text.includes('ayuda') || text.includes('inicio') || text === '/start') {
