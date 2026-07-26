@@ -198,6 +198,18 @@ interface ConversationContext {
   // persistent-context.ts — it describes THIS session's confusion, not a durable fact
   // about the person, so a restarted conversation starts the count fresh.
   consecutiveUnclearReplies?: number;
+  // Set when a pet-specific product has been exhausted and the waitlist offer is shown
+  // to the user ("no tenemos más oferta, ¿compartes tus datos?").
+  awaitingContactConsent?: boolean;
+  // Contact info collection flags for the waitlist flow — set sequentially as each field
+  // is collected (name → email → phone), before the conversation returns to QUOTE_PRESENTED.
+  awaitingContactName?: boolean;
+  awaitingContactEmail?: boolean;
+  awaitingContactPhone?: boolean;
+  // Captured contact info from the waitlist flow.
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
 }
 
 interface Conversation {

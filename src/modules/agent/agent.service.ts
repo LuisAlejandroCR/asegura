@@ -371,7 +371,30 @@ export class AgentService {
         if (context.awaitingAffiliateId) {
           return this.handleAffiliateId(context, text, rawText);
         }
-        if (intent.isAffirmative) {
+    // Handle contact consent response from the waitlist offer
+    if (context.awaitingContactConsent) {
+      if (intent.isAffirmative) {
+        return {
+          text: 'Genial, ¿cuál es tu nombre?',
+          nextState: ConversationState.DATA_CAPTURE,
+          context: { ...context, awaitingContactConsent: undefined, awaitingContactName: true },
+        };
+      }
+      if (intent.isNegative || intent.abandonIntent) {
+        const terminalState = context.hasCompletedPurchase
+          ? ConversationState.COMPLETED
+          : ConversationState.ABANDONED;
+        return {
+          text: STATE_RESPONSES[terminalState](context),
+          nextState: terminalState,
+        };
+      }
+      return {
+        text: 'No entendí. Si quieres, puedo guardar tus datos y avisarte cuando tengamos más opciones. ¿Te interesa? Responde "sí" o "no".',
+      };
+    }
+
+    if (intent.isAffirmative) {
           return {
             // 2026-07-26 (feedback): the "puedes responder por texto o audio" reassurance
             // moved up into GREETING itself (conversation-state.machine.ts) — saying it
@@ -952,6 +975,27 @@ export class AgentService {
       };
     }
 
+    // Narrow a combined multi-species quote to a single species when the user says
+    // "solo perros" / "solo gatos" after seeing the combined quote for both.
+    if (context.selectedProductIds && context.selectedProductIds.length > 1 && (intent.petResolution === 'gato' || intent.petResolution === 'perro')) {
+      const species = intent.petResolution;
+      const speciesProductId = species === 'gato' ? 'medicina-prepagada-gatos' : 'medicina-prepagada-perros';
+      const speciesProduct = PRODUCTS.find((p) => p.id === speciesProductId);
+      if (speciesProduct) {
+        return {
+          text: this.formatQuote(speciesProduct, { reasons: [], monthlyPremium: speciesProduct.basePremium }, context),
+          nextState: ConversationState.QUOTE_PRESENTED,
+          context: {
+            ...context,
+            petType: species,
+            selectedProductIds: [speciesProductId],
+            quoteProductId: speciesProductId,
+            shownProductIds: [...new Set([...(context.shownProductIds ?? []), speciesProductId])],
+          },
+        };
+      }
+    }
+
     // 2026-07-24 "restore the flow": a quote in progress is never interrupted by a
     // mention of a DIFFERENT category anymore — it's deferred until after this purchase
     // is fully paid and the policy is issued (see wompi-webhook.controller.ts
@@ -1051,6 +1095,14 @@ export class AgentService {
       // category still switches correctly (it requires a real keyword match via
       // detectAllMentionedCategories), but an ambiguous non-answer can no longer hijack
       // the conversation into a different category.
+      //
+      // 2026-07-26: when a pet-specific product is exhausted, offer the waitlist instead.
+      if (context.petType && context.productCategory === 'mascotas') {
+        return {
+          text: 'No tenemos más oferta en el momento. Si nos compartes tus datos te voy a avisar cuando la oferta aumente. ¿Te interesa?',
+          context: { ...context, awaitingContactConsent: true },
+        };
+      }
       return {
         text: 'No tengo más opciones en esta categoría. ¿Quieres que busquemos en otra?',
       };
@@ -1440,6 +1492,48 @@ export class AgentService {
     photo?: NormalizedMessage['photo'],
   ): Promise<ProcessResult> {
     const newContext: ConversationContext = { ...context };
+
+    // Step -2 — waitlist contact info collection (2026-07-26): when no more products
+    // are available for a pet species, the user can share their name/email/phone to be
+    // notified about future offers. Each field is collected one at a time; after all
+    // three are captured the conversation returns to QUOTE_PRESENTED.
+    if (context.awaitingContactName) {
+      const cleanedName = this.stripNamePreamble(rawText);
+      if (!this.isValidHumanName(cleanedName)) {
+        return { text: '¿Cuál es tu nombre completo?', context };
+      }
+      return {
+        text: 'Gracias. ¿Cuál es tu correo electrónico?',
+        context: { ...context, contactName: cleanedName, awaitingContactName: undefined, awaitingContactEmail: true },
+      };
+    }
+    if (context.awaitingContactEmail) {
+      const normalizedEmail = this.normalizeSpokenEmail(rawText);
+      if (!/\S+@\S+\.\S+/.test(normalizedEmail)) {
+        const hint = normalizedEmail.includes('@')
+          ? ''
+          : ' Si lo dictas por voz, recuerda decir "arroba" donde va el @.';
+        return { text: `¿Cuál es tu correo electrónico?${hint}`, context };
+      }
+      return {
+        text: 'Perfecto. Por último, ¿cuál es tu número de teléfono?',
+        context: { ...context, contactEmail: normalizedEmail, awaitingContactEmail: undefined, awaitingContactPhone: true },
+      };
+    }
+    if (context.awaitingContactPhone) {
+      const phone = rawText.replace(/\D/g, '');
+      if (phone.length < 7) {
+        return { text: '¿Cuál es tu número de teléfono? Debe tener al menos 7 dígitos.', context };
+      }
+      const terminalState = context.hasCompletedPurchase
+        ? ConversationState.COMPLETED
+        : ConversationState.ABANDONED;
+      return {
+        text: 'Listo ✅ Te avisaremos cuando tengamos nuevas opciones. Si cambias de opinión mientras tanto, aquí estoy.',
+        nextState: terminalState,
+        context: { ...context, contactPhone: phone, awaitingContactPhone: undefined },
+      };
+    }
 
     // Step -1 — identity verification (2026-07-24 KYC feedback). Set up by
     // handleQuotation's isAffirmative branch, which shows the contact-share button
