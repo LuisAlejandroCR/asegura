@@ -297,6 +297,26 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       intent.isAffirmative = true;
     }
 
+    // Real live-test bug (2026-07-26): the floor above still missed "Quiero ese." (no
+    // question mark) — Groq itself occasionally classifies this as wantsAlternative
+    // instead (its own few-shot example for wantsAlternative includes the phrase "no
+    // ese, otro", which plausibly confuses the model into reading "ese" as wanting a
+    // DIFFERENT option rather than confirming the one just shown), and the floor's own
+    // `!intent.wantsAlternative` guard then blocks it from ever correcting course. This
+    // always wins, overriding wantsAlternative too — but unlike a standalone "sí?", it is
+    // NOT exempt from the question-mark rule: "¿Quiero ese?" stays a genuine question
+    // (existing, deliberate behavior — see the test right below this comment's sibling in
+    // the spec file), and "no quiero ese" stays an explicit decline, never a confirmation.
+    if (
+      this.isDeicticConfirmationText(text)
+      && !text.includes('?') && !text.includes('¿')
+      && !this.deniesDesireText(lower)
+    ) {
+      intent.isAffirmative = true;
+      intent.wantsAlternative = false;
+      intent.isNegative = false;
+    }
+
     // Not in Groq's JSON schema — this deterministic extraction is the only source.
     intent.dependents = this.extractDependents(lower);
 
@@ -351,6 +371,20 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
 
   private deniesDesireText(lower: string): boolean {
     return GroqNlpService.DENIED_DESIRE_PATTERN.test(lower);
+  }
+
+  // Real live-test bug (2026-07-26): "Quiero ese." / "¿Quiero ese?" — a common Colombian
+  // way to confirm the option just shown — got the quote card re-shown instead of
+  // advancing, same family as "dame ese"/"deme ese" (already covered by
+  // isAffirmativeText's substring list in the fallback path) but not reliably enough in
+  // the primary Groq path, where the model can misclassify it as wantsAlternative
+  // instead (see the override in postProcess for why). Matched on raw, case-preserved
+  // text (not lowercased) since callers already pass either — `\b` word boundaries mean
+  // case doesn't change what matches, only the `i` flag does.
+  private static readonly DEICTIC_CONFIRMATION_PATTERN = /\b(?:dame|deme|quiero)\s+es[ae]\b/i;
+
+  private isDeicticConfirmationText(text: string): boolean {
+    return GroqNlpService.DEICTIC_CONFIRMATION_PATTERN.test(text);
   }
 
   // 2026-07-26 — deterministic answer extraction for the new DISCOVERY "¿cuántas
@@ -438,6 +472,15 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     // below, so it could leave isAffirmative=true on an explicit decline. Deterministic
     // override always wins, same policy as the DENIAL_PATTERN pet-species fix above.
     const deniesDesire = this.deniesDesireText(lower);
+    // "Quiero ese"/"dame ese"/"deme ese" always wins — see the fuller comment on
+    // isDeicticConfirmationText/postProcess for why this needs its own override even
+    // though 'quiero'/'dame'/'deme' are already plain isAffirmativeText keywords: it also
+    // forces wantsAlternative/isNegative off. Same two exclusions as postProcess: NOT
+    // exempt from the question-mark rule ("¿Quiero ese?" stays a genuine question), and
+    // never fires on an explicit decline ("no quiero ese").
+    const isDeicticConfirmation = this.isDeicticConfirmationText(text)
+      && !text.includes('?') && !text.includes('¿')
+      && !deniesDesire;
 
     return {
       productCategory: category,
@@ -450,11 +493,11 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       priceObjection: lower.includes('caro') || lower.includes('precio'),
       dependents: this.extractDependents(lower),
       // A question mark means the user is asking, not confirming — see postProcess for context.
-      isAffirmative: this.isAffirmativeText(lower)
+      isAffirmative: isDeicticConfirmation || (this.isAffirmativeText(lower)
         && (!lower.includes('?') && !lower.includes('¿') || GroqNlpService.hasStandaloneSi(lower))
-        && !deniesDesire,
-      isNegative: this.isNegativeText(lower) || deniesDesire,
-      wantsAlternative: this.wantsAlternativeText(lower),
+        && !deniesDesire),
+      isNegative: !isDeicticConfirmation && (this.isNegativeText(lower) || deniesDesire),
+      wantsAlternative: !isDeicticConfirmation && this.wantsAlternativeText(lower),
       petResolution: this.extractPetResolution(lower),
       petName: this.extractPetName(text),
       petAge: this.extractPetAge(lower),

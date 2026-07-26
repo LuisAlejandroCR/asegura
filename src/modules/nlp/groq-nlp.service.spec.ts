@@ -707,6 +707,27 @@ describe('GroqNlpService.postProcess — positive confirmation deterministic flo
     expect(result.isAffirmative).toBe(false);
     expect(result.wantsAlternative).toBe(true);
   });
+
+  // Real live-test bug (2026-07-26, screenshot): the floor above requires
+  // `!intent.wantsAlternative` to fire, but Groq occasionally ALSO misclassifies
+  // "Quiero ese." with wantsAlternative=true — its own few-shot example for
+  // wantsAlternative literally contains the phrase "no ese, otro", a plausible source of
+  // confusion for an 8B model reading "ese" as wanting a DIFFERENT option. That blocked
+  // the floor from ever correcting course, leaving the quote card re-shown identically
+  // instead of advancing to phone verification. A deictic confirmation this unambiguous
+  // must override wantsAlternative too, not just be blocked by it.
+  it('regression — "Quiero ese." forces isAffirmative=true even when Groq ALSO wrongly set wantsAlternative=true', () => {
+    const wronglyWantsAlternative: InsuranceIntent = { ...wronglyNegative(), wantsAlternative: true };
+    const result = postProcess(service, wronglyWantsAlternative, 'Quiero ese.');
+    expect(result.isAffirmative).toBe(true);
+    expect(result.wantsAlternative).toBe(false);
+  });
+
+  it('regression — "dame ese"/"deme ese" also override a wrongly-set wantsAlternative=true', () => {
+    const wronglyWantsAlternative: InsuranceIntent = { ...wronglyNegative(), wantsAlternative: true };
+    expect(postProcess(service, wronglyWantsAlternative, 'Dame ese').isAffirmative).toBe(true);
+    expect(postProcess(service, wronglyWantsAlternative, 'Deme ese').wantsAlternative).toBe(false);
+  });
 });
 
 describe('GroqNlpService.fallbackIntent — negated desire deterministic override (2026-07-26 live bug)', () => {
@@ -949,8 +970,32 @@ describe('GroqNlpService.fallbackIntent — deictic confirmations ("dame ese", "
     'Dame ese',
     'dame ese',
     'Deme ese',
+    // "quiero ese" was named in this describe block's own title since 2026-07-24 but
+    // never actually tested — a real gap, closed 2026-07-26.
+    'Quiero ese',
+    'quiero ese',
+    'Quiero esa',
   ])('"%s" → isAffirmative true', (text) => {
     expect(fallback(service, text).isAffirmative).toBe(true);
+  });
+
+  it('"¿Quiero ese?" stays a genuine question, not a confirmation (not exempt from the question-mark rule, unlike a standalone "sí?")', () => {
+    expect(fallback(service, '¿Quiero ese?').isAffirmative).toBe(false);
+  });
+
+  it('"no quiero ese" is an explicit decline, never forced to a confirmation', () => {
+    const result = fallback(service, 'no quiero ese');
+    expect(result.isAffirmative).toBe(false);
+    expect(result.isNegative).toBe(true);
+  });
+
+  // Real live-test bug (2026-07-26, screenshot): the deictic-confirmation override must
+  // win over wantsAlternativeText too — nothing in "quiero ese"/"dame ese" itself would
+  // trip wantsAlternativeText, but this guards the override's own completeness the same
+  // way the postProcess regression test does for the primary path.
+  it('regression — the deictic confirmation also forces wantsAlternative to false', () => {
+    expect(fallback(service, 'Quiero ese').wantsAlternative).toBe(false);
+    expect(fallback(service, 'Dame ese').wantsAlternative).toBe(false);
   });
 });
 
