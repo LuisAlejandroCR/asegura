@@ -121,15 +121,21 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
 
   private postProcess(intent: InsuranceIntent, text: string): InsuranceIntent {
     const lower = text.toLowerCase();
+    // Real live-test bug (2026-07-26): "no tengo gatos" (a live correction, DENYING a
+    // pet) matched the exact same substring check as actually having one — every
+    // keyword test below was blind to a preceding negation. Strip explicit denial
+    // phrases ("no tengo/tenía X", "sin X", "ningún/ninguna X") before any keyword
+    // check in this method, so a correction no longer reads as a confirmation.
+    const safeLower = GroqNlpService.stripDeniedPets(lower);
     // "gatica"/"gatita"/"minino" were only recognized a few lines below (hasCatExt, for
     // petResolution) — missing here silently overrode a correct mixto classification back
     // to a single species, dropping a pet entirely from a multi-pet quote (real bug).
-    const hasCat = lower.includes('gato') || lower.includes('gata') || lower.includes('gatic') || lower.includes('michi') || lower.includes('felino') || lower.includes('minino');
+    const hasCat = safeLower.includes('gato') || safeLower.includes('gata') || safeLower.includes('gatic') || safeLower.includes('michi') || safeLower.includes('felino') || safeLower.includes('minino');
     // "perrit" covers perrito/perrita/perritos/perritas — the extremely common
     // affectionate diminutive for dogs, especially in casual voice messages. Real
     // live-test bug: "Somos dos perritos, una gata y yo." matched no dog keyword at all
     // (not a substring of "perro"), silently classifying a mixed household as cats-only.
-    const hasDog = lower.includes('perro') || lower.includes('perra') || lower.includes('canino') || lower.includes('perrit');
+    const hasDog = safeLower.includes('perro') || safeLower.includes('perra') || safeLower.includes('canino') || safeLower.includes('perrit');
 
     // petType from keywords: runs when Groq already classified this as mascotas, OR when
     // Groq returned productCategory=null (ambiguous) and the text itself names a pet.
@@ -144,9 +150,9 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       else if (hasDog) intent.petType = 'perro';
       else if (intent.petType === 'mixto') intent.petType = null;
     }
-    const hasCatExt = hasCat || lower.includes('gatita') || lower.includes('minino');
-    const hasDogExt = hasDog || lower.includes('lomito') || lower.includes('peludo') || lower.includes('perrita');
-    const hasAll = lower.includes('todos') || lower.includes('ambos') || lower.includes('los dos') || lower.includes('las dos') || lower.includes('para todos');
+    const hasCatExt = hasCat || safeLower.includes('gatita') || safeLower.includes('minino');
+    const hasDogExt = hasDog || safeLower.includes('lomito') || safeLower.includes('peludo') || safeLower.includes('perrita');
+    const hasAll = safeLower.includes('todos') || safeLower.includes('ambos') || safeLower.includes('los dos') || safeLower.includes('las dos') || safeLower.includes('para todos');
 
     if (hasCatExt && !hasDogExt) intent.petResolution = 'gato';
     else if (hasDogExt && !hasCatExt) intent.petResolution = 'perro';
@@ -156,7 +162,7 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     // Guardrail: infer productCategory when LLM returned null but petType or keywords are present.
     // LLMs often miss productCategory for short or context-dependent pet messages.
     if (!intent.productCategory) {
-      if (intent.petType || hasCat || hasDog || lower.includes('mascota')) {
+      if (intent.petType || hasCat || hasDog || safeLower.includes('mascota')) {
         intent.productCategory = 'mascotas';
       }
     }
@@ -243,6 +249,19 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     return /(^|[^a-záéíóúñ])s[íi]($|[^a-záéíóúñ])/i.test(text);
   }
 
+  // Real live-test bug (2026-07-26): "No, pero no tengo gatos. No sé por qué pensaste
+  // que tenía gatos..." — an explicit correction — kept getting read as CONFIRMING a
+  // cat, because every pet-keyword check in this file was a bare substring test with no
+  // awareness of a preceding negation. Strips "no tengo/tenía X", "sin X", and
+  // "ningún/ninguna X" (X = a pet species word) before any keyword match runs, so a
+  // denial no longer contains the species word for those checks to find.
+  private static readonly DENIAL_PATTERN =
+    /\b(?:no\s+ten(?:go|ía|ia)|sin|ning[uú]n|ninguna)\s+(?:un\s+|una\s+)?(?:gatos?|gatas?|perros?|perras?|mascotas?|caninos?|felinos?)\b/gi;
+
+  private static stripDeniedPets(text: string): string {
+    return text.replace(GroqNlpService.DENIAL_PATTERN, ' ');
+  }
+
   // Real live-test bug (2026-07-24): "Somos dos perritos, una gata y yo." matched
   // nothing — the noun alternation only covered the masculine/canonical "perro(s)" and
   // "gato(s)" forms, missing the feminine ("perra", "gata") and the extremely common
@@ -263,6 +282,10 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
 
   private fallbackIntent(text: string): InsuranceIntent {
     const lower = text.toLowerCase();
+    // Same negation fix as postProcess above — "no tengo gatos" must not classify as
+    // the mascotas category (or 'gato' species) just because "gato" appears as a
+    // substring of the denial itself.
+    const safeLower = GroqNlpService.stripDeniedPets(lower);
     const categories: Record<string, InsuranceIntent['productCategory']> = {
       vida: 'vida', hogar: 'hogar', casa: 'hogar',
       accidente: 'accidentes', asistencia: 'asistencia',
@@ -277,13 +300,13 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     };
     let category: InsuranceIntent['productCategory'] = null;
     for (const [key, val] of Object.entries(categories)) {
-      if (lower.includes(key)) { category = val; break; }
+      if (safeLower.includes(key)) { category = val; break; }
     }
 
     let petType: InsuranceIntent['petType'] = null;
     if (category === 'mascotas') {
-      const hasCat = lower.includes('gato') || lower.includes('gata') || lower.includes('gatic') || lower.includes('michi') || lower.includes('felino') || lower.includes('minino');
-      const hasDog = lower.includes('perro') || lower.includes('canino') || lower.includes('perrit');
+      const hasCat = safeLower.includes('gato') || safeLower.includes('gata') || safeLower.includes('gatic') || safeLower.includes('michi') || safeLower.includes('felino') || safeLower.includes('minino');
+      const hasDog = safeLower.includes('perro') || safeLower.includes('canino') || safeLower.includes('perrit');
       if (hasCat && hasDog) petType = 'mixto';
       else if (hasCat) petType = 'gato';
       else if (hasDog) petType = 'perro';

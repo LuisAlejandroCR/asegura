@@ -122,6 +122,43 @@ describe('GroqNlpService.postProcess — pet type detection', () => {
   });
 });
 
+// Real live-test bug (screenshot, 2026-07-25/26): "No, pero no tengo gatos. No sé por
+// qué pensaste que tenía gatos..." — an explicit correction DENYING a pet — kept getting
+// read as CONFIRMING a cat, because hasCat/hasDog were bare substring checks with no
+// awareness of a preceding negation. "no tengo gatos" contains "gato" just like "tengo
+// un gato" does.
+describe('GroqNlpService.postProcess — negated pet mentions are not confirmations (2026-07-26 live bug)', () => {
+  const service = makeService();
+
+  it('does not set petType gato for "no tengo gatos"', () => {
+    expect(postProcess(service, baseMascotas(), 'no tengo gatos').petType).toBeNull();
+  });
+
+  it('does not set petType perro for "no tengo perros"', () => {
+    expect(postProcess(service, baseMascotas(), 'no tengo perros').petType).toBeNull();
+  });
+
+  it('does not infer productCategory mascotas from "no tengo mascotas"', () => {
+    const intent: InsuranceIntent = { productCategory: null, petType: null, coverage: [], beneficiaries: 1, urgency: 'exploring', isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null };
+    expect(postProcess(service, intent, 'no tengo mascotas').productCategory).toBeNull();
+  });
+
+  it('still confirms the OTHER species when denying one ("no tengo gatos, tengo perros")', () => {
+    expect(postProcess(service, baseMascotas(), 'no tengo gatos, tengo perros').petType).toBe('perro');
+  });
+
+  it('a real denial does not overwrite an already-confirmed opposite species from context', () => {
+    // Regression guard: denying cats while Groq/context already says perro must not
+    // reset petType to null via the "no keywords found" branch below it.
+    const intent = baseMascotas('perro');
+    expect(postProcess(service, intent, 'no tengo gatos').petType).toBe('perro');
+  });
+
+  it('still recognizes an affirmative mention elsewhere in the same message ("sin gatos, pero con un perro")', () => {
+    expect(postProcess(service, baseMascotas(), 'sin gatos, pero con un perro').petType).toBe('perro');
+  });
+});
+
 describe('GroqNlpService.fallbackIntent — intent extraction', () => {
   const service = makeService();
 
@@ -161,6 +198,17 @@ describe('GroqNlpService.fallbackIntent — intent extraction', () => {
 
   it('regression — detects mixto in fallback for the "perrito"/"perritos" diminutive', () => {
     expect(fallback(service, 'somos dos perritos, una gata y yo').petType).toBe('mixto');
+  });
+
+  // Same 2026-07-26 live bug as postProcess above, but on the path used when Groq's API
+  // itself is unreachable — "no tengo gatos" must not fall back to classifying mascotas/
+  // gato just because "gato" is a substring of the denial.
+  it('regression — "no tengo gatos" does not classify as mascotas category', () => {
+    expect(fallback(service, 'no tengo gatos').productCategory).toBeNull();
+  });
+
+  it('regression — "no tengo perros" does not set petType perro', () => {
+    expect(fallback(service, 'no tengo perros, pero sí quiero un seguro de vida').productCategory).toBe('vida');
   });
 
   it('returns null productCategory for unrelated text', () => {

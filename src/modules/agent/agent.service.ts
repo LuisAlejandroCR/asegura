@@ -453,6 +453,30 @@ export class AgentService {
       };
     }
 
+    // Real live-test bug (screenshot, 2026-07-25/26): "No, pero no tengo gatos. No sé
+    // por qué pensaste que tenía gatos..." while a gato-specific quote was showing got
+    // the IDENTICAL quote re-shown verbatim — this multi-clause correction didn't trip
+    // Groq's own isNegative/isAffirmative/wantsAlternative classification (none of the
+    // branches below fired), so it fell through to the generic re-show at the bottom.
+    // An explicit "no tengo <the exact species just quoted>" is unambiguous regardless
+    // of what the LLM extracted — same override policy as abandonIntent above. Resets
+    // petType/coverage/the quote itself so DISCOVERY re-asks cleanly instead of
+    // insisting on an assumption the user just corrected.
+    if (currentProduct?.category === 'mascotas' && context.petType && this.deniesCurrentPetType(text, context.petType)) {
+      return {
+        text: '¡Perdón por la confusión! Cuéntame — ¿qué mascota tienes entonces?',
+        nextState: ConversationState.DISCOVERY,
+        context: {
+          ...context,
+          petType: undefined,
+          petSpeciesCounts: undefined,
+          coverage: undefined,
+          quoteProductId: undefined,
+          shownProductIds: undefined,
+        },
+      };
+    }
+
     // 2026-07-24 "restore the flow": a quote in progress is never interrupted by a
     // mention of a DIFFERENT category anymore — it's deferred until after this purchase
     // is fully paid and the policy is issued (see wompi-webhook.controller.ts
@@ -584,6 +608,16 @@ export class AgentService {
     const personalPhrases = ['para mí', 'para mi', 'y yo'];
     const humanCategories = ['vida', 'accidentes', 'accidente', 'salud', 'hogar'];
     return personalPhrases.some((p) => text.includes(p)) || humanCategories.some((c) => text.includes(c));
+  }
+
+  // "no tengo gatos" (or perros) explicitly denies the species the CURRENT quote
+  // assumes — checked against whichever species that actually is, not a fixed list, so
+  // it only fires when it's actually relevant to what's on screen right now. `text` is
+  // already lowercased (handleMessage passes lowerText in), so no case-folding needed.
+  private deniesCurrentPetType(text: string, petType: 'gato' | 'perro' | 'mixto'): boolean {
+    if (petType === 'mixto') return false;
+    const words = petType === 'gato' ? ['gato', 'gatos', 'gata', 'gatas'] : ['perro', 'perros', 'perra', 'perras'];
+    return text.includes('no tengo') && words.some((w) => text.includes(w));
   }
 
   // Scans the raw text for EVERY category keyword group present, not just the first

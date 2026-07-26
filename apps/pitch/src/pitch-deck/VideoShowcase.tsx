@@ -87,7 +87,7 @@ function VideoShowcase({ step, active }: VideoShowcaseProps) {
           textAlign: 'center',
         }}
       >
-        Paso {step + 1}
+        
       </div>
     </div>
   );

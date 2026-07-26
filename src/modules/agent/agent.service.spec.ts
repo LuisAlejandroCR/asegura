@@ -1652,6 +1652,59 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     );
   });
 
+  // Real live-test bug (screenshot, 2026-07-25/26): "No, pero no tengo gatos. No sé por
+  // qué pensaste que tenía gatos..." while a gato-specific quote was showing got the
+  // IDENTICAL quote card re-shown verbatim — this nuanced, multi-clause correction
+  // didn't trip Groq's own isAffirmative/isNegative/wantsAlternative classification
+  // (simulated here with a neutral intent, matching what actually shipped), so nothing
+  // caught it and it fell through to the generic re-show. An explicit "no tengo <the
+  // species just quoted>" must now pivot back to DISCOVERY instead, regardless of what
+  // the LLM classified the message as.
+  describe('QUOTE_PRESENTED — explicit denial of the currently-quoted pet species (2026-07-26 live bug)', () => {
+    it('regression — "no tengo gatos" while a gato quote is showing pivots to DISCOVERY instead of re-showing the same quote', async () => {
+      const { service, telegram, conversations, quoting } = buildService({
+        state: ConversationState.QUOTE_PRESENTED,
+        context: { quoteProductId: 'medicina-prepagada-gatos', productCategory: 'mascotas', petType: 'gato' },
+        intent: makeIntent({ isNegative: false, isAffirmative: false, wantsAlternative: false }),
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('no, pero no tengo gatos. no sé por qué pensaste que tenía gatos'));
+      await service.handleMessage({});
+      expect(quoting.score).not.toHaveBeenCalled();
+      expect(conversations.saveState).toHaveBeenCalledWith(
+        'conv-1',
+        ConversationState.DISCOVERY,
+        expect.objectContaining({ petType: undefined, quoteProductId: undefined }),
+      );
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).not.toMatch(/gatos/i);
+    });
+
+    it('regression — "no tengo perros" while a perro quote is showing also pivots to DISCOVERY', async () => {
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.QUOTE_PRESENTED,
+        context: { quoteProductId: 'medicina-prepagada-perros', productCategory: 'mascotas', petType: 'perro' },
+        intent: makeIntent({ isNegative: false, isAffirmative: false, wantsAlternative: false }),
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('no tengo perros'));
+      await service.handleMessage({});
+      expect(conversations.saveState).toHaveBeenCalledWith(
+        'conv-1', ConversationState.DISCOVERY, expect.anything(),
+      );
+    });
+
+    it('does not fire when the species mentioned matches what is already quoted ("sí, tengo un gato")', async () => {
+      const { service, conversations } = buildService({
+        state: ConversationState.QUOTE_PRESENTED,
+        context: { quoteProductId: 'medicina-prepagada-gatos', productCategory: 'mascotas', petType: 'gato' },
+        intent: makeIntent({ isAffirmative: true }),
+      });
+      await service.handleMessage({});
+      expect(conversations.saveState).not.toHaveBeenCalledWith(
+        'conv-1', ConversationState.DISCOVERY, expect.anything(),
+      );
+    });
+  });
+
   // Real live-test bug (screenshot, 2026-07-25): user said "salir" then "terminar" right
   // after a quote was shown, and got the IDENTICAL quote card re-shown verbatim both
   // times, with zero acknowledgment. Root cause: handleQuotation never checked
