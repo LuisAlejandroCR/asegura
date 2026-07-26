@@ -132,7 +132,7 @@ export function Slide2Solucion(_: SlideProps) {
           ✓ Agente conversacional activo
         </span>
         <span style={{ background: '#FFD700', color: '#003087', borderRadius: 20, padding: '8px 20px', fontSize: 13, fontWeight: 600 }}>
-          🇨🇴 Para cualquier colombiano mayor de edad
+          Para cualquier colombiano mayor de edad
         </span>
       </div>
     </div>
