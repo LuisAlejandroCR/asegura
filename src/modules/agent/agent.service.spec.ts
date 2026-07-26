@@ -2792,6 +2792,41 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     expect(sentText).not.toContain('245.400');
   });
 
+  // Real live-test bug (2026-07-26, screenshot): after narrowing a mixto household
+  // ("1 gato + 1 perro") down to "solo gato" (petType: 'gato'), asking for "otro"
+  // surfaced asistencia-veterinaria (eligibility.pet: 'any') priced against the STALE
+  // combined petCount (2) instead of the narrowed single species (1) — the transcript
+  // showed "📊 Total para 2 mascotas: $29.000/mes" for a quote the user explicitly asked
+  // to be "solo para el gato" (just the cat). petCountForProduct only special-cased
+  // gato/perro-RESTRICTED products; an 'any'-eligibility product fell through to the raw
+  // combined petCount, ignoring the narrowing entirely.
+  it('regression — an "otro" alternative with eligibility.pet="any" respects a narrowed single-species petType, not the stale combined petCount', async () => {
+    const gatoProduct = PRODUCTS.find(p => p.id === 'medicina-prepagada-gatos')!;
+    const vetProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
+    expect(vetProduct.eligibility.pet).toBe('any');
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: {
+        quoteProductId: gatoProduct.id,
+        shownProductIds: [gatoProduct.id],
+        petType: 'gato', // narrowed from mixto via "solo gato"
+        petCount: 2, // stale combined total from the original "un gato y un perro"
+        petSpeciesCounts: { gato: 1, perro: 1 },
+        productCategory: 'mascotas',
+      },
+      intent: makeIntent({ wantsAlternative: true }),
+    });
+    quoting.score.mockReturnValue([
+      { productId: vetProduct.id, matchScore: 70, reasons: ['Desde $14.500/mes'], monthlyPremium: vetProduct.basePremium, priority: 'medium' },
+    ]);
+    telegram.normalize.mockResolvedValue(makeMessage('otro'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('$14.500/mes por mascota');
+    expect(sentText).not.toContain('Total para');
+    expect(sentText).not.toContain('29.000');
+  });
+
   it('"el gato" after mixto clarification sets petType gato', async () => {
     const { service, telegram, conversations, quoting } = buildService({
       state: ConversationState.DISCOVERY,
@@ -3771,7 +3806,7 @@ describe('AgentService — 30s reminder scheduling', () => {
 // said. Live screenshot: two different follow-up questions in a row both got "Entendido.
 // Cuando quieras retomar, aquí estoy — 24/7, sin esperas." verbatim.
 describe('AgentService — terminal-state restart', () => {
-  it('restarts to GREETING on an ordinary follow-up message when state is ABANDONED, not just on a greeting keyword', async () => {
+  it('restarts (shows the GREETING text) on an ordinary follow-up message when state is ABANDONED, not just on a greeting keyword', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.ABANDONED,
       context: { productCategory: 'mascotas', abandonReason: 'no_response' },
@@ -3781,10 +3816,14 @@ describe('AgentService — terminal-state restart', () => {
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).not.toContain('Entendido');
     expect(sentText).toContain('Asegura');
-    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.GREETING, {});
+    // 2026-07-26 fix: nextState is AUTHORIZATION, not GREETING — the GREETING text already
+    // folds in the authorization ask (same one-shot pattern as case GREETING itself), so
+    // routing back through GREETING again would repeat that same text a second time on
+    // the user's very next message (see the regression test below).
+    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.AUTHORIZATION, {});
   });
 
-  it('restarts to GREETING on an ordinary follow-up message when state is REJECTED', async () => {
+  it('restarts (shows the GREETING text) on an ordinary follow-up message when state is REJECTED', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.REJECTED,
       context: { autorizado: false },
@@ -3793,14 +3832,41 @@ describe('AgentService — terminal-state restart', () => {
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).not.toContain('Entendido');
-    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.GREETING, {});
+    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.AUTHORIZATION, {});
   });
 
   it('still restarts via the 4 greeting keywords on ABANDONED (unchanged behavior)', async () => {
     const { service, telegram, conversations } = buildService({ state: ConversationState.ABANDONED });
     telegram.normalize.mockResolvedValue(makeMessage('hola'));
     await service.handleMessage({});
-    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.GREETING, expect.anything());
+    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.AUTHORIZATION, expect.anything());
+  });
+
+  // Real live-test bug (2026-07-26, screenshot): after "Hola." restarted an ABANDONED
+  // conversation, the user's very next message — even an immediate "Sí." — got the
+  // IDENTICAL "¡Hola!... Escríbeme 'sí' para empezar." text a second time before the
+  // authorization question was ever actually evaluated, forcing a THIRD message just to
+  // move past it. Root cause: the restart handler rendered GREETING's text (which already
+  // asks for authorization) but set nextState back to GREETING, so the next turn re-ran
+  // case GREETING and rendered the exact same text again.
+  it('regression — does not repeat the GREETING/authorization text on the message right after a restart', async () => {
+    const { service, telegram, conversations } = buildService({ state: ConversationState.ABANDONED });
+    telegram.normalize.mockResolvedValue(makeMessage('Hola.'));
+    await service.handleMessage({});
+    const firstText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(firstText).toContain('Escríbeme');
+
+    const restartedState = conversations.saveState.mock.calls[0]?.[1] as ConversationState;
+    const restartedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    const { service: service2, telegram: telegram2 } = buildService({
+      state: restartedState,
+      context: restartedContext,
+    });
+    telegram2.normalize.mockResolvedValue(makeMessage('Sí.'));
+    await service2.handleMessage({});
+    const secondText = telegram2.sendText.mock.calls[0]?.[1] as string;
+    expect(secondText).not.toContain('¡Hola!');
+    expect(secondText).toContain('Ingresa tu ID');
   });
 
   it('does NOT restart COMPLETED on an ordinary message — still requires an exact greeting keyword (deliberately deferred scope)', async () => {

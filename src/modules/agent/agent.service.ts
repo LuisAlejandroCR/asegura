@@ -413,10 +413,19 @@ export class AgentService {
           // wiping to {}. Session-scoped state (the quote in progress, one-shot KYC
           // gates, discoveryFilter, productCategory) still resets, since a fresh inquiry
           // may want something different this time.
+          // Real live-test bug (2026-07-26, screenshot): this rendered the GREETING text
+          // (which already folds in the authorization ask, same as case GREETING below)
+          // but set nextState back to GREETING instead of AUTHORIZATION — so the user's
+          // very next message (even an immediate "sí") got routed through case GREETING
+          // again, which re-renders the IDENTICAL text a second time before finally
+          // reaching AUTHORIZATION. Setting nextState: AUTHORIZATION here (matching case
+          // GREETING's own one-shot pattern) shows the text exactly once, while still
+          // requiring a fresh "sí" to re-confirm Ley 1581 consent (autorizado is
+          // deliberately never carried over — see persistent-context.ts).
           const remembered = pickPersistentFields(context);
           return {
             text: STATE_RESPONSES[ConversationState.GREETING](remembered),
-            nextState: ConversationState.GREETING,
+            nextState: ConversationState.AUTHORIZATION,
             context: remembered,
           };
         }
@@ -433,9 +442,12 @@ export class AgentService {
           return this.answerPolicyInquiry(context);
         }
         if (text.includes('hola') || text.includes('ayuda') || text.includes('inicio') || text === '/start') {
+          // Same fix as the ABANDONED/REJECTED restart above: nextState: AUTHORIZATION
+          // (not GREETING) so the greeting/authorization-ask text is shown exactly once,
+          // not repeated verbatim on the next message.
           return {
             text: STATE_RESPONSES[ConversationState.GREETING](context),
-            nextState: ConversationState.GREETING,
+            nextState: ConversationState.AUTHORIZATION,
           };
         }
         return {
@@ -1218,6 +1230,16 @@ export class AgentService {
   private petCountForProduct(context: ConversationContext, product: InsuranceProduct): number | null | undefined {
     if (context.petSpeciesCounts && product.eligibility.pet === 'gato') return context.petSpeciesCounts.gato ?? context.petCount;
     if (context.petSpeciesCounts && product.eligibility.pet === 'perro') return context.petSpeciesCounts.perro ?? context.petCount;
+    // Real live-test bug (2026-07-26): a mixto household ("1 gato + 1 perro") that then
+    // narrows to "solo gato" sets context.petType to the single species, but leaves
+    // context.petCount at the OLD combined total (2) — correctly bypassed above for a
+    // gato/perro-restricted product via petSpeciesCounts, but a product with
+    // eligibility.pet === 'any' (e.g. asistencia veterinaria) matched neither branch above
+    // and fell through to the stale combined petCount, pricing "solo gato" (1 pet) as if
+    // it were still both pets (2). An 'any' product must respect the same narrowing.
+    if (context.petSpeciesCounts && (context.petType === 'gato' || context.petType === 'perro')) {
+      return context.petSpeciesCounts[context.petType] ?? context.petCount;
+    }
     return context.petCount;
   }
 
