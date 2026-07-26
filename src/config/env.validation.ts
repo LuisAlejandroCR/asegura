@@ -101,6 +101,15 @@ class EnvironmentVariables {
   @IsString()
   @IsOptional()
   ADMIN_CHAT_ID: string;
+
+  // 2026-07-26 — path to the synthetic affiliate CSV for AffiliateLookupService. Not
+  // committed to the public repo (docs/ is private/gitignored — see CLAUDE.md), so a
+  // production deploy that wants this feature enabled must set this to wherever the file
+  // actually lives on that host. Missing/absent file: the service warns and disables
+  // itself gracefully at boot, same as every other optional integration here.
+  @IsString()
+  @IsOptional()
+  AFFILIATE_CSV_PATH: string;
 }
 
 // Groups of env vars that must be configured all-or-nothing. Each is independently
