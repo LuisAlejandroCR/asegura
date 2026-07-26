@@ -1,9 +1,17 @@
 id: asistencias-medicas
-name: Asistencias Médicas Familiares
+name: Asistencias médicas familiares
 company: GEA
 public_price: 16800
 requires_quote: false
 category: asistencia
+coverages:
+  - Asistencia médica telefónica
+  - Consultas virtuales
+  - Descuentos en medicamentos
+  - Orientación nutricional
+eligibility:
+  family: true
+business_priority: true
 ideal_for:
   - familias
   - padres de familia

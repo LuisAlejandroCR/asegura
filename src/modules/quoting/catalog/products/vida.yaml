@@ -1,9 +1,18 @@
 id: vida
-name: Seguro de Vida
+name: Seguro de vida
 company: Pan American Life
 public_price: 12000
 requires_quote: false
 category: vida
+coverages:
+  - Protección por fallecimiento
+  - Cobertura familiar
+  - Indemnización por incapacidad
+eligibility:
+  min_age: 18
+  max_age: 65
+business_priority: true
+requires_underwriting: true
 ideal_for:
   - padres de familia
   - casados

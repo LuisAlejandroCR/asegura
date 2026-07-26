@@ -1,9 +1,19 @@
 id: medicina-prepagada-perros
-name: Medicina Prepagada Mascotas (Perros)
+name: Medicina prepagada mascotas (perros)
 company: VetPlus
 public_price: 96600
 requires_quote: false
 category: mascotas
+coverages:
+  - Medicina prepagada para perros
+  - Consultas ilimitadas
+  - Cirugías
+  - Hospitalización
+  - Exámenes diagnósticos
+eligibility:
+  pet: perro
+business_priority: true
+requires_underwriting: true
 ideal_for:
   - dueños de perros
   - amantes de las mascotas

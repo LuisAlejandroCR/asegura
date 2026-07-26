@@ -1,9 +1,16 @@
 id: asistencias-multiples
-name: Asistencias Múltiples
+name: Asistencias múltiples
 company: GEA
 public_price: 20000
 requires_quote: false
 category: asistencia
+coverages:
+  - Asistencia en el hogar
+  - Asistencia vehículo
+  - Asistencia jurídica telefónica
+  - Orientación familiar
+eligibility: {}
+business_priority: true
 ideal_for:
   - propietarios de vivienda
   - conductores

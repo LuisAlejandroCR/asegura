@@ -2,21 +2,39 @@
 // insurance product catalog in memory at boot, behind IProductRepository (CLAUDE.md rule
 // #6), so QuotingService's scoring engine no longer depends on products.data.ts directly.
 //
-// 2026-07-26 — sources from products.data.ts, NOT catalog/products/*.yaml: that YAML
-// schema (id/name/company/public_price/requires_quote/category/ideal_for/customer_needs/
-// questions_to_ask/why_recommend/not_recommended_when/url) has no eligibility/coverages/
-// businessPriority/requiresUnderwriting — the exact fields evaluateProduct() scores on.
-// Returning YAML-shaped products today would silently zero out the hard pet/category
-// filters and the hyper-personalization tiers. Swap load() alone once the YAML schema
-// gains those fields — no consumer of getProducts()/getProduct() needs to change.
+// 2026-07-26 — reads catalog/products/*.yaml directly. Only converts a raw file into a
+// real InsuranceProduct when it's actually a priced, sellable product (company/
+// public_price/requires_quote all set) — this is what naturally excludes the products not
+// yet migrated (SOAT, vehicular, etc: company: null, public_price: null, requires_quote:
+// true) without hardcoding their ids anywhere. A YAML syntax error or a real product
+// missing coverages/eligibility does NOT get silently dropped here — it's caught loudly by
+// validate() below (the missing-real-product check plus the existing Array.isArray/object
+// checks), because silently shipping a smaller catalog is a worse failure than a boot
+// crash for a quoting engine. products.data.ts stays in the repo (still imported directly
+// by agent.service.ts/conversation-state.machine.ts/policy.service.ts) — it's no longer
+// read here, but migrating those three call sites is separate, later scope.
 import { Injectable, Logger } from '@nestjs/common';
-import { PRODUCTS } from './products.data';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as yaml from 'js-yaml';
 import { IProductRepository, InsuranceProduct } from './types';
 
 @Injectable()
 export class ProductCatalog implements IProductRepository {
   private readonly logger = new Logger(ProductCatalog.name);
   private readonly products: InsuranceProduct[];
+
+  // Preserves QuotingService's tie-break behavior across the products.data.ts → YAML
+  // swap: score() does a stable sort by matchScore, so when two products tie, whichever
+  // comes first in this array wins the cut into the top 3 (see quoting.service.spec.ts's
+  // "prioritized asistencia product ... by catalog order" test) — this is the exact
+  // original products.data.ts array order. Unknown ids sort LAST (not first), so a future
+  // 12th real product that hasn't been added here yet doesn't silently jump the queue.
+  private static readonly CANONICAL_ORDER: readonly string[] = [
+    'accidentes-personales', 'accidentes-premium', 'vida', 'asistencias-multiples',
+    'exequial', 'accidentes-exequial', 'vida-ahorro', 'asistencias-medicas',
+    'asistencia-veterinaria', 'medicina-prepagada-gatos', 'medicina-prepagada-perros',
+  ];
 
   constructor() {
     this.products = this.load();
@@ -32,8 +50,52 @@ export class ProductCatalog implements IProductRepository {
     return this.products.find((p) => p.id === id);
   }
 
+  // catalog/products/*.yaml is process.cwd()-relative, not __dirname-relative — nest-cli
+  // doesn't copy non-.ts assets into dist/, so src/ itself must exist alongside dist/ at
+  // runtime (same convention as pdf.service.ts's IMAGES_DIR and agent.service.ts's
+  // IDENTITY_ANIMATION_PATH).
   private load(): InsuranceProduct[] {
-    return [...PRODUCTS];
+    const dir = path.join(process.cwd(), 'src', 'modules', 'quoting', 'catalog', 'products');
+    const products: InsuranceProduct[] = [];
+
+    for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.yaml'))) {
+      let raw: any;
+      try {
+        raw = yaml.load(fs.readFileSync(path.join(dir, file), 'utf8'));
+      } catch (err) {
+        this.logger.warn(`Skipping ${file}: YAML parse error — ${err}`);
+        continue;
+      }
+
+      if (raw?.company == null || typeof raw?.public_price !== 'number' || raw?.requires_quote !== false) {
+        this.logger.warn(`Skipping ${file}: not yet a real, priced product`);
+        continue;
+      }
+
+      products.push({
+        id: raw.id,
+        name: raw.name,
+        category: raw.category,
+        insurer: raw.company,
+        basePremium: raw.public_price,
+        url: raw.url,
+        coverages: raw.coverages,
+        eligibility: {
+          minAge: raw.eligibility?.min_age,
+          maxAge: raw.eligibility?.max_age,
+          family: raw.eligibility?.family,
+          pet: raw.eligibility?.pet,
+        },
+        businessPriority: raw.business_priority,
+        requiresUnderwriting: raw.requires_underwriting,
+      });
+    }
+
+    const rank = (id: string) => {
+      const i = ProductCatalog.CANONICAL_ORDER.indexOf(id);
+      return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+    };
+    return products.sort((a, b) => rank(a.id) - rank(b.id));
   }
 
   // Public, not part of IProductRepository (same precedent as AffiliateLookupService's
@@ -84,6 +146,20 @@ export class ProductCatalog implements IProductRepository {
       if (p.businessPriority !== undefined && typeof p.businessPriority !== 'boolean') errors.push(`${label}: businessPriority must be boolean`);
       if (p.requiresUnderwriting !== undefined && typeof p.requiresUnderwriting !== 'boolean') errors.push(`${label}: requiresUnderwriting must be boolean`);
       if (!p.url || typeof p.url !== 'string') errors.push(`${label}: missing url`);
+    }
+
+    // The actual safety net for "a real product silently vanished" — not the load-time
+    // gate above, which only decides what's ATTEMPTED; this confirms every expected real
+    // product actually made it through (a YAML syntax error, an id typo, or an incomplete
+    // company/public_price/requires_quote triad would otherwise fail this loudly instead
+    // of silently shipping a smaller catalog).
+    for (const id of ProductCatalog.CANONICAL_ORDER) {
+      if (!products.some((p) => p.id === id)) {
+        errors.push(
+          `expected real product "${id}" did not load from catalog/products/*.yaml ` +
+          `(YAML syntax error, id typo, or incomplete company/public_price/requires_quote triad)`,
+        );
+      }
     }
     return errors;
   }

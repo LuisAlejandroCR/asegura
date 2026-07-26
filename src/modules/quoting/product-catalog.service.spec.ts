@@ -7,13 +7,29 @@ function makeValidFixture(overrides: Partial<InsuranceProduct> = {}): InsuranceP
 }
 
 describe('ProductCatalog — real data', () => {
-  it('constructs without throwing against the real products.data.ts', () => {
+  it('constructs without throwing against the real catalog/products/*.yaml', () => {
     expect(() => new ProductCatalog()).not.toThrow();
   });
 
-  it('getProducts() returns all products.data.ts entries in original order', () => {
+  it('getProducts() returns the 11 real products in the canonical (products.data.ts) order', () => {
     const catalog = new ProductCatalog();
     expect(catalog.getProducts().map((p) => p.id)).toEqual(PRODUCTS.map((p) => p.id));
+  });
+
+  // The strongest possible regression check: if this passes, the YAML transcription is
+  // byte-identical to the original hand-written products.data.ts — the real bar for
+  // "recommendations are unchanged" after swapping the data source.
+  it('YAML-sourced catalog is byte-identical to products.data.ts (transcription check)', () => {
+    const catalog = new ProductCatalog();
+    expect(catalog.getProducts()).toEqual(PRODUCTS);
+  });
+
+  // Proves the 13 not-yet-migrated YAML files (SOAT, vehicular, etc. — company: null,
+  // public_price: null, requires_quote: true) are gracefully excluded, not accidentally
+  // included as incomplete products.
+  it('loads exactly 11 products — the not-yet-priced catalog files are excluded', () => {
+    const catalog = new ProductCatalog();
+    expect(catalog.getProducts().length).toBe(11);
   });
 
   it('getProduct(id) finds an existing product', () => {

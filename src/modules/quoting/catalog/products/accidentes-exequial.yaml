@@ -4,6 +4,12 @@ company: Pan American Life
 public_price: 14000
 requires_quote: false
 category: accidentes
+coverages:
+  - Cobertura por accidentes
+  - Servicios exequiales
+  - Protección familiar
+eligibility: {}
+business_priority: true
 ideal_for:
   - familias
   - casados

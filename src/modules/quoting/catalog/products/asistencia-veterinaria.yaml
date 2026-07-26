@@ -1,9 +1,19 @@
 id: asistencia-veterinaria
-name: Asistencia Veterinaria
+name: Asistencia veterinaria
 company: GEA
 public_price: 14500
 requires_quote: false
 category: mascotas
+coverages:
+  - Consulta veterinaria
+  - Refuerzo de vacunación
+  - Sala de urgencias por accidente
+  - Búsqueda y localización de mascotas
+  - Exámenes de laboratorio
+  - Baño medicado
+  - Servicio exequial
+eligibility:
+  pet: any
 ideal_for:
   - dueños de mascotas
   - dueños de perros

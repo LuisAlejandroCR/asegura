@@ -1,9 +1,19 @@
 id: medicina-prepagada-gatos
-name: Medicina Prepagada Mascotas (Gatos)
+name: Medicina prepagada mascotas (gatos)
 company: VetPlus
 public_price: 81800
 requires_quote: false
 category: mascotas
+coverages:
+  - Medicina prepagada para gatos
+  - Consultas ilimitadas
+  - Cirugías
+  - Hospitalización
+  - Exámenes diagnósticos
+eligibility:
+  pet: gato
+business_priority: true
+requires_underwriting: true
 ideal_for:
   - dueños de gatos
   - amantes de las mascotas

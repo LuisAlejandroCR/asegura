@@ -4,6 +4,12 @@ company: Grupo Recordar
 public_price: 26000
 requires_quote: false
 category: asistencia
+coverages:
+  - Servicios exequiales
+  - Traslado nacional
+  - Apoyo funerario familiar
+eligibility: {}
+business_priority: true
 ideal_for:
   - familias
   - adultos mayores a cargo

@@ -4,6 +4,11 @@ company: BMI
 public_price: 20000
 requires_quote: false
 category: vida
+coverages:
+  - Protección por fallecimiento
+  - Componente de ahorro
+  - Cobertura por incapacidad
+eligibility: {}
 ideal_for:
   - padres de familia
   - casados
