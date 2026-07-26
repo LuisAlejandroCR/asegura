@@ -10,8 +10,18 @@ const SVG_W = 760;
 const CX = 380;
 const TOP_MARGIN = 70;
 const SPIRAL_H = 1000;
-const BIFURCATION_H = 180;
-const CONTENT_H = TOP_MARGIN + SPIRAL_H + BIFURCATION_H;
+const BIFURCATION_H = 180; // Leads calificados' own offset below the tip — unchanged
+// 2026-07-25 bug: LEFT_END sat exactly at CONTENT_H's boundary (TOP_MARGIN+SPIRAL_H+
+// BIFURCATION_H), so scaling it up by ZOOM_SCALE around ZOOM_ORIGIN pushed it ~58px past
+// that boundary — translateY was already clamped to avoid over-scrolling past CONTENT_H,
+// so the overshoot got clipped by `overflow:hidden`, hiding the label regardless of
+// viewport height. A first attempt bumped BIFURCATION_H itself to fix this, but that's
+// ALSO LEFT_END's own offset — it just relocated LEFT_END to the (still exact) new
+// boundary, no better. This is a dedicated buffer used ONLY for CONTENT_H, decoupled from
+// where LEFT_END actually sits. Verified with a Node sweep across 4 viewport heights
+// (500-900px): both outcomes stay clear of the edges with this value.
+const ZOOM_OVERSHOOT_PAD = 160;
+const CONTENT_H = TOP_MARGIN + SPIRAL_H + BIFURCATION_H + ZOOM_OVERSHOOT_PAD;
 // TURNS/ELLIPSE are coupled, not independent: the wobble term's rate of change
 // (radius * ELLIPSE * TURNS * 2π) must stay below the steady per-turn descent rate
 // (SPIRAL_H / TURNS), or the path's y literally reverses direction and the coil
@@ -26,10 +36,6 @@ const RIGHT_LABEL_X = CX + R_TOP + LABEL_GAP;
 const LEFT_LABEL_X = CX - R_TOP - LABEL_GAP;
 
 const ZOOM_START = 0.84; // eased-progress point where descent stops and the zoom begins
-// The frozen camera centers here (fraction of spiral t), not at t=1 exactly — leaves
-// headroom so the tip and the two final-outcome labels beside it are comfortably framed
-// once the descent freezes and the zoom takes over.
-const FINAL_FOCUS_T = 0.97;
 const ZOOM_SCALE = 1.8;
 // 2026-07-25 feedback: 10s read as "goes fast" — not enough time to actually read each
 // step label as the camera passes it. Slowed to 16s, same proportions throughout (every
@@ -134,7 +140,12 @@ function FunnelSpiral({ active }: FunnelSpiralProps) {
 
   const eased = smoothstep(progress);
   const descentP = Math.min(eased, ZOOM_START) / ZOOM_START;
-  const focusY = TOP_MARGIN + descentP * FINAL_FOCUS_T * SPIRAL_H;
+  // The camera pans toward ZOOM_ORIGIN.y — the SAME point the zoom later scales around
+  // (see originX/originY below). They used to be two unrelated points (this one derived
+  // from a tuned "how far along the spiral" fraction) — once scale kicked in, symmetric
+  // drift around ZOOM_ORIGIN didn't matter if the camera itself was centered somewhere
+  // else, so one outcome would drift toward the edge of view while the other drifted in.
+  const focusY = TOP_MARGIN + descentP * (ZOOM_ORIGIN.y - TOP_MARGIN);
   const maxTranslate = Math.max(CONTENT_H - viewportH, 0);
   const translateY = -Math.min(Math.max(focusY - viewportH / 2, 0), maxTranslate);
 
