@@ -409,6 +409,23 @@ describe('GroqNlpService.fallbackIntent — "Name, age, breed." period-separated
       { name: 'Pancha', age: '8 años', breed: 'cocker' },
     ]);
   });
+
+  // Real live-test bug (2026-07-26, screenshot): the user clarified "Solo es Bruna."
+  // ("it's only Bruna" — i.e. there's just ONE pet, not two) right after describing
+  // Bruna — but the trailing clause "Solo es Bruna" has no comma, so the old parser
+  // accepted its leading capitalized word ("Solo") as a second pet's name with no age or
+  // breed, corrupting the paid, issued policy with a phantom pet. A real pet-description
+  // clause in this parser's own shape always has at least 2 comma-separated parts
+  // (name + age/breed) — a lone comma-free clause is a side remark, not a pet.
+  it('regression — "Solo es Bruna." (a clarifying remark, no comma) is never mistaken for a second pet', () => {
+    const result = fallback(service, 'Bruna, 10 años, criollo. Solo es Bruna.');
+    expect(result.pets).toEqual([{ name: 'Bruna', age: '10 años', breed: 'criollo' }]);
+  });
+
+  it('regression — a comma-free trailing remark ("Eso es todo.") is never mistaken for a second pet', () => {
+    const result = fallback(service, 'Max, 3 años, labrador. Eso es todo.');
+    expect(result.pets).toEqual([{ name: 'Max', age: '3 años', breed: 'labrador' }]);
+  });
 });
 
 // postProcess must override Groq's own `pets` array when Groq under-counted a

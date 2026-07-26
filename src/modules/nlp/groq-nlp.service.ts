@@ -466,12 +466,23 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
   // wasn't recognized at all before (extractPetName only matched "se llama X"), so a
   // 3-pet message silently lost one pet with no deterministic cross-check, unlike
   // petCount/petType above.
+  // Real live-test bug (2026-07-26): "Bruna, 10 años, criollo. Solo es Bruna." (the user
+  // clarifying "it's only Bruna" — i.e. there's just ONE pet, not two) produced a phantom
+  // SECOND pet named "Solo" — the trailing clause "Solo es Bruna" has no comma, so
+  // `parts` was a single element, and the leading capitalized word of any clause ("Solo")
+  // was accepted as a name with zero shape check beyond capitalization. This parser's own
+  // documented shape is a comma-separated "name, age, breed" triple — a clause with fewer
+  // than 2 comma-separated parts was never actually describing a pet in that shape at all,
+  // it's a side remark. Requiring at least 2 parts rejects "Solo es Bruna" (1 part) while
+  // still accepting "Bruna, 10 años, criollo" (3 parts) and a minimal "Max, labrador" (2
+  // parts) — a lone name with no elaboration is already covered by extractPetName's
+  // separate "se llama X" fallback, not this function.
   private extractPetsFromText(text: string): { name: string; age: string | null; breed: string | null }[] {
     const clauses = text.split(/\.+/).map((c) => c.trim()).filter(Boolean);
     const pets: { name: string; age: string | null; breed: string | null }[] = [];
     for (const clause of clauses) {
       const parts = clause.split(',').map((p) => p.trim()).filter(Boolean);
-      if (parts.length === 0) continue;
+      if (parts.length < 2) continue;
       const nameMatch = parts[0].match(/^([A-ZÁÉÍÓÚÑ][a-zA-Záéíóúñ]*)/);
       if (!nameMatch) continue;
       const age = this.extractPetAge(clause.toLowerCase());
