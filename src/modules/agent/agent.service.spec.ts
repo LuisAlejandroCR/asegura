@@ -189,6 +189,65 @@ describe('AgentService — affiliate ID lookup', () => {
     expect(sentText).toContain('¡Encontré tu perfil!');
   });
 
+  it('a record with dependents=0 (SEGMENTO_GRUPO_FAMILIAR="AFILLIADO SIN GRUPO_FAMILIAR") merges it and pre-marks askedDependents, so DISCOVERY never re-asks', async () => {
+    const { service, telegram, conversations, affiliateLookup } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+    });
+    affiliateLookup.isEnabled.mockReturnValue(true);
+    affiliateLookup.findBySerie.mockReturnValue({ rangoSalarial: 'Entre 6 y 8 SMLV', dependents: 0 });
+    telegram.normalize.mockResolvedValue(makeMessage('10'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.dependents).toBe(0);
+    expect(savedContext.askedDependents).toBe(true);
+    expect(savedContext.rangoSalarial).toBe('Entre 6 y 8 SMLV');
+  });
+
+  it('a record with ONLY dependents set (no rangoSalarial) is still merged, not silently dropped', async () => {
+    const { service, telegram, conversations, affiliateLookup } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+    });
+    affiliateLookup.isEnabled.mockReturnValue(true);
+    affiliateLookup.findBySerie.mockReturnValue({ dependents: 0 });
+    telegram.normalize.mockResolvedValue(makeMessage('10'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.dependents).toBe(0);
+    expect(savedContext.askedDependents).toBe(true);
+    expect(savedContext.rangoSalarial).toBeUndefined();
+  });
+
+  it('a looked-up dependents=0 causes DISCOVERY to skip the dependents question on the very next turn', async () => {
+    const { service, telegram, affiliateLookup } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+    });
+    affiliateLookup.isEnabled.mockReturnValue(true);
+    affiliateLookup.findBySerie.mockReturnValue({ rangoSalarial: 'Entre 6 y 8 SMLV', dependents: 0 });
+    telegram.normalize.mockResolvedValue(makeMessage('10'));
+    await service.handleMessage({});
+
+    // Next turn: user states a category-bearing need. The dependents question must
+    // NOT reappear, since it was already answered (via lookup) for this conversation.
+    const { service: service2, telegram: telegram2 } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {
+        autorizado: true,
+        discoveryFilter: true,
+        rangoSalarial: 'Entre 6 y 8 SMLV',
+        dependents: 0,
+        askedDependents: true,
+      },
+      intent: makeIntent({ productCategory: 'vida' }),
+    });
+    telegram2.normalize.mockResolvedValue(makeMessage('quiero un seguro de vida'));
+    await service2.handleMessage({});
+    const sentText = (telegram2.sendText.mock.calls[0]?.[1] ?? telegram2.sendChoices.mock.calls[0]?.[1]) as string;
+    expect(sentText).not.toContain('¿Cuántas personas dependen de ti económicamente?');
+  });
+
   it('an ID with no matching record proceeds to DISCOVERY normally, without a crash or a false "found" message', async () => {
     const { service, telegram, conversations, affiliateLookup } = buildService({
       state: ConversationState.AUTHORIZATION,
@@ -1702,6 +1761,168 @@ describe('AgentService — abandonIntent after an already-completed purchase', (
 
 // ── QUOTE_PRESENTED — no-repeat invariant ─────────────────────────────────────
 
+// ── QUOTE_PRESENTED — back-reference resolution (2026-07-26 live bug) ─────────
+// "Prefiero la anterior.", "Quiero la primera opción que me ofreciste.", "la que vale
+// 16.800", "¿alguna más económica?" all reference a SPECIFIC already-shown product (or a
+// cheaper one among them) -- none had a handler before this fix; they either fell
+// through to a blind re-show of the CURRENT product, or (worse) got matched as a false
+// confirmation of it via a bare "quiero" substring.
+describe('AgentService — QUOTE_PRESENTED back-reference resolution', () => {
+  const asistenciasMedicas = PRODUCTS.find((p) => p.id === 'asistencias-medicas')!; // $16.800
+  const asistenciasMultiples = PRODUCTS.find((p) => p.id === 'asistencias-multiples')!; // $20.000
+  const exequial = PRODUCTS.find((p) => p.id === 'exequial')!; // $26.000
+
+  it('regression — "la primera opción que me ofreciste" goes back to the FIRST shown product, not the current one', async () => {
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: {
+        quoteProductId: exequial.id,
+        shownProductIds: [asistenciasMedicas.id, asistenciasMultiples.id, exequial.id],
+      },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    quoting.score.mockReturnValue([
+      { productId: asistenciasMedicas.id, matchScore: 60, reasons: ['Para ti'], monthlyPremium: asistenciasMedicas.basePremium, priority: 'high' },
+    ]);
+    telegram.normalize.mockResolvedValue(makeMessage('Quiero la primera opción que me ofreciste.'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(asistenciasMedicas.name);
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.quoteProductId).toBe(asistenciasMedicas.id);
+  });
+
+  it('regression — "prefiero la anterior" goes back to the SECOND-TO-LAST shown product', async () => {
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: {
+        quoteProductId: exequial.id,
+        shownProductIds: [asistenciasMedicas.id, asistenciasMultiples.id, exequial.id],
+      },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    quoting.score.mockReturnValue([]);
+    telegram.normalize.mockResolvedValue(makeMessage('Prefiero la anterior.'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.quoteProductId).toBe(asistenciasMultiples.id);
+  });
+
+  it('regression — naming the exact price of a DIFFERENT shown product goes back to THAT one, not a blind confirmation of the current one', async () => {
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: {
+        quoteProductId: asistenciasMultiples.id, // $20.000, currently on screen
+        shownProductIds: [asistenciasMedicas.id, asistenciasMultiples.id],
+      },
+      // Simulates the real bug: Groq/fallback classified "quiero" as isAffirmative=true,
+      // which would otherwise have confirmed the WRONG ($20.000) product.
+      intent: makeIntent({ isAffirmative: true, productCategory: null }),
+    });
+    quoting.score.mockReturnValue([]);
+    telegram.normalize.mockResolvedValue(makeMessage('Quiero la que vale 16.800.'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    // Must go back to the $16.800 product, NOT advance to phone verification for the
+    // $20.000 one that was on screen.
+    expect(savedContext.quoteProductId).toBe(asistenciasMedicas.id);
+    expect(savedContext.awaitingPhoneVerification).toBeUndefined();
+  });
+
+  it('"¿alguna más económica?" goes back to the cheapest already-shown product, cheaper than the current one', async () => {
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: {
+        quoteProductId: exequial.id, // $26.000
+        shownProductIds: [asistenciasMedicas.id, asistenciasMultiples.id, exequial.id],
+      },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    quoting.score.mockReturnValue([]);
+    telegram.normalize.mockResolvedValue(makeMessage('¿Alguna más económica?'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.quoteProductId).toBe(asistenciasMedicas.id); // the cheapest of the two already shown
+  });
+
+  it('does not fire when the reference resolves to the CURRENT product (falls through to isAffirmative normally)', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: asistenciasMedicas.id, shownProductIds: [asistenciasMedicas.id] },
+      intent: makeIntent({ isAffirmative: true, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí, quiero la primera opción'));
+    await service.handleMessage({});
+    // isAffirmative still advances normally (phone verification), since "la primera
+    // opción" resolves to the product ALREADY on screen -- nothing to go back to.
+    expect(telegram.sendContactRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fire for an ordinary message with no reference pattern and no price (existing behavior untouched)', async () => {
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: asistenciasMultiples.id, shownProductIds: [asistenciasMedicas.id, asistenciasMultiples.id] },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿cuánto dura la cobertura?'));
+    await service.handleMessage({});
+    expect(quoting.score).not.toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(asistenciasMultiples.name); // neutral re-show of current, unchanged
+  });
+});
+
+// ── QUOTE_PRESENTED — category exhaustion no longer resets to DISCOVERY ────────
+// Real live-test bug (2026-07-26): resetting productCategory/coverage and transitioning
+// to DISCOVERY when a category runs out of unseen options let the NEXT ambiguous
+// message's hallucinated productCategory silently start a brand-new, unrelated quote (an
+// "asistencia" shopper ended up with "vida"). Staying anchored in QUOTE_PRESENTED means
+// back-reference resolution and the cross-sell-defer check both keep working.
+describe('AgentService — QUOTE_PRESENTED category exhaustion stays anchored', () => {
+  it('regression — exhausting a category stays in QUOTE_PRESENTED, keeps productCategory/coverage/quoteProductId', async () => {
+    const p1 = PRODUCTS[0];
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: p1.id, shownProductIds: [p1.id], productCategory: 'accidentes', coverage: ['protección'] },
+      intent: makeIntent({ wantsAlternative: true, productCategory: null }),
+    });
+    quoting.score.mockReturnValue([
+      { productId: p1.id, matchScore: 80, reasons: [], monthlyPremium: p1.basePremium, priority: 'high' },
+    ]);
+    telegram.normalize.mockResolvedValue(makeMessage('otra'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('No tengo más opciones');
+    // Neither nextState nor context changed at all, so there's nothing new to persist --
+    // the conversation row stays exactly as it was (state QUOTE_PRESENTED,
+    // productCategory/coverage/quoteProductId all untouched), confirmed by saveState
+    // never even being called.
+    expect(conversations.saveState).not.toHaveBeenCalled();
+  });
+
+  it('regression — end-to-end: after exhaustion, "quiero la primera opción" correctly goes back instead of hallucinating a new category', async () => {
+    const asistenciasMedicas = PRODUCTS.find((p) => p.id === 'asistencias-medicas')!;
+    const exequial = PRODUCTS.find((p) => p.id === 'exequial')!;
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.QUOTE_PRESENTED, // where exhaustion leaves it now, per the fix above
+      context: {
+        quoteProductId: exequial.id,
+        shownProductIds: [asistenciasMedicas.id, exequial.id],
+        productCategory: 'asistencia',
+      },
+      // Simulates a hallucinated, unrelated category the LLM might guess from this vague
+      // phrase — must NOT win over the deterministic back-reference.
+      intent: makeIntent({ productCategory: 'vida' }),
+    });
+    quoting.score.mockReturnValue([]);
+    telegram.normalize.mockResolvedValue(makeMessage('Quiero la primera opción que me ofreciste.'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.quoteProductId).toBe(asistenciasMedicas.id);
+    expect(savedContext.productCategory).toBe('asistencia'); // unchanged, never hijacked to 'vida'
+  });
+});
+
 describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
   it('regression — "otro" uses shownProductIds to skip already-shown products', async () => {
     const p1 = PRODUCTS[0];
@@ -3010,6 +3231,34 @@ describe('AgentService — DISCOVERY polite decline of the post-purchase cross-s
       expect.anything(), ConversationState.COMPLETED, expect.anything(),
     );
   });
+
+  // Real live-test bug (2026-07-26): "No, la póliza está mal." is an unambiguous decline
+  // with ZERO real category words in it -- but Groq occasionally hallucinates SOME
+  // productCategory from text like this anyway. The old check trusted intent.productCategory
+  // directly, so the hallucination silently defeated the decline, cleared the one-shot flag,
+  // and let the conversation fall through into re-quoting the stale quoteProductId still in
+  // context -- which is how a customer who said their policy was WRONG ended up with a
+  // second Wompi payment link for the exact same product. Fixed: only a real, deterministic
+  // category mention in the TEXT itself (not the LLM's unfounded guess) can override a decline.
+  it('regression — a decline with a hallucinated productCategory but no real category words still ends politely, not falls through to re-quote', async () => {
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {
+        cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com',
+        awaitingCrossSellResponse: true, quoteProductId: 'vida-ahorro', hasCompletedPurchase: true,
+      },
+      // Simulates Groq hallucinating a category from text that names none at all.
+      intent: makeIntent({ isNegative: true, productCategory: 'vida' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('No, la póliza está mal.'));
+    await service.handleMessage({});
+    expect(quoting.bestQuote).not.toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toMatch(/no logré entender/i);
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.COMPLETED, expect.objectContaining({ awaitingCrossSellResponse: undefined }),
+    );
+  });
 });
 
 // ── Fuzz tests ────────────────────────────────────────────────────────────────
@@ -3374,5 +3623,145 @@ describe('AgentService — terminal-state restart', () => {
       expect(sentText).not.toContain('¡Hola de nuevo');
       expect(sentText).toContain('¡Hola!');
     });
+  });
+});
+
+// ── Stuck-loop circuit breaker + human escalation (2026-07-26 live-test feedback) ─────
+// "If the agent doesn't have the info about the insurance asked, redirect the chat to a
+// human." Only turns explicitly flagged unclearReply (DISCOVERY's genuinely-stuck
+// fallback, QUOTE_PRESENTED's neutral re-show) count toward the streak — a real
+// follow-up question that just needs another question asked is NOT confusion.
+describe('AgentService — stuck-loop circuit breaker + human escalation', () => {
+  it('a single unclear reply increments the counter but does not escalate', async () => {
+    const product = PRODUCTS[0];
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: product.id },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿cuánto dura la cobertura?'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.consecutiveUnclearReplies).toBe(1);
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('serás redirigido');
+    expect(sentText).toContain(product.name); // still the normal neutral re-show
+  });
+
+  it('a 2nd consecutive unclear reply still does not escalate (threshold is 3)', async () => {
+    const product = PRODUCTS[0];
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: product.id, consecutiveUnclearReplies: 1 },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿cuánto dura la cobertura?'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.consecutiveUnclearReplies).toBe(2);
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('serás redirigido');
+  });
+
+  it('escalates to a human on the 3rd consecutive unclear reply, resetting the counter', async () => {
+    const product = PRODUCTS[0];
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: product.id, consecutiveUnclearReplies: 2 },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿cuánto dura la cobertura?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toBe('Parece que no te estoy ayudando bien, serás redirigido a mi líder de servicio 🙏');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.consecutiveUnclearReplies).toBe(0);
+    // Stays in the same state — this is a handoff, not a conversation-ending transition.
+    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.QUOTE_PRESENTED, expect.anything());
+  });
+
+  it('escalates from DISCOVERY too, via the genuinely-stuck (no progress) fallback', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { consecutiveUnclearReplies: 2 },
+      intent: makeIntent({}), // no productCategory, no coverage, nothing — zero signal
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('mmh no sé qué decir'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toBe('Parece que no te estoy ayudando bien, serás redirigido a mi líder de servicio 🙏');
+  });
+
+  it('a genuinely understood reply resets the streak instead of letting it carry over silently', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { consecutiveUnclearReplies: 2 },
+      intent: makeIntent({ productCategory: 'vida' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('quiero un seguro de vida'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.consecutiveUnclearReplies).toBe(0);
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('serás redirigido');
+  });
+
+  it('does not write a counter field at all when there was never a streak to begin with (ordinary conversation)', async () => {
+    const { service, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ productCategory: 'vida' }),
+    });
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.consecutiveUnclearReplies).toBeUndefined();
+  });
+
+  it('notifies ADMIN_CHAT_ID with the username, user id, state and last message when configured', async () => {
+    const product = PRODUCTS[0];
+    const { service, telegram, config } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: product.id, consecutiveUnclearReplies: 2 },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    config.get.mockImplementation((key: string) => (key === 'ADMIN_CHAT_ID' ? '999999' : undefined));
+    telegram.normalize.mockResolvedValue(makeMessage('¿cuánto dura la cobertura?', { username: 'alejoo_o' }));
+    await service.handleMessage({});
+    const adminCall = telegram.sendText.mock.calls.find((call) => call[0] === '999999');
+    expect(adminCall).toBeDefined();
+    const adminText = adminCall![1] as string;
+    expect(adminText).toContain('@alejoo_o');
+    expect(adminText).toContain('u1');
+    expect(adminText).toContain(ConversationState.QUOTE_PRESENTED);
+    expect(adminText).toContain('¿cuánto dura la cobertura?');
+  });
+
+  it('falls back to the bare user id (no "@") when Telegram never provided a username', async () => {
+    const product = PRODUCTS[0];
+    const { service, telegram, config } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: product.id, consecutiveUnclearReplies: 2 },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    config.get.mockImplementation((key: string) => (key === 'ADMIN_CHAT_ID' ? '999999' : undefined));
+    telegram.normalize.mockResolvedValue(makeMessage('¿cuánto dura la cobertura?'));
+    await service.handleMessage({});
+    const adminCall = telegram.sendText.mock.calls.find((call) => call[0] === '999999');
+    const adminText = adminCall![1] as string;
+    expect(adminText).not.toContain('@');
+    expect(adminText).toContain('u1');
+  });
+
+  it('does not attempt an admin notification when ADMIN_CHAT_ID is not configured — degrades silently', async () => {
+    const product = PRODUCTS[0];
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: product.id, consecutiveUnclearReplies: 2 },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿cuánto dura la cobertura?'));
+    await service.handleMessage({});
+    // Only one sendText call — to the user with the escalation message. No admin call.
+    expect(telegram.sendText).toHaveBeenCalledTimes(1);
   });
 });

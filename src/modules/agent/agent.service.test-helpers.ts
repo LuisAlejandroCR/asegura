@@ -5,8 +5,8 @@ import { AgentService } from './agent.service';
 import { ConversationState, ConversationContext } from './types';
 import { InsuranceIntent } from '../nlp/types';
 
-function makeMessage(text: string) {
-  return { userId: 'u1', channel: 'telegram' as const, channelId: '1', text, timestamp: new Date() };
+function makeMessage(text: string, overrides: { username?: string } = {}) {
+  return { userId: 'u1', channel: 'telegram' as const, channelId: '1', text, timestamp: new Date(), ...overrides };
 }
 
 function makeIntent(overrides: Partial<InsuranceIntent> = {}): InsuranceIntent {
@@ -84,12 +84,19 @@ function buildService(overrides: {
     isEnabled: jest.fn().mockReturnValue(false),
     findBySerie: jest.fn().mockReturnValue(null),
   };
+  // ADMIN_CHAT_ID unset by default (matches production without it configured) — the
+  // stuck-loop escalation notification is a no-op, same optional-integration convention
+  // as affiliateLookup/wompi above.
+  const config = {
+    get: jest.fn().mockReturnValue(undefined),
+  };
   const service = new AgentService(
     nlp as any, telegram as any, conversations as any,
     quoting as any, policy as any, wompi as any, reminders as any, affiliateLookup as any,
+    config as any,
   );
 
-  return { service, nlp, telegram, conversations, quoting, policy, wompi, reminders, affiliateLookup };
+  return { service, nlp, telegram, conversations, quoting, policy, wompi, reminders, affiliateLookup, config };
 }
 
 export { makeMessage, makeIntent, extractPetResolutionMock, makeConversation, buildService };

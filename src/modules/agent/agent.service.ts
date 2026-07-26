@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as path from 'path';
 import { INlpProvider, InsuranceIntent } from '../nlp/types';
 import { TelegramAdapter } from '../channel/telegram-adapter.service';
@@ -12,7 +13,7 @@ import { QuotingService } from '../quoting/quoting.service';
 import { AffiliateLookupService } from '../quoting/affiliate-lookup.service';
 import { PolicyService } from '../policy/policy.service';
 import { WompiService } from '../payments/wompi.service';
-import { AffiliateSignals, InsuranceProduct } from '../quoting/types';
+import { AffiliateSignals, InsuranceProduct, InsuranceScore } from '../quoting/types';
 import { PRODUCTS } from '../quoting/products.data';
 import { computeTotalPremium } from '../quoting/pricing';
 import { matchBreed } from './breed-matcher';
@@ -41,6 +42,12 @@ interface ProcessResult {
   // message on the same webhook — free text/voice remain fully valid answers too; no
   // button is ever mandatory (rule #10).
   choices?: string[];
+  // 2026-07-26 stuck-loop circuit breaker — set when this specific reply means "the agent
+  // genuinely didn't understand / doesn't have the answer", never for a normal
+  // acknowledgment or a deliberate polite decline. handleMessage tallies consecutive
+  // occurrences (ConversationContext.consecutiveUnclearReplies) and escalates to a human
+  // once the streak crosses the threshold — see applyCircuitBreaker.
+  unclearReply?: boolean;
 }
 
 // Static brand assets — referenced relative to the project root (not __dirname) because
@@ -74,6 +81,7 @@ export class AgentService {
     private readonly wompi: WompiService,
     private readonly reminders: ReminderService,
     private readonly affiliateLookup: AffiliateLookupService,
+    private readonly config: ConfigService,
   ) {}
 
   private static readonly TERMINAL_STATES = new Set([
@@ -90,6 +98,72 @@ export class AgentService {
   // layer to classify.
   private static readonly MORE_INFO_PATTERN =
     /\b(cu[eé]ntame\s+m[aá]s|expl[ií]came|de\s+qu[eé]\s+se\s+trata|beneficios|cu[aá]l(?:\s+de\s+todos)?\s+es\s+mejor|mejor\s+para\s+m[ií])\b/i;
+
+  // 2026-07-26 live-test bug: "Prefiero la anterior.", "Quiero la primera opción que me
+  // ofreciste.", "la que vale 16.800", "¿alguna más económica?" all reference a SPECIFIC
+  // product already shown this conversation (or a cheaper one among them) — none of
+  // these had a handler, so they either fell through to a blind re-show of the CURRENT
+  // product, or worse, got matched as isAffirmative (confirming the wrong one — a bare
+  // "quiero" substring match doesn't care that the price mentioned doesn't match what's
+  // on screen). Checked deterministically, before isAffirmative/wantsAlternative, so an
+  // explicit reference always wins over a probabilistic LLM guess — same override
+  // philosophy as every other keyword trap already fixed in this file.
+  private static readonly FIRST_OPTION_PATTERN = /\b(la primera(?:\s+opci[oó]n)?|el primero|primera opci[oó]n)\b/i;
+  private static readonly PREVIOUS_OPTION_PATTERN = /\b(la anterior|el anterior|la de antes)\b/i;
+  private static readonly CHEAPER_OPTION_PATTERN = /\b(m[aá]s econ[oó]mic\w*|m[aá]s barat\w*|m[aá]s accesible\w*|menos costos?)\b/i;
+
+  // "16 mil algo" -> 16000, "$20.000" / "20000" -> 20000. Deliberately approximate (the
+  // real live-test message was "la que valía 16 mil algo") — matched against shown
+  // products within a tolerance in resolveProductReference, not required to be exact.
+  private extractMentionedAmount(text: string): number | null {
+    const milMatch = text.match(/\b(\d+)\s*mil\b/i);
+    if (milMatch) return parseInt(milMatch[1], 10) * 1000;
+    const digitsMatch = text.match(/\$?\s*(\d[\d.,]{3,})/);
+    if (digitsMatch) {
+      const cleaned = digitsMatch[1].replace(/[.,]/g, '');
+      const n = parseInt(cleaned, 10);
+      return Number.isFinite(n) ? n : null;
+    }
+    return null;
+  }
+
+  private resolveProductReference(
+    text: string,
+    context: ConversationContext,
+  ): { product: InsuranceProduct; score: InsuranceScore } | null {
+    const shownIds = context.shownProductIds ?? (context.quoteProductId ? [context.quoteProductId] : []);
+    const shownProducts = shownIds
+      .map((id) => PRODUCTS.find((p) => p.id === id))
+      .filter((p): p is InsuranceProduct => !!p);
+    if (shownProducts.length === 0) return null;
+
+    // Cheap regex checks first, deciding WHICH product (if any) is referenced, before
+    // ever calling the (comparatively expensive, and test-observable) scoring engine —
+    // a message that matches none of these patterns must cost nothing extra.
+    let resolved: InsuranceProduct | null = null;
+    if (AgentService.FIRST_OPTION_PATTERN.test(text)) {
+      resolved = shownProducts[0];
+    } else if (AgentService.PREVIOUS_OPTION_PATTERN.test(text) && shownProducts.length >= 2) {
+      resolved = shownProducts[shownProducts.length - 2];
+    } else {
+      const amount = this.extractMentionedAmount(text);
+      if (amount !== null) {
+        resolved = shownProducts.find((p) => Math.abs(p.basePremium - amount) <= 1000) ?? null;
+      }
+      if (!resolved && AgentService.CHEAPER_OPTION_PATTERN.test(text)) {
+        const current = PRODUCTS.find((p) => p.id === context.quoteProductId);
+        resolved = shownProducts
+          .filter((p) => !current || p.basePremium < current.basePremium)
+          .sort((a, b) => a.basePremium - b.basePremium)[0] ?? null;
+      }
+    }
+    if (!resolved) return null;
+
+    const allScores = this.quoting.score(context as AffiliateSignals);
+    const score = allScores.find((s) => s.productId === resolved!.id)
+      ?? { productId: resolved.id, matchScore: 0, reasons: [], monthlyPremium: resolved.basePremium, priority: 'low' as const };
+    return { product: resolved, score };
+  }
 
 
   async handleMessage(raw: unknown): Promise<void> {
@@ -124,7 +198,8 @@ export class AgentService {
           isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null,
         };
 
-    const result = await this.processMessage(conv.id, conv.state, conv.context, lowerText, intent, msg.contact, msg.photo, rawText);
+    const rawResult = await this.processMessage(conv.id, conv.state, conv.context, lowerText, intent, msg.contact, msg.photo, rawText);
+    const result = this.applyCircuitBreaker(conv.context, rawResult, msg, conv.state);
 
     // Persist state/context whenever either changes
     if (result.nextState || result.context) {
@@ -166,6 +241,61 @@ export class AgentService {
     if (!AgentService.TERMINAL_STATES.has(finalState)) {
       this.reminders.schedule(conv.id, msg.userId);
     }
+  }
+
+  // 2026-07-26 live-test feedback: "if the agent doesn't have the info about the insurance
+  // asked, redirect the chat to a human" — instead of repeating a variant of "no logré
+  // entender" indefinitely. Counts ONLY turns a state handler explicitly flagged as
+  // genuinely unclear (ProcessResult.unclearReply) — an answer that just needs a
+  // follow-up question (e.g. DISCOVERY's madeProgress path) never counts, so a normal
+  // multi-turn conversation never trips this.
+  private static readonly UNCLEAR_REPLY_ESCALATION_THRESHOLD = 3;
+  private static readonly ESCALATION_TEXT =
+    'Parece que no te estoy ayudando bien, serás redirigido a mi líder de servicio 🙏';
+
+  private applyCircuitBreaker(
+    originalContext: ConversationContext,
+    result: ProcessResult,
+    msg: NormalizedMessage,
+    currentState: ConversationState,
+  ): ProcessResult {
+    const priorCount = originalContext.consecutiveUnclearReplies ?? 0;
+
+    if (!result.unclearReply) {
+      // A genuinely understood reply resets the streak — only worth a context write when
+      // there was actually a streak to clear.
+      if (!priorCount) return result;
+      return { ...result, context: { ...(result.context ?? originalContext), consecutiveUnclearReplies: 0 } };
+    }
+
+    const count = priorCount + 1;
+    if (count >= AgentService.UNCLEAR_REPLY_ESCALATION_THRESHOLD) {
+      this.notifyAdminEscalation(msg, currentState).catch((err) =>
+        this.logger.warn(`Admin escalation notification failed: ${err}`),
+      );
+      return {
+        text: AgentService.ESCALATION_TEXT,
+        context: { ...(result.context ?? originalContext), consecutiveUnclearReplies: 0 },
+      };
+    }
+
+    return { ...result, context: { ...(result.context ?? originalContext), consecutiveUnclearReplies: count } };
+  }
+
+  // Never blocks or breaks the real conversation flow if it fails or ADMIN_CHAT_ID isn't
+  // configured — same optional-integration pattern as Wompi/Telegram/LLM elsewhere in
+  // this codebase. Reuses telegram.sendText (a Telegram chat id IS just a numeric userId
+  // to that adapter) instead of inventing a separate notification channel/integration.
+  private async notifyAdminEscalation(msg: NormalizedMessage, state: ConversationState): Promise<void> {
+    const adminChatId = this.config.get<string>('ADMIN_CHAT_ID');
+    if (!adminChatId) return;
+    const who = msg.username ? `@${msg.username} (id ${msg.userId})` : `id ${msg.userId}`;
+    const text =
+      `⚠️ *Escalación automática*\n\n` +
+      `${who} lleva ${AgentService.UNCLEAR_REPLY_ESCALATION_THRESHOLD} turnos seguidos sin que el agente logre entenderlo.\n` +
+      `Estado: ${state}\n` +
+      `Último mensaje: "${msg.text.slice(0, 200)}"`;
+    await this.telegram.sendText(adminChatId, text);
   }
 
   private async processMessage(
@@ -310,8 +440,20 @@ export class AgentService {
       const serie = this.joinSpokenDigits(rawText).replace(/\D/g, '');
       if (serie && this.affiliateLookup.isEnabled()) {
         const record = this.affiliateLookup.findBySerie(serie);
-        if (record?.rangoSalarial) {
-          const enriched: ConversationContext = { ...baseContext, rangoSalarial: record.rangoSalarial, serieId: serie };
+        // Either signal alone is enough to enrich — a record with only `dependents: 0`
+        // (SEGMENTO_GRUPO_FAMILIAR="AFILLIADO SIN GRUPO_FAMILIAR", no RANGO_SALARIAL) must
+        // not be silently dropped just because rangoSalarial is missing.
+        if (record && (record.rangoSalarial !== undefined || record.dependents !== undefined)) {
+          const enriched: ConversationContext = {
+            ...baseContext,
+            serieId: serie,
+            ...(record.rangoSalarial !== undefined ? { rangoSalarial: record.rangoSalarial } : {}),
+            // Only pre-fill dependents when DISCOVERY hasn't already asked/answered it —
+            // never overwrite a real user answer with a looked-up default.
+            ...(record.dependents !== undefined && baseContext.dependents === undefined
+              ? { dependents: record.dependents, askedDependents: true }
+              : {}),
+          };
           return {
             text: `¡Encontré tu perfil! Esto me ayuda a personalizar mejor tu cotización.\n\n${STATE_RESPONSES[ConversationState.DISCOVERY](enriched)}`,
             nextState: ConversationState.DISCOVERY,
@@ -355,7 +497,18 @@ export class AgentService {
       // that starts with the standalone word "no" is an unambiguous decline regardless
       // of what the LLM extracted.
       const clearlyDeclines = intent.isNegative || /^no\b/i.test(text.trim());
-      const declining = clearlyDeclines && !intent.productCategory;
+      // Real live-test bug (2026-07-26): this used to trust `intent.productCategory`
+      // directly — but Groq occasionally hallucinates SOME category from a decline that
+      // names no product at all ("No, la póliza está mal." has zero category words).
+      // That silently defeated the decline check, cleared the one-shot flag, and let the
+      // conversation fall through into a fresh quote for the stale `quoteProductId` still
+      // sitting in context — which is how a customer who said their policy was WRONG
+      // ended up with a second Wompi payment link for the exact same product. Requiring
+      // real textual evidence (the same deterministic check handleQuotation's own
+      // cross-sell trigger already uses) means only an actual "no, quiero vida" — not a
+      // guess with no textual basis — can override the decline.
+      const mentionsRealCategory = this.detectAllMentionedCategories(text).length > 0;
+      const declining = clearlyDeclines && !mentionsRealCategory;
       if (declining) {
         return {
           text: '¡Perfecto! Si más adelante quieres proteger algo más, aquí estoy 24/7. ¡Que tengas un excelente día! 👋',
@@ -595,6 +748,10 @@ export class AgentService {
     return {
       text: madeProgress ? question : `No logré entender bien eso. ${question}`,
       context: newContext,
+      // Only the genuinely-stuck branch counts toward the escalation circuit breaker —
+      // `madeProgress` means real signal WAS extracted this turn, just not enough to quote
+      // yet, which is normal conversation flow, not confusion.
+      unclearReply: !madeProgress,
     };
   }
 
@@ -667,6 +824,23 @@ export class AgentService {
       return this.deferCrossSell(context, currentProduct, intent.productCategory);
     }
 
+    // Real live-test bug (2026-07-26): "Prefiero la anterior.", "Quiero la primera opción
+    // que me ofreciste.", "la que vale 16.800" all reference a SPECIFIC already-shown
+    // product — checked before isAffirmative so "quiero la que vale 16.800" can't get
+    // matched as a blind confirmation of whatever DIFFERENTLY-priced product happens to
+    // be on screen (the real live-test bug: a customer naming the $16.800 option ended up
+    // confirming a $20.000 purchase instead). Only fires when the reference resolves to a
+    // DIFFERENT product than what's already showing — otherwise falls through normally.
+    const referenced = this.resolveProductReference(text, context);
+    if (referenced && referenced.product.id !== context.quoteProductId) {
+      const shown = context.shownProductIds ?? (context.quoteProductId ? [context.quoteProductId] : []);
+      return {
+        text: this.formatQuote(referenced.product, referenced.score, context),
+        nextState: ConversationState.QUOTE_PRESENTED,
+        context: { ...context, quoteProductId: referenced.product.id, shownProductIds: [...new Set([...shown, referenced.product.id])] },
+      };
+    }
+
     if (intent.isAffirmative) {
       // 2026-07-24 KYC feedback: "know the user is real" before collecting cédula/nombre/
       // correo — Telegram's native request_contact button verifies the phone in one tap,
@@ -702,10 +876,18 @@ export class AgentService {
         }
       }
 
+      // Real live-test bug (2026-07-26): this used to reset productCategory to undefined
+      // and transition to DISCOVERY — the NEXT message (often something vague like
+      // "quiero la primera opción que me ofreciste", naming no real category at all)
+      // could then get a HALLUCINATED productCategory from the LLM and silently start a
+      // brand-new, unrelated quote (an "asistencia" shopper ended up with "vida" this
+      // way). Staying anchored in QUOTE_PRESENTED means resolveProductReference above and
+      // the cross-sell-defer check both keep working on the next turn — a genuine new
+      // category still switches correctly (it requires a real keyword match via
+      // detectAllMentionedCategories), but an ambiguous non-answer can no longer hijack
+      // the conversation into a different category.
       return {
         text: 'No tengo más opciones en esta categoría. ¿Quieres que busquemos en otra?',
-        nextState: ConversationState.DISCOVERY,
-        context: { ...context, productCategory: undefined, coverage: undefined },
       };
     }
 
@@ -771,12 +953,16 @@ export class AgentService {
         context,
       );
       const noRealWords = !/[a-zA-ZÀ-ÖØ-öø-ÿ]/.test(text);
+      // Counts toward the stuck-loop circuit breaker either way — a plain re-show, with
+      // or without the clarification prefix, means none of the branches above understood
+      // what was actually being asked.
       return {
         text: noRealWords ? `No entendí ese mensaje, ¿puedes intentarlo de nuevo?\n\n${quoteText}` : quoteText,
+        unclearReply: true,
       };
     }
 
-    return { text: STATE_RESPONSES[ConversationState.QUOTE_PRESENTED](context) };
+    return { text: STATE_RESPONSES[ConversationState.QUOTE_PRESENTED](context), unclearReply: true };
   }
 
   private mentionsPersonalCoverage(text: string): boolean {

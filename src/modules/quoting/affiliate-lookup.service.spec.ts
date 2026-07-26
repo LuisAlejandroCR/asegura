@@ -111,6 +111,49 @@ describe('AffiliateLookupService', () => {
     fs.unlinkSync(csvPath);
   });
 
+  it('maps SEGMENTO_GRUPO_FAMILIAR="AFILLIADO SIN GRUPO_FAMILIAR" to dependents=0', async () => {
+    const csvPath = writeTempCsv([
+      'SERIE;GENERO;RANGO_EDAD;RANGO_SALARIAL;CATEGORIA;SEGMENTO_GRUPO_FAMILIAR',
+      '10;F;20 a 35 años;Entre 6 y 8 SMLV;A;AFILLIADO SIN GRUPO_FAMILIAR',
+    ]);
+    const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
+    await service.onApplicationBootstrap();
+
+    expect(service.findBySerie('10')).toEqual({ rangoSalarial: 'Entre 6 y 8 SMLV', dependents: 0 });
+
+    fs.unlinkSync(csvPath);
+  });
+
+  it('does not set dependents for other SEGMENTO_GRUPO_FAMILIAR values (no invented count)', async () => {
+    const csvPath = writeTempCsv([
+      'SERIE;RANGO_SALARIAL;SEGMENTO_GRUPO_FAMILIAR',
+      '1;Entre 1 y 1.5 SMLV;FAMILIA NUCLEAR INTEGRAL',
+      '2;Entre 1 y 1.5 SMLV;PAREJA CONYUGAL',
+      '3;Entre 1 y 1.5 SMLV;',
+    ]);
+    const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
+    await service.onApplicationBootstrap();
+
+    expect(service.findBySerie('1')).toEqual({ rangoSalarial: 'Entre 1 y 1.5 SMLV' });
+    expect(service.findBySerie('2')).toEqual({ rangoSalarial: 'Entre 1 y 1.5 SMLV' });
+    expect(service.findBySerie('3')).toEqual({ rangoSalarial: 'Entre 1 y 1.5 SMLV' });
+
+    fs.unlinkSync(csvPath);
+  });
+
+  it('sets only dependents (no rangoSalarial) when RANGO_SALARIAL is empty for that row', async () => {
+    const csvPath = writeTempCsv([
+      'SERIE;RANGO_SALARIAL;SEGMENTO_GRUPO_FAMILIAR',
+      '1;;AFILLIADO SIN GRUPO_FAMILIAR',
+    ]);
+    const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
+    await service.onApplicationBootstrap();
+
+    expect(service.findBySerie('1')).toEqual({ dependents: 0 });
+
+    fs.unlinkSync(csvPath);
+  });
+
   it('defaults to Usos_Productos_Afiliados_SIMULADO.csv at the repo root when AFFILIATE_CSV_PATH is unset', async () => {
     const expectedDefault = path.join(process.cwd(), 'Usos_Productos_Afiliados_SIMULADO.csv');
     // Intercept existsSync to prove the service asked for the right default path,

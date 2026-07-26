@@ -18,6 +18,16 @@ import * as readline from 'readline';
 
 export interface AffiliateRecord {
   rangoSalarial?: string;
+  // 2026-07-26 live-test feedback: the lookup only ever wired RANGO_SALARIAL, ignoring
+  // SEGMENTO_GRUPO_FAMILIAR sitting in the same row — "AFILLIADO SIN GRUPO_FAMILIAR" (no
+  // registered family group, ~58% of real rows) confidently means dependents=0, so
+  // DISCOVERY's dependents question can be skipped entirely, honoring "nunca preguntar
+  // lo que ya sabemos" for a signal we already have. Other SEGMENTO_GRUPO_FAMILIAR
+  // values ("FAMILIA NUCLEAR INTEGRAL", "PAREJA CONYUGAL", etc.) confirm a family EXISTS
+  // but not the exact count, so they're deliberately NOT mapped here (rule #12 — no
+  // inventing a number the data doesn't actually give us); the question still gets asked
+  // for those.
+  dependents?: number;
 }
 
 @Injectable()
@@ -78,6 +88,7 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
 
     let serieIdx = -1;
     let rangoSalarialIdx = -1;
+    let segmentoFamiliarIdx = -1;
     let isHeader = true;
 
     for await (const rawLine of rl) {
@@ -88,6 +99,7 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
       if (isHeader) {
         serieIdx = cols.indexOf('SERIE');
         rangoSalarialIdx = cols.indexOf('RANGO_SALARIAL');
+        segmentoFamiliarIdx = cols.indexOf('SEGMENTO_GRUPO_FAMILIAR');
         isHeader = false;
         if (serieIdx === -1) {
           throw new Error('CSV header missing SERIE column');
@@ -100,6 +112,8 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
       const record: AffiliateRecord = {};
       const rangoSalarial = rangoSalarialIdx >= 0 ? cols[rangoSalarialIdx]?.trim() : undefined;
       if (rangoSalarial) record.rangoSalarial = rangoSalarial;
+      const segmentoFamiliar = segmentoFamiliarIdx >= 0 ? cols[segmentoFamiliarIdx]?.trim() : undefined;
+      if (segmentoFamiliar === 'AFILLIADO SIN GRUPO_FAMILIAR') record.dependents = 0;
       this.bySerie.set(serie, record);
     }
   }
