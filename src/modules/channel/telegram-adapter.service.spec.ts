@@ -247,6 +247,48 @@ describe('TelegramAdapter.sendContactRequest (2026-07-24 KYC feedback)', () => {
   }, 10000);
 });
 
+// 2026-07-26 Step 4 hybrid buttons — mirrors sendContactRequest's structure exactly.
+// Reply keyboard ONLY, never InlineKeyboard: a tap arrives back as ordinary text on the
+// same webhook, so it's a shortcut over the NLP path, not a separate callback_query flow.
+describe('TelegramAdapter.sendChoices (2026-07-26 hybrid buttons)', () => {
+  function mockSendableBot() {
+    return { api: { sendChatAction: jest.fn().mockResolvedValue(undefined), sendMessage: jest.fn().mockResolvedValue(undefined) } };
+  }
+
+  it('sends the prompt with a plain reply keyboard (never inline_keyboard) offering the given choices', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    const bot = mockSendableBot();
+    (adapter as any).bot = bot;
+
+    await adapter.sendChoices('222', '¿Qué te preocupa más?', ['❤️ Mi familia', '🏥 Mi salud', '🐾 Mi mascota']);
+
+    expect(bot.api.sendMessage).toHaveBeenCalledTimes(1);
+    const call = bot.api.sendMessage.mock.calls[0];
+    expect(call[0]).toBe(222);
+    expect(call[1]).toBe('¿Qué te preocupa más?');
+    expect(call[2]).not.toHaveProperty('reply_markup.inline_keyboard');
+    const keyboard = call[2].reply_markup.keyboard as { text: string }[][];
+    const flatLabels = keyboard.flat().map((b) => b.text);
+    expect(flatLabels).toEqual(['❤️ Mi familia', '🏥 Mi salud', '🐾 Mi mascota']);
+  }, 10000);
+
+  it('lays out 2 buttons per row', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    const bot = mockSendableBot();
+    (adapter as any).bot = bot;
+
+    await adapter.sendChoices('222', 'Elige', ['A', 'B', 'C', 'D', 'E']);
+
+    const keyboard = bot.api.sendMessage.mock.calls[0][2].reply_markup.keyboard as { text: string }[][];
+    expect(keyboard.map((row) => row.length)).toEqual([2, 2, 1]);
+  }, 10000);
+
+  it('does nothing when the bot is disabled (no token)', async () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    await expect(adapter.sendChoices('222', 'Elige', ['A', 'B'])).resolves.toBeUndefined();
+  });
+});
+
 // 2026-07-24 feedback: "is there a way to show an animated successfully check pass
 // inside the chat?" — Telegram's native message reactions render with a small built-in
 // animation and need no hosted asset (GIF/sticker), unlike sendAnimation/sendSticker.

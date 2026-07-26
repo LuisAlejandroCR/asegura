@@ -158,6 +158,21 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
     await this.bot.api.sendMessage(Number(userId), text, { parse_mode: 'Markdown', reply_markup: keyboard });
   }
 
+  // 2026-07-26 hybrid buttons (Step 4) — mirrors sendContactRequest's structure exactly.
+  // Reply keyboard ONLY, never InlineKeyboard: a tap arrives back as a normal text
+  // message on the same webhook, so it's a shortcut over the NLP path (normalize →
+  // extractIntent → handleDiscovery), not a separate callback_query flow to maintain.
+  async sendChoices(userId: string, text: string, choices: string[]): Promise<void> {
+    if (!this.bot) return;
+    await this.bot.api.sendChatAction(Number(userId), 'typing').catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, TelegramAdapter.TYPING_DELAY_MS));
+    const keyboard = choices
+      .reduce((kb, choice, i) => (i > 0 && i % 2 === 0 ? kb.row().text(choice) : kb.text(choice)), new Keyboard())
+      .resized()
+      .oneTime();
+    await this.bot.api.sendMessage(Number(userId), text, { parse_mode: 'Markdown', reply_markup: keyboard });
+  }
+
   // A lightweight, asset-free "animated success" touch (2026-07-24 feedback) — Telegram
   // message reactions render with a small built-in animation with no hosted GIF/sticker
   // needed, unlike sendAnimation/sendSticker. Purely cosmetic (same as the selfie step

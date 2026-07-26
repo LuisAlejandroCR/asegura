@@ -42,6 +42,12 @@ interface IChannelAdapter {
   // lightweight, asset-free "animated" success touch (the reaction itself renders with a
   // small built-in animation) that doesn't require hosting a GIF/sticker.
   reactToMessage(userId: string, messageId: number, emoji: string, isBig?: boolean): Promise<void>;
+  // 2026-07-26 hybrid buttons (Step 4) — a shortcut over the NLP path, never a
+  // replacement: a reply-keyboard tap arrives as an ordinary text message on the same
+  // webhook, so it flows through normalize → extractIntent → handleDiscovery exactly
+  // like typed or transcribed speech. Never Telegram's inline_keyboard (rule #10 — no
+  // IVR-style menu trees); free text/voice remain fully first-class alongside this.
+  sendChoices(userId: string, text: string, choices: string[]): Promise<void>;
   setWebhook(url: string, secret: string): Promise<void>;
 }
 
