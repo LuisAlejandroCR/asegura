@@ -51,6 +51,10 @@ interface AffiliateSignals {
   // undefined means the dependents question was never asked/answered — evaluateProduct
   // falls back to the beneficiaries heuristic only in that undefined case.
   dependents?: number;
+  // From xlsx: family segment (e.g. FAMILIA MONOPARENTAL, FAMILIA NUCLEAR INTEGRAL) —
+  // captured when the affiliate self-identifies via SERIE lookup. Used for personalized
+  // recommendation reasons alongside dependents/beneficiaries.
+  segmentoGrupoFamiliar?: string;
   // 2026-07-26 (Matriz 2, C05: "¿Necesitas la protección en los próximos días?") —
   // already inferred by the NLP layer from words like "urgente"/"ya" (InsuranceIntent,
   // nlp/types.ts) but never previously captured into context or read by scoring. No new

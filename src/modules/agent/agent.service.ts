@@ -529,13 +529,16 @@ export class AgentService {
             cedula: serie,
             documentType: 'CC',
             affiliateProfile: record,
+            ...(record.segmentoGrupoFamiliar !== undefined ? { segmentoGrupoFamiliar: record.segmentoGrupoFamiliar } : {}),
             ...(record.rangoSalarial !== undefined ? { rangoSalarial: record.rangoSalarial } : {}),
-            // Only pre-fill dependents/petCount when DISCOVERY hasn't already asked/
-            // answered them — never overwrite a real user answer with a looked-up
-            // default. Same precedent for both: a historical CSV signal is trusted
-            // exactly like a live answer once given, so it's never re-asked.
-            ...(record.dependents !== undefined && baseContext.dependents === undefined
-              ? { dependents: record.dependents, askedDependents: true }
+            // 2026-07-26: pre-fill dependents with askedDependents=true only for the
+            // confidently-mapped known-zero case (AFILLIADO SIN GRUPO_FAMILIAR → 0 is
+            // a precise signal from Colsubsidio's registration system). For family-segment
+            // minimums (FAMILIA MONOPARENTAL → 1, FAMILIA NUCLEAR INTEGRAL → 1), the
+            // value lives in affiliateProfile.dependents as a conservative fallback — the
+            // live question is still asked so a real user answer wins when available.
+            ...(record.segmentoGrupoFamiliar === 'AFILLIADO SIN GRUPO_FAMILIAR' && baseContext.dependents === undefined
+              ? { dependents: 0, askedDependents: true }
               : {}),
             ...(record.petCount !== undefined && baseContext.petCount === undefined
               ? { petCount: record.petCount }
@@ -722,6 +725,24 @@ export class AgentService {
       // taking over. A genuinely-stated larger beneficiaries count (>1) is left alone.
       if (intent.dependents > 0 && (!newContext.beneficiaries || newContext.beneficiaries <= 1)) {
         newContext.beneficiaries = intent.dependents + 1;
+      }
+    }
+
+    // 2026-07-26: CSV fallback when the dependents question was asked but the user
+    // didn't give a parseable answer. affiliateProfile.dependents carries a conservative
+    // minimum from the CSV's SEGMENTO_GRUPO_FAMILIAR (e.g. FAMILIA MONOPARENTAL → 1).
+    // Only fires when askedDependents === true (question was actually asked) — never
+    // for the AFILLIADO SIN GRUPO_FAMILIAR / dependents=0 case which already pre-filled
+    // above in handleAffiliateId. Also fires on user-provided 0 ("vivo solo") because
+    // the live answer of 0 IS parsed and captured at line 715 already — the fallback
+    // only activates when dependents is STILL undefined after probing.
+    if (newContext.dependents === undefined && newContext.askedDependents) {
+      const fallback = newContext.affiliateProfile?.dependents;
+      if (fallback !== undefined) {
+        newContext.dependents = fallback;
+        if (fallback > 0 && (!newContext.beneficiaries || newContext.beneficiaries <= 1)) {
+          newContext.beneficiaries = fallback + 1;
+        }
       }
     }
 

@@ -166,6 +166,15 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
       const segmentoFamiliar = col(cols, 'SEGMENTO_GRUPO_FAMILIAR');
       if (segmentoFamiliar) record.segmentoGrupoFamiliar = segmentoFamiliar;
       if (segmentoFamiliar === 'AFILLIADO SIN GRUPO_FAMILIAR') record.dependents = 0;
+      // 2026-07-26: a single-parent family (FAMILIA MONOPARENTAL) or a nuclear family
+      // (FAMILIA NUCLEAR INTEGRAL) confirms at least 1 dependent — conservative minimum,
+      // same as the NLP's FAMILY_MENTION_PATTERN floor of 1 (groq-nlp.service.ts). Unlike
+      // "AFILLIADO SIN GRUPO_FAMILIAR" which confidently means 0, these just confirm
+      // existence; the caller may still ask the live dependents question for an exact count
+      // if precision matters more than skippability.
+      if (segmentoFamiliar === 'FAMILIA MONOPARENTAL' || segmentoFamiliar === 'FAMILIA NUCLEAR INTEGRAL') {
+        record.dependents = 1;
+      }
 
       const genero = col(cols, 'GENERO');
       if (genero) record.genero = genero;

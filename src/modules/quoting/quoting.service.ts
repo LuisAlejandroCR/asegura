@@ -149,7 +149,16 @@ export class QuotingService {
         addReason(QuotingService.REASON_WEIGHT.tier, `Tienes ${signals.beneficiaries} personas a cargo y un ingreso que permite ahorrar — Vida+Ahorro protege y capitaliza a la vez`);
       } else if (hasDependents && !highIncome && product.id === 'vida') {
         matchScore += 15;
-        addReason(QuotingService.REASON_WEIGHT.tier, `Tienes ${signals.beneficiaries} personas a cargo — proteger ese ingreso es la necesidad más directa`);
+        // 2026-07-26: use the CSV's SEGMENTO_GRUPO_FAMILIAR for a more specific reason
+        // when available — "familia monoparental" and "familia nuclear integral" are the
+        // only two segments that can ground a concrete family-structure sentence without
+        // inventing details (rule #12).
+        const segmentReason = signals.segmentoGrupoFamiliar === 'FAMILIA MONOPARENTAL'
+          ? `Tienes ${signals.beneficiaries} personas a cargo — como cabeza de familia monoparental, proteger tu ingreso es esencial para tu hogar`
+          : signals.segmentoGrupoFamiliar === 'FAMILIA NUCLEAR INTEGRAL'
+            ? `Tienes ${signals.beneficiaries} personas a cargo — proteger tu ingreso asegura la estabilidad de tu hogar`
+            : null;
+        addReason(QuotingService.REASON_WEIGHT.tier, segmentReason ?? `Tienes ${signals.beneficiaries} personas a cargo — proteger ese ingreso es la necesidad más directa`);
       }
     }
 

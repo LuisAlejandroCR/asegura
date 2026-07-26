@@ -175,6 +175,10 @@ interface ConversationContext {
   // (QuotingService.budgetFromSalary) that was previously unreachable in the live agent
   // because nothing ever populated this field from a real conversation.
   rangoSalarial?: string;
+  // 2026-07-26 — family segment from the affiliate CSV (e.g. FAMILIA MONOPARENTAL,
+  // FAMILIA NUCLEAR INTEGRAL). Populated by handleAffiliateId when the lookup succeeds;
+  // passed through to AffiliateSignals for personalized recommendation reasons.
+  segmentoGrupoFamiliar?: string;
   // 2026-07-26 feature request: "capture the complete row... so the agent will know all
   // about the registered user" — the FULL affiliate CSV row (see AffiliateRecord), not
   // just the two fields already wired into live scoring above. Captured verbatim (rule

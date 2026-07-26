@@ -195,7 +195,7 @@ describe('AgentService — affiliate ID lookup', () => {
       context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
     });
     affiliateLookup.isEnabled.mockReturnValue(true);
-    affiliateLookup.findBySerie.mockReturnValue({ rangoSalarial: 'Entre 6 y 8 SMLV', dependents: 0 });
+    affiliateLookup.findBySerie.mockReturnValue({ rangoSalarial: 'Entre 6 y 8 SMLV', dependents: 0, segmentoGrupoFamiliar: 'AFILLIADO SIN GRUPO_FAMILIAR' });
     telegram.normalize.mockResolvedValue(makeMessage('10'));
     await service.handleMessage({});
     const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
@@ -210,7 +210,7 @@ describe('AgentService — affiliate ID lookup', () => {
       context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
     });
     affiliateLookup.isEnabled.mockReturnValue(true);
-    affiliateLookup.findBySerie.mockReturnValue({ dependents: 0 });
+    affiliateLookup.findBySerie.mockReturnValue({ dependents: 0, segmentoGrupoFamiliar: 'AFILLIADO SIN GRUPO_FAMILIAR' });
     telegram.normalize.mockResolvedValue(makeMessage('10'));
     await service.handleMessage({});
     const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;

@@ -131,19 +131,23 @@ describe('AffiliateLookupService', () => {
     fs.unlinkSync(csvPath);
   });
 
-  it('does not set dependents for other SEGMENTO_GRUPO_FAMILIAR values (no invented count)', async () => {
+  // 2026-07-26 updated: FAMILIA NUCLEAR INTEGRAL and FAMILIA MONOPARENTAL now set
+  // dependents=1 (conservative floor), PAREJA CONYUGAL and empty still don't.
+  it('maps FAMILIA_NUCLEAR_INTEGRAL and MONOPARENTAL to dependents=1, other segments remain unmapped', async () => {
     const csvPath = writeTempCsv([
       'SERIE;RANGO_SALARIAL;SEGMENTO_GRUPO_FAMILIAR',
       '1;Entre 1 y 1.5 SMLV;FAMILIA NUCLEAR INTEGRAL',
-      '2;Entre 1 y 1.5 SMLV;PAREJA CONYUGAL',
-      '3;Entre 1 y 1.5 SMLV;',
+      '2;Entre 1 y 1.5 SMLV;FAMILIA MONOPARENTAL',
+      '3;Entre 1 y 1.5 SMLV;PAREJA CONYUGAL',
+      '4;Entre 1 y 1.5 SMLV;',
     ]);
     const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
     await service.onApplicationBootstrap();
 
-    expect(service.findBySerie('1')).toEqual({ rangoSalarial: 'Entre 1 y 1.5 SMLV', segmentoGrupoFamiliar: 'FAMILIA NUCLEAR INTEGRAL' });
-    expect(service.findBySerie('2')).toEqual({ rangoSalarial: 'Entre 1 y 1.5 SMLV', segmentoGrupoFamiliar: 'PAREJA CONYUGAL' });
-    expect(service.findBySerie('3')).toEqual({ rangoSalarial: 'Entre 1 y 1.5 SMLV' });
+    expect(service.findBySerie('1')).toEqual({ rangoSalarial: 'Entre 1 y 1.5 SMLV', segmentoGrupoFamiliar: 'FAMILIA NUCLEAR INTEGRAL', dependents: 1 });
+    expect(service.findBySerie('2')).toEqual({ rangoSalarial: 'Entre 1 y 1.5 SMLV', segmentoGrupoFamiliar: 'FAMILIA MONOPARENTAL', dependents: 1 });
+    expect(service.findBySerie('3')).toEqual({ rangoSalarial: 'Entre 1 y 1.5 SMLV', segmentoGrupoFamiliar: 'PAREJA CONYUGAL' });
+    expect(service.findBySerie('4')).toEqual({ rangoSalarial: 'Entre 1 y 1.5 SMLV' });
 
     fs.unlinkSync(csvPath);
   });

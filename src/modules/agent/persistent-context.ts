@@ -26,7 +26,7 @@ const PERSISTENT_FIELDS = [
   'purchasedProductIds',
   // 2026-07-26 — the affiliate's own historical salary band never changes turn to turn;
   // re-doing the ID lookup on every restart would be pointless when we already have it.
-  'rangoSalarial', 'serieId',
+  'rangoSalarial', 'serieId', 'segmentoGrupoFamiliar',
   // 2026-07-26 — the full affiliate CSV row (see types.ts's field comment) is exactly
   // the kind of durable "what Colsubsidio already knows about this person" fact this
   // allowlist exists for — re-doing the SERIE lookup on every restart would be pointless.
