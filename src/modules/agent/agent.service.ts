@@ -9,6 +9,7 @@ import { ConversationState, ConversationContext, PetDetail, DocumentType } from 
 import { STATE_RESPONSES, formatNameList } from './conversation-state.machine';
 import { pickPersistentFields } from './persistent-context';
 import { QuotingService } from '../quoting/quoting.service';
+import { AffiliateLookupService } from '../quoting/affiliate-lookup.service';
 import { PolicyService } from '../policy/policy.service';
 import { WompiService } from '../payments/wompi.service';
 import { AffiliateSignals, InsuranceProduct } from '../quoting/types';
@@ -72,6 +73,7 @@ export class AgentService {
     private readonly policy: PolicyService,
     private readonly wompi: WompiService,
     private readonly reminders: ReminderService,
+    private readonly affiliateLookup: AffiliateLookupService,
   ) {}
 
   private static readonly TERMINAL_STATES = new Set([
@@ -206,21 +208,23 @@ export class AgentService {
         };
 
       case ConversationState.AUTHORIZATION:
+        // 2026-07-26 affiliate CSV lookup — one-shot question asked right after "sí",
+        // before DISCOVERY starts. Handled first so a reply here is never re-interpreted
+        // as a fresh yes/no answer to the Ley 1581 consent question below.
+        if (context.awaitingAffiliateId) {
+          return this.handleAffiliateId(context, text, rawText);
+        }
         if (intent.isAffirmative) {
           return {
-            text: STATE_RESPONSES[ConversationState.DISCOVERY](context),
-            nextState: ConversationState.DISCOVERY,
+            // "Estoy aquí para ayudarte" reassures voice is just as valid as text for
+            // THIS new question too, matching DISCOVERY's own established phrasing.
+            text: 'Estoy aquí para ayudarte; por eso tus respuestas pueden ser enviadas en texto o audio 😊\n\n' +
+              'Ingresa tu ID si eres afiliado a Colsubsidio — así puedo ajustar mejor tu cotización. Si no lo eres, escríbeme *"no"*.',
             // discoveryFilter gates the new `dependents` question below (Step 3,
             // 2026-07-26) — set only here, on a fresh authorization, so a post-purchase
             // cross-sell (wompi-webhook.controller.ts, which never sets this field) keeps
             // quoting a returning buyer immediately, with no re-interrogation.
-            context: { ...context, autorizado: true, discoveryFilter: true },
-            // Step 4 hybrid buttons — a tap arrives back as ordinary text on the same
-            // webhook (normalize → extractIntent → handleDiscovery), so free text/voice
-            // stay fully valid too; no button is ever mandatory (rule #10). Only
-            // categories the real catalog can sell (rule #12 — a button is a promise):
-            // no vehículo/viaje/patrimonio/hogar product exists.
-            choices: F01_CHOICES,
+            context: { ...context, autorizado: true, discoveryFilter: true, awaitingAffiliateId: true },
           };
         }
         if (intent.isNegative) {
@@ -285,6 +289,45 @@ export class AgentService {
           text: STATE_RESPONSES[currentState]?.(context) ?? STATE_RESPONSES[ConversationState.COMPLETED](context),
         };
     }
+  }
+
+  // ── Affiliate ID lookup ─────────────────────────────────────────────────────
+  // 2026-07-26 — "nunca preguntar lo que ya sabemos" (Diseño preguntas.docx, Nivel 1)
+  // for income: DISCOVERY's filter has no income question at all, so this is the one
+  // signal Colsubsidio can supply directly if the user self-identifies with their
+  // affiliate ID (looked up against SERIE in the synthetic affiliate CSV — see
+  // AffiliateLookupService). Never blocks the flow: a decline, an unrecognized ID, or
+  // the lookup being disabled (missing CSV file) all proceed to DISCOVERY identically,
+  // just without the rangoSalarial boost — same never-loop-forever contract as every
+  // other one-shot gate in this file.
+  private handleAffiliateId(context: ConversationContext, text: string, rawText: string): ProcessResult {
+    const baseContext: ConversationContext = { ...context, awaitingAffiliateId: undefined };
+    const declines = /^no\b/i.test(text.trim()) || !rawText.trim();
+
+    if (!declines) {
+      // Reuses the same digit-extraction convention as cédula (joinSpokenDigits handles
+      // a number dictated one digit at a time by voice, e.g. "1, 2, 3, 4, 5, 6, 7, 8, 9.").
+      const serie = this.joinSpokenDigits(rawText).replace(/\D/g, '');
+      if (serie && this.affiliateLookup.isEnabled()) {
+        const record = this.affiliateLookup.findBySerie(serie);
+        if (record?.rangoSalarial) {
+          const enriched: ConversationContext = { ...baseContext, rangoSalarial: record.rangoSalarial, serieId: serie };
+          return {
+            text: `¡Encontré tu perfil! Esto me ayuda a personalizar mejor tu cotización.\n\n${STATE_RESPONSES[ConversationState.DISCOVERY](enriched)}`,
+            nextState: ConversationState.DISCOVERY,
+            context: enriched,
+            choices: F01_CHOICES,
+          };
+        }
+      }
+    }
+
+    return {
+      text: STATE_RESPONSES[ConversationState.DISCOVERY](baseContext),
+      nextState: ConversationState.DISCOVERY,
+      context: baseContext,
+      choices: F01_CHOICES,
+    };
   }
 
   // ── Discovery ────────────────────────────────────────────────────────────────
@@ -396,6 +439,11 @@ export class AgentService {
     if (!context.beneficiaries && intent.beneficiaries > 0) newContext.beneficiaries = intent.beneficiaries;
     if (!context.budget && intent.budget) newContext.budget = intent.budget;
     if (!context.petCount && intent.petCount && intent.petCount > 0) newContext.petCount = intent.petCount;
+    // 2026-07-26 (Matriz 2, C05) — "immediate" always wins over a stale "exploring" from
+    // an earlier turn in the same conversation; a later message signaling real urgency
+    // must not be silently ignored just because an earlier one didn't.
+    if (intent.urgency === 'immediate') newContext.urgency = 'immediate';
+    else if (!newContext.urgency && intent.urgency) newContext.urgency = intent.urgency;
     // Step 3 (2026-07-26): capture the answer to the new "¿cuántas personas dependen de
     // ti?" question. `=== undefined` (not falsy) so a real answer of 0 ("vivo solo") is
     // still captured, not treated as "never asked".

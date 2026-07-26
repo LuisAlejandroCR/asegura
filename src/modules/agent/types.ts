@@ -146,6 +146,26 @@ interface ConversationContext {
   // whether or not the answer parsed (never-loop-forever contract, same as every other
   // KYC gate in this file).
   askedDependents?: boolean;
+  // 2026-07-26 affiliate CSV lookup — set right after AUTHORIZATION's "sí", before
+  // DISCOVERY starts. One-shot: the very next message is treated as either an ID to look
+  // up (AffiliateLookupService.findBySerie) or a decline ("no"), never asked again.
+  // Never blocks the flow — a lookup miss or an outright decline both proceed to
+  // DISCOVERY identically, just without the `rangoSalarial` boost.
+  awaitingAffiliateId?: boolean;
+  // The SERIE the user provided, IF a lookup succeeded — kept for reference/debugging,
+  // not read by scoring directly (rangoSalarial below is what QuotingService uses).
+  serieId?: string;
+  // 2026-07-26 (Matriz 2, C05) — already inferred by the NLP layer from words like
+  // "urgente"/"ya" (InsuranceIntent.urgency) but never previously captured into context.
+  // Deliberately NOT in persistent-context.ts: "necesito protección ya" reflects the
+  // moment, not a durable fact about the person — a restarted conversation re-derives it
+  // from whatever's said this time, same as productCategory.
+  urgency?: 'immediate' | 'exploring';
+  // Real, live-sourced income signal from the affiliate's own historical record (see
+  // AffiliateSignals.rangoSalarial, quoting/types.ts) — already has a scoring consumer
+  // (QuotingService.budgetFromSalary) that was previously unreachable in the live agent
+  // because nothing ever populated this field from a real conversation.
+  rangoSalarial?: string;
 }
 
 interface Conversation {

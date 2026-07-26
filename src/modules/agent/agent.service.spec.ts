@@ -74,13 +74,19 @@ describe('AgentService — GREETING', () => {
 // ── AUTHORIZATION state ───────────────────────────────────────────────────────
 
 describe('AgentService — AUTHORIZATION', () => {
-  it('"sí" transitions to DISCOVERY with autorizado:true', async () => {
+  // 2026-07-26 affiliate CSV lookup — "sí" no longer jumps straight to DISCOVERY. It now
+  // asks a one-shot affiliate-ID question first (see the "affiliate ID lookup" describe
+  // block below for that second step), staying in AUTHORIZATION meanwhile.
+  it('"sí" stays in AUTHORIZATION and asks for the affiliate ID next, with autorizado:true', async () => {
     const { service, telegram, conversations } = buildService({ state: ConversationState.AUTHORIZATION });
     telegram.normalize.mockResolvedValue(makeMessage('sí'));
     await service.handleMessage({});
     expect(conversations.saveState).toHaveBeenCalledWith(
-      'conv-1', ConversationState.DISCOVERY, expect.objectContaining({ autorizado: true }),
+      'conv-1', ConversationState.AUTHORIZATION,
+      expect.objectContaining({ autorizado: true, awaitingAffiliateId: true, discoveryFilter: true }),
     );
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('Ingresa tu ID');
   });
 
   it('"si" (without accent) also authorizes', async () => {
@@ -88,7 +94,7 @@ describe('AgentService — AUTHORIZATION', () => {
     telegram.normalize.mockResolvedValue(makeMessage('si'));
     await service.handleMessage({});
     expect(conversations.saveState).toHaveBeenCalledWith(
-      'conv-1', ConversationState.DISCOVERY, expect.objectContaining({ autorizado: true }),
+      'conv-1', ConversationState.AUTHORIZATION, expect.objectContaining({ autorizado: true }),
     );
   });
 
@@ -99,7 +105,7 @@ describe('AgentService — AUTHORIZATION', () => {
     telegram.normalize.mockResolvedValue(makeMessage(' Sí.'));
     await service.handleMessage({});
     expect(conversations.saveState).toHaveBeenCalledWith(
-      'conv-1', ConversationState.DISCOVERY, expect.objectContaining({ autorizado: true }),
+      'conv-1', ConversationState.AUTHORIZATION, expect.objectContaining({ autorizado: true }),
     );
   });
 
@@ -108,7 +114,7 @@ describe('AgentService — AUTHORIZATION', () => {
     telegram.normalize.mockResolvedValue(makeMessage('Sí!'));
     await service.handleMessage({});
     expect(conversations.saveState).toHaveBeenCalledWith(
-      'conv-1', ConversationState.DISCOVERY, expect.objectContaining({ autorizado: true }),
+      'conv-1', ConversationState.AUTHORIZATION, expect.objectContaining({ autorizado: true }),
     );
   });
 
@@ -127,14 +133,106 @@ describe('AgentService — AUTHORIZATION', () => {
     await service.handleMessage({});
     expect(conversations.saveState).not.toHaveBeenCalled(); // stays in AUTHORIZATION
   });
+});
 
-  // 2026-07-26 Step 4 — F01 hybrid-filter buttons presented at exactly this one call
-  // site. A tap is a shortcut over the NLP path, never a replacement — free text/voice
-  // stay fully valid (rule #10), which is why sendChoices carries the SAME question text
-  // sendText would have, just with tappable shortcuts alongside it.
-  it('presents the F01 hybrid buttons via sendChoices, with discoveryFilter set, and sets askedDependents/dependents nowhere yet', async () => {
-    const { service, telegram, conversations } = buildService({ state: ConversationState.AUTHORIZATION });
-    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+// ── Affiliate ID lookup (2026-07-26) ───────────────────────────────────────────
+// "sí" asks a one-shot affiliate-ID question before DISCOVERY starts — a decline, an
+// unrecognized ID, or the lookup being disabled (missing CSV) all proceed to DISCOVERY
+// identically, just without the rangoSalarial boost. F01 hybrid buttons move here too
+// (Step 4, 2026-07-26) — the real first moment DISCOVERY actually begins.
+describe('AgentService — affiliate ID lookup', () => {
+  it('a decline ("no") proceeds to DISCOVERY with F01 buttons, no rangoSalarial set', async () => {
+    const { service, telegram, conversations, affiliateLookup } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('no'));
+    await service.handleMessage({});
+    expect(affiliateLookup.findBySerie).not.toHaveBeenCalled();
+    expect(telegram.sendChoices).toHaveBeenCalledTimes(1);
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.rangoSalarial).toBeUndefined();
+    expect(savedContext.awaitingAffiliateId).toBeUndefined();
+    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.DISCOVERY, expect.anything());
+  });
+
+  it('a valid ID that matches a real record sets rangoSalarial and acknowledges finding the profile', async () => {
+    const { service, telegram, conversations, affiliateLookup } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+    });
+    affiliateLookup.isEnabled.mockReturnValue(true);
+    affiliateLookup.findBySerie.mockReturnValue({ rangoSalarial: 'Entre 4 y 6 SMLV' });
+    telegram.normalize.mockResolvedValue(makeMessage('42'));
+    await service.handleMessage({});
+    expect(affiliateLookup.findBySerie).toHaveBeenCalledWith('42');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.rangoSalarial).toBe('Entre 4 y 6 SMLV');
+    expect(savedContext.serieId).toBe('42');
+    // Reaches DISCOVERY with F01 choices attached, so this dispatches via sendChoices,
+    // not sendText (see handleMessage's dispatch order).
+    const sentText = telegram.sendChoices.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('¡Encontré tu perfil!');
+  });
+
+  it('an ID with no matching record proceeds to DISCOVERY normally, without a crash or a false "found" message', async () => {
+    const { service, telegram, conversations, affiliateLookup } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+    });
+    affiliateLookup.isEnabled.mockReturnValue(true);
+    affiliateLookup.findBySerie.mockReturnValue(null);
+    telegram.normalize.mockResolvedValue(makeMessage('999999'));
+    await service.handleMessage({});
+    const sentText = telegram.sendChoices.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('¡Encontré tu perfil!');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.rangoSalarial).toBeUndefined();
+    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.DISCOVERY, expect.anything());
+  });
+
+  it('a spoken ID dictated digit-by-digit ("1, 2, 3, 4, 5, 6, 7, 8, 9.") is joined before lookup, same convention as cédula', async () => {
+    const { service, telegram, affiliateLookup } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+    });
+    affiliateLookup.isEnabled.mockReturnValue(true);
+    affiliateLookup.findBySerie.mockReturnValue(null);
+    telegram.normalize.mockResolvedValue(makeMessage('1, 2, 3, 4, 5, 6, 7, 8, 9.'));
+    await service.handleMessage({});
+    expect(affiliateLookup.findBySerie).toHaveBeenCalledWith('123456789');
+  });
+
+  it('does not even attempt a lookup when the service is disabled (no CSV configured) — degrades to DISCOVERY silently', async () => {
+    const { service, telegram, affiliateLookup } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+    });
+    // affiliateLookup.isEnabled defaults to false in the test helper
+    telegram.normalize.mockResolvedValue(makeMessage('42'));
+    await service.handleMessage({});
+    expect(affiliateLookup.findBySerie).not.toHaveBeenCalled();
+    expect(telegram.sendChoices).toHaveBeenCalledTimes(1);
+  });
+
+  it('an empty/unparseable reply (no digits, not a decline) still proceeds to DISCOVERY — never loops forever', async () => {
+    const { service, conversations } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+    });
+    await service.handleMessage({}); // default mock message text is 'test' — no digits, not "no"
+    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.DISCOVERY, expect.anything());
+  });
+
+  // 2026-07-26 Step 4 — F01 hybrid-filter buttons presented once the affiliate-ID step
+  // resolves. A tap is a shortcut over the NLP path, never a replacement — free
+  // text/voice stay fully valid (rule #10).
+  it('presents the F01 hybrid buttons via sendChoices once the ID step resolves', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('no'));
     await service.handleMessage({});
     expect(telegram.sendChoices).toHaveBeenCalledTimes(1);
     const [userId, text, choices] = telegram.sendChoices.mock.calls[0];
@@ -2712,6 +2810,61 @@ describe('AgentService — DISCOVERY dependents question (Step 3)', () => {
   });
 });
 
+// ── DISCOVERY — urgency capture (2026-07-26, Matriz 2 C05) ─────────────────────
+// Already inferred by the NLP layer from words like "urgente"/"ya" — no new question,
+// just wiring an existing-but-dead field into context and, from there, into scoring.
+describe('AgentService — DISCOVERY urgency capture', () => {
+  it('captures urgency=immediate into context and passes it through to the quote', async () => {
+    const vidaProduct = PRODUCTS.find((p) => p.category === 'vida')!;
+    const { service, telegram, quoting, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ productCategory: 'vida', urgency: 'immediate' }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: vidaProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('necesito un seguro urgente'));
+    await service.handleMessage({});
+    expect(quoting.bestQuote).toHaveBeenCalledWith(expect.objectContaining({ urgency: 'immediate' }));
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.urgency).toBe('immediate');
+  });
+
+  it('a later "immediate" signal overrides an earlier "exploring" one in the same conversation', async () => {
+    const vidaProduct = PRODUCTS.find((p) => p.category === 'vida')!;
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { productCategory: 'vida', urgency: 'exploring' },
+      intent: makeIntent({ productCategory: 'vida', urgency: 'immediate' }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: vidaProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('en realidad lo necesito ya'));
+    await service.handleMessage({});
+    expect(quoting.bestQuote).toHaveBeenCalledWith(expect.objectContaining({ urgency: 'immediate' }));
+  });
+
+  it('does not overwrite an already-captured "immediate" with a later "exploring"', async () => {
+    const vidaProduct = PRODUCTS.find((p) => p.category === 'vida')!;
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { productCategory: 'vida', urgency: 'immediate' },
+      intent: makeIntent({ productCategory: 'vida', urgency: 'exploring' }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: vidaProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('cuéntame más'));
+    await service.handleMessage({});
+    expect(quoting.bestQuote).toHaveBeenCalledWith(expect.objectContaining({ urgency: 'immediate' }));
+  });
+});
+
 // ── DISCOVERY — lost-context resilience ──────────────────────────────────────
 
 describe('AgentService — DISCOVERY lost-context resilience', () => {
@@ -2924,12 +3077,17 @@ describe('AgentService — cédula dictated digit-by-digit with commas (2026-07-
 describe('AgentService FUZZ — confirmation variants', () => {
   const confirmVariants = ['sí', 'si', 'Sí', 'Si', 'SÍ', 'SI', 'Sí.', 'sí!', 'sí,', ' sí '];
 
+  // 2026-07-26: "sí" no longer jumps straight to DISCOVERY — it asks a one-shot
+  // affiliate-ID question first (see "AgentService — affiliate ID lookup"), so this
+  // fuzz now confirms each variant is recognized as isAffirmative (autorizado:true),
+  // not the full two-step transition to DISCOVERY.
   it.each(confirmVariants)('"%s" is treated as confirmation in AUTHORIZATION', async (text) => {
     const { service, telegram, conversations } = buildService({ state: ConversationState.AUTHORIZATION });
     telegram.normalize.mockResolvedValue(makeMessage(text));
     await service.handleMessage({});
     expect(conversations.saveState).toHaveBeenCalledWith(
-      'conv-1', ConversationState.DISCOVERY, expect.objectContaining({ autorizado: true }),
+      'conv-1', ConversationState.AUTHORIZATION,
+      expect.objectContaining({ autorizado: true, awaitingAffiliateId: true }),
     );
   });
 });

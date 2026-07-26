@@ -77,12 +77,19 @@ function buildService(overrides: {
     schedule: jest.fn(),
     cancel: jest.fn(),
   };
+  // Disabled by default (matches "CSV not found" — the real default in production
+  // without AFFILIATE_CSV_PATH configured) so pre-existing tests that don't care about
+  // affiliate lookup see it as a no-op, exactly like Wompi/LLM being unconfigured.
+  const affiliateLookup = {
+    isEnabled: jest.fn().mockReturnValue(false),
+    findBySerie: jest.fn().mockReturnValue(null),
+  };
   const service = new AgentService(
     nlp as any, telegram as any, conversations as any,
-    quoting as any, policy as any, wompi as any, reminders as any,
+    quoting as any, policy as any, wompi as any, reminders as any, affiliateLookup as any,
   );
 
-  return { service, nlp, telegram, conversations, quoting, policy, wompi, reminders };
+  return { service, nlp, telegram, conversations, quoting, policy, wompi, reminders, affiliateLookup };
 }
 
 export { makeMessage, makeIntent, extractPetResolutionMock, makeConversation, buildService };
