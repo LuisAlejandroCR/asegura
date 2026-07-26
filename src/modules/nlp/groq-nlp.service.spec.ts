@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { GroqNlpService } from './groq-nlp.service';
 import { InsuranceIntent } from './types';
+import { F01_CHOICES } from '../agent/agent.service';
 
 const mockConfig = { get: jest.fn((_key: string, def?: unknown) => def ?? '') } as any;
 
@@ -514,6 +515,78 @@ describe('GroqNlpService.postProcess — wantsAlternative deterministic override
   });
 });
 
+// Real live-test bug (2026-07-26): "No, no quiero Ezequial porque ya tengo. Explícame de
+// qué se trata." has no '?'/'¿' (ASR drops it), so the question-mark guardrail doesn't
+// save it, and it names no alternative product, so wantsAlternativeText's override
+// doesn't fire either. isAffirmativeText's bare 'quiero'/'me interesa' substrings have no
+// negation guard at all — unlike every other keyword trap in this file — so this could
+// leave isAffirmative=true on an explicit decline and route straight to phone-
+// verification/KYC for the product just declined. Same override pattern as
+// wantsAlternative just above: a deterministic decline phrase always wins.
+describe('GroqNlpService.postProcess — negated desire deterministic override (2026-07-26 live bug)', () => {
+  const service = makeService();
+
+  function wronglyAffirmative(): InsuranceIntent {
+    return {
+      productCategory: 'vida', petType: null, coverage: [], beneficiaries: 1,
+      urgency: 'exploring', isAffirmative: true, isNegative: false,
+      wantsAlternative: false, petResolution: null,
+    };
+  }
+
+  it('regression — "No, no quiero Ezequial porque ya tengo. Explícame de qué se trata." forces isAffirmative=false, isNegative=true even when Groq said isAffirmative=true', () => {
+    const result = postProcess(service, wronglyAffirmative(), 'No, no quiero Ezequial porque ya tengo. Explícame de qué se trata.');
+    expect(result.isAffirmative).toBe(false);
+    expect(result.isNegative).toBe(true);
+  });
+
+  it.each([
+    'no quiero eso',
+    'no deseo continuar',
+    'no me interesa ese plan',
+  ])('"%s" forces isAffirmative=false, isNegative=true via postProcess too', (text) => {
+    const result = postProcess(service, wronglyAffirmative(), text);
+    expect(result.isAffirmative).toBe(false);
+    expect(result.isNegative).toBe(true);
+  });
+
+  it('does not force the override when there is no negated-desire phrase (regression guard)', () => {
+    const result = postProcess(service, wronglyAffirmative(), 'sí, quiero ese');
+    expect(result.isAffirmative).toBe(true);
+    expect(result.isNegative).toBe(false);
+  });
+});
+
+describe('GroqNlpService.fallbackIntent — negated desire deterministic override (2026-07-26 live bug)', () => {
+  const service = makeService();
+
+  it('regression — "No, no quiero Ezequial porque ya tengo. Explícame de qué se trata." → isAffirmative=false, isNegative=true', () => {
+    const result = fallback(service, 'No, no quiero Ezequial porque ya tengo. Explícame de qué se trata.');
+    expect(result.isAffirmative).toBe(false);
+    expect(result.isNegative).toBe(true);
+  });
+
+  it.each([
+    'no quiero eso',
+    'no deseo continuar',
+    'no me interesa ese plan',
+  ])('"%s" → isAffirmative=false, isNegative=true', (text) => {
+    const result = fallback(service, text);
+    expect(result.isAffirmative).toBe(false);
+    expect(result.isNegative).toBe(true);
+  });
+
+  // Regression guards — a positive, non-negated "quiero" must keep confirming exactly as
+  // before; this is a scoped override, not a removal of 'quiero' as an affirmative signal.
+  it.each([
+    'sí quiero ese',
+    'quiero comprarlo',
+    'quiero ese',
+  ])('"%s" still yields isAffirmative=true (no false positive from the new override)', (text) => {
+    expect(fallback(service, text).isAffirmative).toBe(true);
+  });
+});
+
 // ── petResolution extraction ──────────────────────────────────────────────────
 
 describe('GroqNlpService.postProcess — petResolution extraction', () => {
@@ -810,5 +883,91 @@ describe('GroqNlpService.fallbackIntent — deterministic petCount extraction', 
 
   it('returns null when no explicit count is stated', () => {
     expect(fallback(service, 'mi perro está bien').petCount).toBeNull();
+  });
+});
+
+// ── Step 3: `dependents` extraction (2026-07-26) ───────────────────────────────
+// Not in Groq's JSON schema at all — this deterministic extraction is the ONLY source
+// for this field in both the primary (postProcess) and fallback paths.
+describe('GroqNlpService.fallbackIntent — dependents extraction', () => {
+  const service = makeService();
+
+  it('"vivo solo" → 0', () => {
+    expect(fallback(service, 'vivo solo').dependents).toBe(0);
+  });
+
+  it('"no tengo hijos" → 0', () => {
+    expect(fallback(service, 'no tengo hijos').dependents).toBe(0);
+  });
+
+  it('an explicit count with "hijos" → that number', () => {
+    expect(fallback(service, 'tengo dos hijos').dependents).toBe(2);
+  });
+
+  it('an explicit digit count with "personas a cargo" → that number', () => {
+    expect(fallback(service, 'tengo 3 personas a cargo').dependents).toBe(3);
+  });
+
+  it('a named family member with no explicit count → conservative floor of 1', () => {
+    expect(fallback(service, 'vivo con mi esposa').dependents).toBe(1);
+  });
+
+  it('no dependents signal at all → null (never asked/answered)', () => {
+    expect(fallback(service, 'quiero un seguro de vida').dependents).toBeNull();
+  });
+});
+
+describe('GroqNlpService.postProcess — dependents extraction', () => {
+  const service = makeService();
+
+  it('sets dependents from the deterministic extractor regardless of what Groq returned', () => {
+    const intent = baseMascotas();
+    expect(postProcess(service, intent, 'tengo dos hijos').dependents).toBe(2);
+  });
+
+  it('"vivo solo" → 0 via postProcess too', () => {
+    const intent = baseMascotas();
+    expect(postProcess(service, intent, 'vivo solo').dependents).toBe(0);
+  });
+
+  it('no signal → null via postProcess too', () => {
+    const intent = baseMascotas();
+    expect(postProcess(service, intent, 'mi gato está bien').dependents).toBeNull();
+  });
+});
+
+// ── Step 4: F01 button label → parser invariant ────────────────────────────────
+// The highest-value test for the hybrid-buttons feature: a label is a PROMISE the NLP
+// parser must actually honor. Imports the SAME array AgentService presents as buttons
+// (F01_CHOICES) — not a hand-copied duplicate — so this test breaks the moment the two
+// drift apart. Calls fallbackIntent directly so it's deterministic and never hits the
+// network (real risk found while designing this: isAffirmativeText's bare 'dame'/'todas'
+// substrings and "no" inside "No estoy seguro" are exactly the kind of trap this guards).
+describe('GroqNlpService.fallbackIntent — F01 button label invariant (Step 4)', () => {
+  const service = makeService();
+
+  const categoryLabels: [string, NonNullable<InsuranceIntent['productCategory']>][] = [
+    ['❤️ Mi familia', 'vida'],
+    ['🏥 Mi salud', 'asistencia'],
+    ['🐾 Mi mascota', 'mascotas'],
+    ['🤕 Accidentes', 'accidentes'],
+  ];
+
+  it.each(categoryLabels)('"%s" → productCategory "%s", isAffirmative=false, abandonIntent=false', (label, expectedCategory) => {
+    const result = fallback(service, label.toLowerCase());
+    expect(result.productCategory).toBe(expectedCategory);
+    expect(result.isAffirmative).toBe(false);
+    expect(result.abandonIntent).toBe(false);
+  });
+
+  it('"🤔 No estoy seguro" never confirms or abandons (its productCategory is deliberately null — no button forces a category)', () => {
+    const result = fallback(service, '🤔 No estoy seguro'.toLowerCase());
+    expect(result.isAffirmative).toBe(false);
+    expect(result.abandonIntent).toBe(false);
+  });
+
+  it('every F01_CHOICES label is covered by this invariant (catches a label added without a matching test)', () => {
+    const coveredLabels = [...categoryLabels.map(([label]) => label), '🤔 No estoy seguro'];
+    expect(new Set(F01_CHOICES)).toEqual(new Set(coveredLabels));
   });
 });

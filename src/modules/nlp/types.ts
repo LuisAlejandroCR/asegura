@@ -23,6 +23,10 @@ interface InsuranceIntent {
   // pets in a single turn ("Rocky tiene 5 años y es labrador, y Luna tiene 3 y es
   // siamesa") instead of being forced through one message per pet.
   pets?: { name: string | null; age: string | null; breed: string | null }[];
+  // 2026-07-26 — answer to the new DISCOVERY "¿cuántas personas dependen de ti?"
+  // question. Deterministic cross-check always wins, same override policy as
+  // petCount/petType (never trust the model alone) — see groq-nlp.service.ts.
+  dependents?: number | null;
 }
 
 interface INlpProvider {

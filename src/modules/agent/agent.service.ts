@@ -34,6 +34,11 @@ interface ProcessResult {
   // a real branded success-checkmark clip, used for the selfie-confirmed and
   // Tarjeta Colsubsidio moments — heavier than `reaction`, so only where explicitly asked).
   animation?: string;
+  // 2026-07-26 hybrid buttons (Step 4) — when set, `text` is sent via a Telegram reply
+  // keyboard offering these as tappable shortcuts. A tap arrives back as an ordinary text
+  // message on the same webhook — free text/voice remain fully valid answers too; no
+  // button is ever mandatory (rule #10).
+  choices?: string[];
 }
 
 // Static brand assets — referenced relative to the project root (not __dirname) because
@@ -43,6 +48,15 @@ interface ProcessResult {
 // (2026-07-24 feedback) — no separate "confirmed" text message needed alongside it.
 const IDENTITY_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'identity-confirmed.mp4');
 const PAYMENT_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'payment-received.mp4');
+
+// 2026-07-26 Step 4 — F01 hybrid-filter buttons, presented once at AUTHORIZATION→
+// isAffirmative. Only categories the real catalog can actually sell (rule #12): no
+// vehículo/viaje/patrimonio/hogar product exists, so those spec categories are
+// deliberately not offered as buttons (free text can still ask about them — see
+// detectOutOfCatalogCategory's honest decline). Exported (not just a class constant) so
+// the label→parser invariant test (groq-nlp.service.spec.ts) shares this exact array as
+// its single source of truth — a label is a promise the parser must actually honor.
+export const F01_CHOICES = ['❤️ Mi familia', '🏥 Mi salud', '🐾 Mi mascota', '🤕 Accidentes', '🤔 No estoy seguro'];
 
 @Injectable()
 export class AgentService {
@@ -64,6 +78,16 @@ export class AgentService {
     ConversationState.ABANDONED,
     ConversationState.REJECTED,
   ]);
+
+  // 2026-07-26 live-test bug: a meta-question about the quote already shown ("¿cuál es
+  // mejor?", "cuéntame más de ellos", "explícame de qué se trata", "beneficios") carries
+  // no affirmative/negative/alternative signal, so it used to fall through to a silent
+  // re-show of the same product. Deterministic on purpose — this is a request for MORE
+  // detail on what's already on screen, not a new category/product signal for the NLP
+  // layer to classify.
+  private static readonly MORE_INFO_PATTERN =
+    /\b(cu[eé]ntame\s+m[aá]s|expl[ií]came|de\s+qu[eé]\s+se\s+trata|beneficios|cu[aá]l(?:\s+de\s+todos)?\s+es\s+mejor|mejor\s+para\s+m[ií])\b/i;
+
 
   async handleMessage(raw: unknown): Promise<void> {
     const msg: NormalizedMessage = await this.telegram.normalize(raw);
@@ -122,6 +146,8 @@ export class AgentService {
 
     if (result.requestContact && result.text) {
       await this.telegram.sendContactRequest(msg.userId, result.text);
+    } else if (result.choices?.length && result.text) {
+      await this.telegram.sendChoices(msg.userId, result.text, result.choices);
     } else if (result.texts?.length) {
       for (const t of result.texts) {
         await this.telegram.sendText(msg.userId, t);
@@ -183,7 +209,17 @@ export class AgentService {
           return {
             text: STATE_RESPONSES[ConversationState.DISCOVERY](context),
             nextState: ConversationState.DISCOVERY,
-            context: { ...context, autorizado: true },
+            // discoveryFilter gates the new `dependents` question below (Step 3,
+            // 2026-07-26) — set only here, on a fresh authorization, so a post-purchase
+            // cross-sell (wompi-webhook.controller.ts, which never sets this field) keeps
+            // quoting a returning buyer immediately, with no re-interrogation.
+            context: { ...context, autorizado: true, discoveryFilter: true },
+            // Step 4 hybrid buttons — a tap arrives back as ordinary text on the same
+            // webhook (normalize → extractIntent → handleDiscovery), so free text/voice
+            // stay fully valid too; no button is ever mandatory (rule #10). Only
+            // categories the real catalog can sell (rule #12 — a button is a promise):
+            // no vehículo/viaje/patrimonio/hogar product exists.
+            choices: F01_CHOICES,
           };
         }
         if (intent.isNegative) {
@@ -211,6 +247,26 @@ export class AgentService {
         return this.handlePayment(convId, context, text, intent);
 
       default:
+        // Real live-test bug (screenshot, 2026-07-26): ReminderService's auto-close
+        // message explicitly promises "cuando quieras continuar, aquí estoy — 24/7" —
+        // but ABANDONED/REJECTED only restarted on an EXACT hola/ayuda/inicio/start
+        // match. Any real follow-up ("De todos los que me sugieres, ¿cuál es mejor?")
+        // fell through to the static STATE_RESPONSES[currentState] text below with no
+        // nextState returned, so the conversation stayed stuck on that same terminal
+        // row forever — every later message got the identical canned reply. Restart
+        // unconditionally here so the "aquí estoy" promise is actually true.
+        //
+        // COMPLETED is deliberately excluded: those conversations already hold real KYC
+        // data (cédula/nombre/correo, hasCompletedPurchase) — blindly resetting context
+        // would force a paying customer to redo verification. Left on the keyword-only
+        // path; a proper "resume as returning customer" flow is separate future scope.
+        if (currentState === ConversationState.ABANDONED || currentState === ConversationState.REJECTED) {
+          return {
+            text: STATE_RESPONSES[ConversationState.GREETING]({}),
+            nextState: ConversationState.GREETING,
+            context: {},
+          };
+        }
         if (text.includes('hola') || text.includes('ayuda') || text.includes('inicio') || text === '/start') {
           return {
             text: STATE_RESPONSES[ConversationState.GREETING](context),
@@ -332,6 +388,22 @@ export class AgentService {
     if (!context.beneficiaries && intent.beneficiaries > 0) newContext.beneficiaries = intent.beneficiaries;
     if (!context.budget && intent.budget) newContext.budget = intent.budget;
     if (!context.petCount && intent.petCount && intent.petCount > 0) newContext.petCount = intent.petCount;
+    // Step 3 (2026-07-26): capture the answer to the new "¿cuántas personas dependen de
+    // ti?" question. `=== undefined` (not falsy) so a real answer of 0 ("vivo solo") is
+    // still captured, not treated as "never asked".
+    if (newContext.dependents === undefined && intent.dependents !== null && intent.dependents !== undefined) {
+      newContext.dependents = intent.dependents;
+      // Wakes the existing "Cubre a N personas" family reason (quoting.service.ts) too,
+      // without a separate beneficiaries question — the dependents answer already
+      // implies a household size. `<= 1` (not just falsy) because Groq's OWN JSON schema
+      // shows "beneficiaries": 1 as an example value the LLM often defaults to with no
+      // real signal (see the comment on this elsewhere in this file) — that spurious
+      // default must not block the real, deliberately-answered dependents signal from
+      // taking over. A genuinely-stated larger beneficiaries count (>1) is left alone.
+      if (intent.dependents > 0 && (!newContext.beneficiaries || newContext.beneficiaries <= 1)) {
+        newContext.beneficiaries = intent.dependents + 1;
+      }
+    }
 
     // Infer productCategory when NLP didn't extract it explicitly
     if (!newContext.productCategory) {
@@ -374,6 +446,27 @@ export class AgentService {
       return {
         text: '¿Tus mascotas son gatos, perros, o tienes de ambos? Así te muestro la cobertura correcta.',
         context: newContext,
+      };
+    }
+
+    // Step 3 (2026-07-26 hiperperfilamiento subset): ask about dependents ONCE, only in
+    // the new hybrid-filter flow (`discoveryFilter` — see AUTHORIZATION), and only when
+    // it could actually change the recommendation. Dependents don't affect a mascotas
+    // recommendation (spec Principle #3: "formular únicamente preguntas que cambien la
+    // recomendación"), so that category is excluded here. `askedDependents` is set in
+    // THIS SAME return, so the next turn always proceeds to quote regardless of whether
+    // the answer parsed — the same never-loop-forever contract every KYC gate in this
+    // file already carries.
+    if (
+      newContext.discoveryFilter &&
+      !newContext.askedDependents &&
+      newContext.dependents === undefined &&
+      newContext.productCategory &&
+      newContext.productCategory !== 'mascotas'
+    ) {
+      return {
+        text: '¿Cuántas personas dependen de ti económicamente? (pareja, hijos, papás a cargo...)',
+        context: { ...newContext, askedDependents: true },
       };
     }
 
@@ -562,6 +655,17 @@ export class AgentService {
         text: STATE_RESPONSES[terminalState](context),
         nextState: terminalState,
       };
+    }
+
+    // Real live-test bug (2026-07-26): "¿Cuál es mejor?" / "Me interesan todos, cuéntame
+    // más de ellos" / "Explícame de qué se trata" had no branch at all — none of these
+    // carry an isAffirmative/isNegative/wantsAlternative signal, so they fell through to
+    // the neutral re-show below, which is always the SAME single product (bestQuote only
+    // ever returns the top-scored one) — read by the user as "va como por el más
+    // completo" no matter what was actually asked. Answer with the real product detail
+    // (full coverage list + persuasive reason) instead of a silent re-show.
+    if (currentProduct && AgentService.MORE_INFO_PATTERN.test(text)) {
+      return { text: this.formatProductDetail(currentProduct, context) };
     }
 
     // Real bug found 2026-07-24 (confirmed independently by a live test session and a
@@ -1492,6 +1596,33 @@ export class AgentService {
       `Te lo recomiendo porque: ${reason}.\n\n` +
       `👉 Ver detalles: ${product.url}\n\n` +
       `${priceBlock}${petNote}\n\n` +
+      `¿Te interesa o prefieres que busquemos otra opción?`
+    );
+  }
+
+  // 2026-07-26 live-test bug: answers a follow-up meta-question ("¿cuál es mejor?",
+  // "cuéntame más", "explícame de qué se trata") with the FULL coverage list (formatQuote
+  // truncates to top-3) plus the persuasive reason, instead of the same truncated card
+  // being silently re-shown. When more than one product was already shown this turn,
+  // names the other(s) so the user can ask to switch — no invented data, only fields
+  // already in products.data.ts (rule #12).
+  private formatProductDetail(product: InsuranceProduct, context: ConversationContext): string {
+    const cov = product.coverages.map((c) => `✅ ${c}`).join('\n');
+    const scored = this.quoting.score(context as AffiliateSignals).find((s) => s.productId === product.id);
+    const reason = scored?.reasons[0] ?? 'se ajusta a lo que buscas';
+    const others = (context.shownProductIds ?? [])
+      .filter((id) => id !== product.id)
+      .map((id) => PRODUCTS.find((p) => p.id === id))
+      .filter((p): p is InsuranceProduct => !!p);
+    const othersLine = others.length
+      ? `\n\nTambién te mostré ${others.map((p) => p.name).join(' y ')} — dime si prefieres que profundice en ese en vez.`
+      : '';
+
+    return (
+      `🛡️ *${product.name}* con ${product.insurer}\n${cov}\n\n` +
+      `Te lo recomiendo porque: ${reason}.\n\n` +
+      `👉 Ver detalles: ${product.url}\n` +
+      `💰 Desde $${product.basePremium.toLocaleString('es-CO')}/mes${othersLine}\n\n` +
       `¿Te interesa o prefieres que busquemos otra opción?`
     );
   }

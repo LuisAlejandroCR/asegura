@@ -127,6 +127,23 @@ describe('AgentService — AUTHORIZATION', () => {
     await service.handleMessage({});
     expect(conversations.saveState).not.toHaveBeenCalled(); // stays in AUTHORIZATION
   });
+
+  // 2026-07-26 Step 4 — F01 hybrid-filter buttons presented at exactly this one call
+  // site. A tap is a shortcut over the NLP path, never a replacement — free text/voice
+  // stay fully valid (rule #10), which is why sendChoices carries the SAME question text
+  // sendText would have, just with tappable shortcuts alongside it.
+  it('presents the F01 hybrid buttons via sendChoices, with discoveryFilter set, and sets askedDependents/dependents nowhere yet', async () => {
+    const { service, telegram, conversations } = buildService({ state: ConversationState.AUTHORIZATION });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    expect(telegram.sendChoices).toHaveBeenCalledTimes(1);
+    const [userId, text, choices] = telegram.sendChoices.mock.calls[0];
+    expect(userId).toBe('u1');
+    expect(typeof text).toBe('string');
+    expect(choices.length).toBeGreaterThan(0);
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.discoveryFilter).toBe(true);
+  });
 });
 
 // ── KYC — phone verification via Telegram's native contact-share button ───────
@@ -1861,6 +1878,77 @@ describe('AgentService — QUOTE_PRESENTED honest response to an out-of-catalog 
   });
 });
 
+// ── QUOTE_PRESENTED — explain/compare meta-questions (2026-07-26 live bug) ─────
+// "¿Cuál es mejor?" / "Cuéntame más de ellos" / "Explícame de qué se trata" carry no
+// affirmative/negative/alternative signal, so they used to fall through to the same
+// truncated quote card being silently re-shown every time — read by the user as "it just
+// pushes the most complete option no matter what I ask". These must get the actual
+// product detail instead.
+describe('AgentService — QUOTE_PRESENTED explain/compare meta-questions', () => {
+  it.each([
+    '¿Cuál es mejor?',
+    'Cuéntame más de ellos',
+    'Explícame de qué se trata',
+    '¿Qué beneficios tiene?',
+    '¿Cuál de todos es mejor para mi?',
+  ])('"%s" answers with the real product detail, not the truncated quote-card re-show', async (text) => {
+    const product = PRODUCTS.find((p) => p.coverages.length >= 3)!;
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: product.id, shownProductIds: [product.id] },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage(text));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(product.name);
+    expect(sentText).not.toContain('Tu cotización personalizada'); // proves it's NOT the neutral re-show
+    for (const coverage of product.coverages) {
+      expect(sentText).toContain(coverage); // full list, not formatQuote's top-3 truncation
+    }
+  });
+
+  it('names the other already-shown product when more than one was presented this session', async () => {
+    const p1 = PRODUCTS[0];
+    const p2 = PRODUCTS[1];
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: p1.id, shownProductIds: [p1.id, p2.id] },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿cuál es mejor?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(p2.name);
+  });
+
+  it('does not name any other product when only one has been shown', async () => {
+    const p1 = PRODUCTS[0];
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: p1.id, shownProductIds: [p1.id] },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('cuéntame más'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('También te mostré');
+  });
+
+  it('does NOT fire when there is no current product (falls through to the generic placeholder)', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: {},
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿cuál es mejor?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('También te mostré');
+    expect(sentText).not.toContain('Ver detalles');
+  });
+});
+
 // ── QUOTE_PRESENTED — cross-sell for the human owner ──────────────────────────
 
 describe('AgentService — QUOTE_PRESENTED cross-sell for personal coverage', () => {
@@ -2406,6 +2494,131 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
   });
 });
 
+// ── DISCOVERY — dependents question (2026-07-26 Step 3) ───────────────────────
+// Gated on `discoveryFilter`, set ONLY in the AUTHORIZATION→isAffirmative branch — every
+// hand-built context in the existing suite never sets it, so this MUST be a strict
+// opt-in with zero effect on any test that predates this feature.
+describe('AgentService — DISCOVERY dependents question (Step 3)', () => {
+  // Firewall test, written first per the plan: without discoveryFilter, behavior is
+  // BYTE-FOR-BYTE the pre-Step-3 immediate-quote path.
+  it('firewall — without discoveryFilter, quotes immediately exactly as before (no dependents question)', async () => {
+    const vidaProduct = PRODUCTS.find((p) => p.category === 'vida')!;
+    const { service, telegram, quoting, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ productCategory: 'vida' }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: vidaProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('quiero un seguro de vida'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(vidaProduct.name);
+    expect(sentText).not.toContain('dependen de ti');
+    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.QUOTE_PRESENTED, expect.anything());
+  });
+
+  it('asks the dependents question once, before quoting, when discoveryFilter is set and category is non-mascotas', async () => {
+    const { service, telegram, quoting, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { discoveryFilter: true },
+      intent: makeIntent({ productCategory: 'vida' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('quiero un seguro de vida'));
+    await service.handleMessage({});
+    expect(quoting.bestQuote).not.toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('dependen de ti');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.askedDependents).toBe(true);
+  });
+
+  it('does NOT ask the dependents question for a mascotas category (does not change the recommendation)', async () => {
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { discoveryFilter: true, petType: 'gato', coverage: ['medicina veterinaria'] },
+      intent: makeIntent({ productCategory: 'mascotas', petType: 'gato' }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: PRODUCTS.find((p) => p.id === 'medicina-prepagada-gatos')!,
+      score: { reasons: [], matchScore: 60, monthlyPremium: 1000, priority: 'high', productId: 'medicina-prepagada-gatos' },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('quiero seguro para mi gato'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('dependen de ti');
+  });
+
+  it('proceeds to quote on the NEXT turn regardless of whether the answer parsed (never-loop-forever contract)', async () => {
+    const vidaProduct = PRODUCTS.find((p) => p.category === 'vida')!;
+    const { service, telegram, quoting, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { discoveryFilter: true, askedDependents: true, productCategory: 'vida' },
+      intent: makeIntent({ productCategory: 'vida', dependents: null }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: vidaProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('no sé qué decirte'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.QUOTE_PRESENTED, expect.anything());
+  });
+
+  it('captures dependents=0 ("vivo solo") and does not re-ask, still proceeds to quote', async () => {
+    const vidaProduct = PRODUCTS.find((p) => p.category === 'vida')!;
+    const { service, telegram, quoting, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { discoveryFilter: true, askedDependents: true, productCategory: 'vida' },
+      intent: makeIntent({ productCategory: 'vida', dependents: 0 }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: vidaProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('vivo solo'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.dependents).toBe(0);
+  });
+
+  it('captures dependents>0 and derives beneficiaries so the family reason can also wake', async () => {
+    const vidaProduct = PRODUCTS.find((p) => p.category === 'vida')!;
+    const { service, telegram, quoting, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { discoveryFilter: true, askedDependents: true, productCategory: 'vida' },
+      intent: makeIntent({ productCategory: 'vida', dependents: 2 }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: vidaProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('tengo dos hijos'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.dependents).toBe(2);
+    expect(savedContext.beneficiaries).toBe(3);
+  });
+
+  it('does not re-ask when askedDependents is already true, even mid-conversation', async () => {
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { discoveryFilter: true, askedDependents: true, productCategory: 'vida', dependents: 2 },
+      intent: makeIntent({ productCategory: 'vida' }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: PRODUCTS.find((p) => p.category === 'vida')!,
+      score: { reasons: [], matchScore: 40, monthlyPremium: 1000, priority: 'medium', productId: 'vida' },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sigo aquí'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('dependen de ti');
+  });
+});
+
 // ── DISCOVERY — lost-context resilience ──────────────────────────────────────
 
 describe('AgentService — DISCOVERY lost-context resilience', () => {
@@ -2763,5 +2976,60 @@ describe('AgentService — 30s reminder scheduling', () => {
     });
     await service.handleMessage({});
     expect(reminders.schedule).not.toHaveBeenCalled();
+  });
+});
+
+// ── Terminal-state restart (2026-07-26 live-test bug) ─────────────────────────
+// ReminderService's auto-close message explicitly promises "cuando quieras continuar,
+// aquí estoy — 24/7" — but only an EXACT hola/ayuda/inicio/start match ever restarted an
+// ABANDONED/REJECTED conversation. A real follow-up question fell through to the static
+// STATE_RESPONSES[currentState] text with no nextState, so the SAME terminal row got
+// reused forever — every later message got the identical canned reply, no matter what it
+// said. Live screenshot: two different follow-up questions in a row both got "Entendido.
+// Cuando quieras retomar, aquí estoy — 24/7, sin esperas." verbatim.
+describe('AgentService — terminal-state restart', () => {
+  it('restarts to GREETING on an ordinary follow-up message when state is ABANDONED, not just on a greeting keyword', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.ABANDONED,
+      context: { productCategory: 'mascotas', abandonReason: 'no_response' },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('De todos los que me sugieres, ¿cuál es mejor?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('Entendido');
+    expect(sentText).toContain('Asegura');
+    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.GREETING, {});
+  });
+
+  it('restarts to GREETING on an ordinary follow-up message when state is REJECTED', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.REJECTED,
+      context: { autorizado: false },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿cuál de todos es mejor para mi?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('Entendido');
+    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.GREETING, {});
+  });
+
+  it('still restarts via the 4 greeting keywords on ABANDONED (unchanged behavior)', async () => {
+    const { service, telegram, conversations } = buildService({ state: ConversationState.ABANDONED });
+    telegram.normalize.mockResolvedValue(makeMessage('hola'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.GREETING, expect.anything());
+  });
+
+  it('does NOT restart COMPLETED on an ordinary message — still requires an exact greeting keyword (deliberately deferred scope)', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.COMPLETED,
+      context: { hasCompletedPurchase: true, nombre: 'Ana', cedula: '123' },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿cuál de todos es mejor para mi?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('¡Todo listo!');
+    // No state transition — same terminal row, KYC data untouched.
+    expect(conversations.saveState).not.toHaveBeenCalled();
   });
 });

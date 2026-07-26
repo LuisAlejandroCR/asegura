@@ -224,6 +224,19 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       intent.isAffirmative = false;
     }
 
+    // Real live-test bug (2026-07-26): a negated "no quiero"/"no me interesa" — an
+    // explicit decline — was still occasionally left as isAffirmative=true (Groq
+    // misclassification, or a bare 'quiero'/'me interesa' substring match with no
+    // question mark to trigger the guard above). A deterministic decline always wins,
+    // same override policy as wantsAlternativeText just above.
+    if (this.deniesDesireText(lower)) {
+      intent.isAffirmative = false;
+      intent.isNegative = true;
+    }
+
+    // Not in Groq's JSON schema — this deterministic extraction is the only source.
+    intent.dependents = this.extractDependents(lower);
+
     return intent;
   }
 
@@ -260,6 +273,50 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
 
   private static stripDeniedPets(text: string): string {
     return text.replace(GroqNlpService.DENIAL_PATTERN, ' ');
+  }
+
+  // Real live-test bug (2026-07-26): "No, no quiero Ezequial porque ya tengo. Explícame de
+  // qué se trata." has no '?'/'¿' (ASR drops it), so the existing question-mark guard
+  // below doesn't save it, and it names no alternative-product phrase, so
+  // wantsAlternativeText's override doesn't fire either. isAffirmativeText treats bare
+  // 'quiero'/'me interesa' as confirmations with no negation guard — unlike every other
+  // keyword trap already fixed in this file — so this explicit decline could leave
+  // isAffirmative=true and route straight to phone-verification/KYC for the very product
+  // just declined. Same override policy as wantsAlternativeText: a deterministic decline
+  // phrase always wins over a bare substring match or an occasional Groq misclassification.
+  private static readonly DENIED_DESIRE_PATTERN = /\bno\s+(?:quiero|deseo|me\s+interesa)\b/i;
+
+  private deniesDesireText(lower: string): boolean {
+    return GroqNlpService.DENIED_DESIRE_PATTERN.test(lower);
+  }
+
+  // 2026-07-26 — deterministic answer extraction for the new DISCOVERY "¿cuántas
+  // personas dependen de ti?" question (Step 3). Not in Groq's JSON schema at all (the
+  // system prompt above was never extended for it), so this is the ONLY source for the
+  // field in both the primary and fallback paths — same never-trust-the-model-alone
+  // policy as petCount/petType, just with no LLM half to override in this case.
+  private static readonly ZERO_DEPENDENTS_PATTERN =
+    /\b(vivo\s+solo|vivo\s+sola|no\s+tengo\s+hijos|no\s+tengo\s+hijas|sin\s+hijos|ning[uú]n\s+hijo|ninguna\s+hija|nadie\s+depende|no\s+depende\s+nadie)\b/i;
+
+  private static readonly DEPENDENTS_COUNT_PATTERN = new RegExp(
+    `\\b(\\d+|${GroqNlpService.NUMBER_WORD_PATTERN})\\s+(hijos?|hijas?|personas?\\s+a\\s+cargo|dependientes?)\\b`, 'i',
+  );
+
+  // A named family member with no explicit count ("mi esposa", "mi mamá") is a real
+  // dependents signal but not a countable one on its own — a conservative floor of 1
+  // (never invented beyond what the phrase itself supports, rule #12).
+  private static readonly FAMILY_MENTION_PATTERN =
+    /\b(mi\s+esposa|mi\s+esposo|mi\s+marido|mi\s+mujer|mi\s+mam[aá]|mi\s+pap[aá]|mis?\s+hijos?|mis?\s+hijas?|mi\s+familia|mi\s+pareja)\b/i;
+
+  private extractDependents(lower: string): number | null {
+    if (GroqNlpService.ZERO_DEPENDENTS_PATTERN.test(lower)) return 0;
+    const countMatch = lower.match(GroqNlpService.DEPENDENTS_COUNT_PATTERN);
+    if (countMatch) {
+      const raw = countMatch[1];
+      return /^\d+$/.test(raw) ? parseInt(raw, 10) : GroqNlpService.PET_NUMBER_WORDS[raw];
+    }
+    if (GroqNlpService.FAMILY_MENTION_PATTERN.test(lower)) return 1;
+    return null;
   }
 
   // Real live-test bug (2026-07-24): "Somos dos perritos, una gata y yo." matched
@@ -312,6 +369,13 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       else if (hasDog) petType = 'perro';
     }
 
+    // Real live-test bug (2026-07-26): isAffirmativeText's bare 'quiero'/'me interesa'
+    // substrings have no negation guard, unlike every other keyword trap in this file —
+    // "no quiero Ezequial, explícame de qué se trata" has no '?' to trigger the guard
+    // below, so it could leave isAffirmative=true on an explicit decline. Deterministic
+    // override always wins, same policy as the DENIAL_PATTERN pet-species fix above.
+    const deniesDesire = this.deniesDesireText(lower);
+
     return {
       productCategory: category,
       petType,
@@ -321,10 +385,12 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       urgency: lower.includes('urgente') || lower.includes('ya') ? 'immediate' : 'exploring',
       abandonIntent: this.isAbandonText(lower),
       priceObjection: lower.includes('caro') || lower.includes('precio'),
+      dependents: this.extractDependents(lower),
       // A question mark means the user is asking, not confirming — see postProcess for context.
       isAffirmative: this.isAffirmativeText(lower)
-        && (!lower.includes('?') && !lower.includes('¿') || GroqNlpService.hasStandaloneSi(lower)),
-      isNegative: this.isNegativeText(lower),
+        && (!lower.includes('?') && !lower.includes('¿') || GroqNlpService.hasStandaloneSi(lower))
+        && !deniesDesire,
+      isNegative: this.isNegativeText(lower) || deniesDesire,
       wantsAlternative: this.wantsAlternativeText(lower),
       petResolution: this.extractPetResolution(lower),
       petName: this.extractPetName(text),

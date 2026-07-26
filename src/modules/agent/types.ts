@@ -130,6 +130,22 @@ interface ConversationContext {
   // presented quote never got a reply) — the agent had enough to act, the person just
   // never answered.
   abandonReason?: 'insufficient_info' | 'no_response';
+  // 2026-07-26 hiperperfilamiento subset — set ONLY in the AUTHORIZATION→isAffirmative
+  // branch, right after a fresh "sí". Acts as a test/behavior firewall: every existing
+  // DISCOVERY context (built by hand in specs, or carried through the post-purchase
+  // cross-sell follow-up in wompi-webhook.controller.ts) never sets this, so the new
+  // `dependents` question below never fires for them — they keep today's immediate-quote
+  // path unchanged. A returning buyer on a cross-sell is correctly NOT re-interrogated.
+  discoveryFilter?: boolean;
+  // A real, live-captured signal for QuotingService's dormant hyper-personalization tier
+  // (see AffiliateSignals.dependents) — 0 is a meaningful, deliberate answer ("vivo
+  // solo"); undefined means the question was never asked or never answered.
+  dependents?: number;
+  // One-shot guard so the dependents question is asked at most once per conversation —
+  // set in the SAME return that asks it, so the next turn always proceeds to quote
+  // whether or not the answer parsed (never-loop-forever contract, same as every other
+  // KYC gate in this file).
+  askedDependents?: boolean;
 }
 
 interface Conversation {
