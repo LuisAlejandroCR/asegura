@@ -5,10 +5,11 @@
 //
 // Optional integration, same pattern as Wompi/Telegram/LLM elsewhere in this codebase:
 // a missing/misconfigured file logs a warning and disables the feature gracefully,
-// never crashes the app. `docs/` (where the real CSV lives) is private-repo-only and
-// gitignored by the public repo (see CLAUDE.md) — this reads from an env-configurable
-// path specifically so a production deploy can point it at wherever the CSV actually
-// lives, without requiring the file to be committed to the public repo.
+// never crashes the app. The synthetic CSV is committed at the PUBLIC repo root (not
+// under docs/, which is private/gitignored — see CLAUDE.md; confirmed via `git log` —
+// commits "syntetic data" and "data: regenerate synthetic affiliate CSV via the
+// canonical generator script"), so it deploys with the code as-is. Still reads the path
+// from an env var rather than hardcoding it, so the file can move without a code change.
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
@@ -45,9 +46,12 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
   }
 
   private async load(): Promise<void> {
+    // Repo root, not docs/ — the CSV is committed there (public, non-PII synthetic
+    // data), which is what `process.cwd()` resolves to when the app runs (nest-cli
+    // doesn't relocate non-.ts assets, same convention as pdf.service.ts's IMAGES_DIR).
     const csvPath = this.config.get<string>(
       'AFFILIATE_CSV_PATH',
-      path.join(process.cwd(), 'docs', 'Usos_Productos_Afiliados_SIMULADO.csv'),
+      path.join(process.cwd(), 'Usos_Productos_Afiliados_SIMULADO.csv'),
     );
     if (!fs.existsSync(csvPath)) {
       this.logger.warn(

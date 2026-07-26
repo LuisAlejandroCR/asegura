@@ -111,8 +111,8 @@ describe('AffiliateLookupService', () => {
     fs.unlinkSync(csvPath);
   });
 
-  it('defaults to docs/Usos_Productos_Afiliados_SIMULADO.csv under cwd when AFFILIATE_CSV_PATH is unset', async () => {
-    const expectedDefault = path.join(process.cwd(), 'docs', 'Usos_Productos_Afiliados_SIMULADO.csv');
+  it('defaults to Usos_Productos_Afiliados_SIMULADO.csv at the repo root when AFFILIATE_CSV_PATH is unset', async () => {
+    const expectedDefault = path.join(process.cwd(), 'Usos_Productos_Afiliados_SIMULADO.csv');
     // Intercept existsSync to prove the service asked for the right default path,
     // without actually parsing the real 500k-row file in a unit test.
     const existsSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(false);
