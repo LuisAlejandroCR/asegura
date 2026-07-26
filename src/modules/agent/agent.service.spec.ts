@@ -49,6 +49,17 @@ describe('AgentService — GREETING', () => {
     );
   });
 
+  // 2026-07-26 feedback: "puedes responder por texto o audio" used to only appear two
+  // turns later, in the affiliate-ID question — moved up so the very first message
+  // already sets that expectation, before the user has committed to anything.
+  it('the very first message already mentions text/audio are both fine', async () => {
+    const { service, telegram } = buildService({ state: ConversationState.GREETING });
+    telegram.normalize.mockResolvedValue(makeMessage('hola'));
+    await service.handleMessage({});
+    const message = telegram.sendText.mock.calls[0][1] as string;
+    expect(message.toLowerCase()).toMatch(/texto|audio/);
+  });
+
   it('regression — GREETING never skips the greeting message (¡Hola!)', async () => {
     const { service, telegram } = buildService({ state: ConversationState.GREETING });
     telegram.normalize.mockResolvedValue(makeMessage('/start'));
@@ -87,6 +98,9 @@ describe('AgentService — AUTHORIZATION', () => {
     );
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain('Ingresa tu ID');
+    // 2026-07-26 feedback: the text/audio reassurance already appeared in GREETING
+    // (message 1) — repeating it here, two turns later, would be redundant.
+    expect(sentText).not.toMatch(/texto o audio/i);
   });
 
   it('"si" (without accent) also authorizes', async () => {

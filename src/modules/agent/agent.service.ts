@@ -216,10 +216,10 @@ export class AgentService {
         }
         if (intent.isAffirmative) {
           return {
-            // "Estoy aquí para ayudarte" reassures voice is just as valid as text for
-            // THIS new question too, matching DISCOVERY's own established phrasing.
-            text: 'Estoy aquí para ayudarte; por eso tus respuestas pueden ser enviadas en texto o audio 😊\n\n' +
-              'Ingresa tu ID si eres afiliado a Colsubsidio — así puedo ajustar mejor tu cotización. Si no lo eres, escríbeme *"no"*.',
+            // 2026-07-26 (feedback): the "puedes responder por texto o audio" reassurance
+            // moved up into GREETING itself (conversation-state.machine.ts) — saying it
+            // again here would be redundant two turns later.
+            text: 'Ingresa tu ID si eres afiliado a Colsubsidio — así puedo ajustar mejor tu cotización. Si no lo eres, escríbeme *"no"*.',
             // discoveryFilter gates the new `dependents` question below (Step 3,
             // 2026-07-26) — set only here, on a fresh authorization, so a post-purchase
             // cross-sell (wompi-webhook.controller.ts, which never sets this field) keeps

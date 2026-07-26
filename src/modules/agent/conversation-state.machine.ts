@@ -43,6 +43,10 @@ export const STATE_RESPONSES: ResponsesMap = {
   // ever states that SOME profile carried over, never invents specifics not actually in
   // context (rule #12). Personalizes by first name when we already have it (KYC nombre
   // survives restarts too) — same pattern already used in POLICY_ISSUED's greeting.
+  // 2026-07-26 (moved up from the affiliate-ID question, per feedback): "puedes
+  // responder por texto o audio" belongs in the very FIRST message, not two turns later
+  // — reworded short so it doesn't recreate the "wall of text" the 2026-07-24 combine
+  // was meant to fix. Not repeated in the affiliate-ID question anymore (agent.service.ts).
   [ConversationState.GREETING]: (ctx) => {
     const c = translate(ctx);
     const firstName = c.nombre?.split(' ')[0];
@@ -51,7 +55,8 @@ export const STATE_RESPONSES: ResponsesMap = {
       ? '\n\nYa tengo parte de tu perfil de una conversación anterior, así que esto debería ser más rápido.'
       : '';
     return (
-      `${greetingLine} Soy Asegura 🛡️ — encuentro tu seguro ideal en 3 minutos, sin formularios ni asesores.` +
+      `${greetingLine} Soy Asegura 🛡️ — encuentro tu seguro ideal en 3 minutos, sin formularios ni asesores. ` +
+      `Puedes escribirme o responder por audio, lo que prefieras 😊` +
       rememberedLine + '\n\n' +
       'Para cotizarte necesito tu autorización para consultar tu perfil de afiliado ' +
       '(*Ley 1581* · [política de datos](https://colsubsidio.com/transparencia-acceso-informacion/tratamiento-datos-personales)).\n\n' +
