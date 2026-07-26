@@ -2682,21 +2682,21 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     );
   });
 
-  it('regression — "para todos" after mixto clarification resolves to petType:null and quotes', async () => {
-    const { service, telegram, conversations, quoting } = buildService({
+  it('regression — "para todos" without species counts asks for quantity breakdown instead of quoting', async () => {
+    const { service, telegram, conversations } = buildService({
       state: ConversationState.DISCOVERY,
       context: { petType: 'mixto', productCategory: 'mascotas' },
       intent: makeIntent({ productCategory: 'mascotas', petResolution: 'all' }),
     });
-    const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
-    quoting.bestQuote.mockReturnValue({ product: petProduct, score: { reasons: ['Para mascotas'], matchScore: 60, monthlyPremium: petProduct.basePremium, priority: 'high', productId: petProduct.id } });
     telegram.normalize.mockResolvedValue(makeMessage('para todos'));
     await service.handleMessage({});
-    // Should transition to QUOTE_PRESENTED (not stay in clarification loop)
-    const saveCall = conversations.saveState.mock.calls[0];
-    if (saveCall) {
-      expect(saveCall[1]).toBe(ConversationState.QUOTE_PRESENTED);
-    }
+    // Should stay in DISCOVERY and ask for quantity breakdown (not quote a single product)
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('gatos');
+    expect(sentText).toContain('perros');
+    expect(conversations.saveState).not.toHaveBeenCalledWith(
+      expect.anything(), ConversationState.QUOTE_PRESENTED, expect.anything(),
+    );
   });
 
   // Real live-test bug: a genuinely mixed household (2 dogs + 1 cat) got quoted a
@@ -3076,7 +3076,7 @@ describe('AgentService — DISCOVERY asks species before quoting mascotas', () =
     await service.handleMessage({});
     expect(quoting.bestQuote).not.toHaveBeenCalled();
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    expect(sentText).toContain('¿Para cuál');
+    expect(sentText).toContain('¿Cuántos gatos');
   });
 });
 

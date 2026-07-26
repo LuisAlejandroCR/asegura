@@ -656,6 +656,17 @@ export class AgentService {
     if (!context.productCategory && intent.productCategory) newContext.productCategory = intent.productCategory;
     // Handle clarification response when we already know it's a mixed-pet household
     if (context.petType === 'mixto') {
+      // Extract species counts from current message and merge with previously known.
+      // Must run before the resolution check below so a quantity answer
+      // (e.g. "2 gatos y 1 perro") is captured before the else clause sees it.
+      const curCounts = this.extractSpeciesCounts(text);
+      if (curCounts.gato > 0 || curCounts.perro > 0) {
+        newContext.petSpeciesCounts = {
+          gato: curCounts.gato || (context.petSpeciesCounts?.gato ?? 0),
+          perro: curCounts.perro || (context.petSpeciesCounts?.perro ?? 0),
+        };
+      }
+
       if (intent.petResolution === 'gato') {
         newContext.petType = 'gato';
       } else if (intent.petResolution === 'perro') {
@@ -664,6 +675,12 @@ export class AgentService {
         newContext.petType = null;
       } else if (intent.petType && intent.petType !== 'mixto') {
         newContext.petType = intent.petType;
+      } else if (newContext.petSpeciesCounts?.gato && newContext.petSpeciesCounts?.perro) {
+        // User just gave species counts in response to "cuántos gatos y perros"
+        return {
+          text: `Entendido, tienes ${newContext.petSpeciesCounts.gato} gato${newContext.petSpeciesCounts.gato !== 1 ? 's' : ''} y ${newContext.petSpeciesCounts.perro} perro${newContext.petSpeciesCounts.perro !== 1 ? 's' : ''}. ¿Quieres el seguro para los gatos, los perros, o para todos?`,
+          context: newContext,
+        };
       } else {
         return {
           text: '¿Para cuál mascota? Escríbeme "el gato", "los perros" o "para todos".',
@@ -672,13 +689,15 @@ export class AgentService {
       }
       if (!newContext.coverage?.length) newContext.coverage = ['medicina veterinaria'];
 
-      // Real live-test bug: "para todos" for a genuinely mixed household (a real gato
-      // AND perro count both known) must quote BOTH species-specific products at their
-      // own price, not fall through to bestQuote's single-product pick (previously
-      // always won by whichever product happened to tie-break first in the catalog,
-      // multiplied by the combined total — charging the wrong species the wrong price).
-      if (intent.petResolution === 'all' && context.petSpeciesCounts?.gato && context.petSpeciesCounts?.perro) {
-        return this.buildMixedSpeciesQuote(newContext);
+      if (intent.petResolution === 'all') {
+        if (newContext.petSpeciesCounts?.gato && newContext.petSpeciesCounts?.perro) {
+          return this.buildMixedSpeciesQuote(newContext);
+        }
+        // No per-species counts yet — ask for quantity breakdown
+        return {
+          text: 'Genial, ¿cuántos gatos y cuántos perros tienes? Así calculo el valor exacto.',
+          context,
+        };
       }
     } else {
       if (!context.petType && intent.petType) {
@@ -780,10 +799,11 @@ export class AgentService {
       }
     }
 
-    // First time detecting mixed pets — ask clarification before quoting
+    // First time detecting mixed pets — ask for quantity breakdown before quoting.
+    // Must ask counts first so "para todos" can quote both species at the right price.
     if (newContext.petType === 'mixto') {
       return {
-        text: '¡Qué bonita familia de mascotas! 🐱🐶 ¿Para cuál quieres el seguro? ¿Solo los gatos, solo los perros, o quieres cotizar para todos por separado?',
+        text: '¡Qué bonita familia de mascotas! 🐱🐶 ¿Cuántos gatos y cuántos perros tienes? Así calculo el valor exacto.',
         context: newContext,
       };
     }
