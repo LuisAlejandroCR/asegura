@@ -532,7 +532,8 @@ export function Slide10Cierre(_: SlideProps) {
           <div style={{ background: 'white', padding: 16, borderRadius: 14, display: 'inline-block' }}>
             <img src="/qr-bot.svg" width={220} height={220} style={{ display: 'block' }} alt="QR Asegura Bot" />
           </div>
-          <div style={{ fontSize: 13, color: '#FFD700' }}>t.me/asegura_bot</div>
+          
+          <a href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", padding: "10px 18px", backgroundColor: "#FFD700", color: "#000", fontSize: 13, fontWeight: 600, textDecoration: "none", borderRadius: "8px", transition: "0.2s ease", cursor: "pointer" }}>Pruébame</a>
         </div>
       </div>
       <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', fontSize: 10, color: 'rgba(255,255,255,.25)', whiteSpace: 'nowrap' }}>
