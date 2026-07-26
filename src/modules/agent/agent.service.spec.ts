@@ -3131,6 +3131,40 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
     expect(sentText).not.toMatch(/protegerte a ti mismo/i);
   });
 
+  // Real live-test bug (2026-07-26, screenshot): the symmetric case to the "no" pivot
+  // above was missing — "Sí?" answering "¿Tienes familia o personas que dependen de ti?"
+  // names no category on its own, so it fell through to "No logré entender bien eso."
+  // plus the ENTIRE compound question repeated verbatim, reading as the agent ignoring a
+  // clear "yes" answer. The user's next message ("1 millón") likely came from genuinely
+  // mistaking "tu ingreso" (a category to protect) for a request to state an income
+  // figure — a confusion made worse by getting stuck on the same repeated question with
+  // no acknowledgment or clearer ask.
+  it('regression — "Sí?" to the opening discovery question pivots to a direct category ask instead of repeating the full question', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ isAffirmative: true, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Sí?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toMatch(/no logré entender/i);
+    expect(sentText).not.toContain('¿Tienes familia');
+    expect(sentText.toLowerCase()).toMatch(/tu salud|tu ingreso/);
+  });
+
+  it('an affirmative mid-conversation (progress already made) does NOT trigger the opening-question pivot', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { productCategory: 'vida', coverage: ['protección'] },
+      intent: makeIntent({ isAffirmative: true, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('¡Perfecto! ¿Qué es lo que más te preocupa proteger');
+  });
+
   it('does not show the "no entendí" acknowledgment when partial progress was made', async () => {
     // productCategory was extracted this turn (progress) even though coverage/beneficiaries
     // are still missing — this must NOT be treated as an unclear/no-signal message.

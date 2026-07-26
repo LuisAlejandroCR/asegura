@@ -608,6 +608,30 @@ export class AgentService {
       };
     }
 
+    // Real live-test bug (2026-07-26): the symmetric case was missing — a user answering
+    // "Sí?" (or any other plain affirmative) to "¿Tienes familia o personas que dependen
+    // de ti?" got no acknowledgment at all: "yes" alone names no category, so it fell
+    // through everything below to the generic "No logré entender bien eso." fallback,
+    // which then just repeats the ENTIRE compound question verbatim — reading as the
+    // agent ignoring a clear answer. A follow-up free-text reply (e.g. "1 millón",
+    // mistaking "tu ingreso" — a category to protect — for a request to state an income
+    // figure) carries no category either, so the loop could repeat indefinitely with no
+    // acknowledgment and no clearer ask. Same scoping as the negative pivot above: only
+    // fresh/early DISCOVERY, never mid-conversation.
+    if (
+      !context.awaitingCrossSellResponse &&
+      intent.isAffirmative &&
+      !intent.productCategory &&
+      !context.productCategory &&
+      !context.coverage?.length &&
+      !context.petType
+    ) {
+      return {
+        text: '¡Perfecto! ¿Qué es lo que más te preocupa proteger — tu salud, tu ingreso, tu hogar o tus mascotas?',
+        context: newContext,
+      };
+    }
+
     if (!context.productCategory && intent.productCategory) newContext.productCategory = intent.productCategory;
     // Handle clarification response when we already know it's a mixed-pet household
     if (context.petType === 'mixto') {
