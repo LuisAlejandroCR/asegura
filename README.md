@@ -19,10 +19,12 @@ Asegura es un agente que conversa en español (texto y voz), identifica la neces
 
 | Criterio | Cómo lo resuelve Asegura |
 |----------|--------------------------|
-| **Propensión explicable** | Cada recomendación incluye una razón específica basada en el perfil del afiliado — no "por defecto" |
-| **Oferta por perfil** | Un soltero y una familia de 3 ven productos, coberturas y razones distintas |
-| **Transmite confianza** | Lenguaje conversacional, sin tecnicismos. El usuario siente que lo entienden |
+| **Propensión explicable** | Cada recomendación incluye una razón específica, priorizada según el perfil real — nunca "por defecto" |
+| **Oferta por perfil** | Un soltero y una familia con dependientes ven productos, coberturas y razones distintas. Si eres afiliado Colsubsidio, tu historial ayuda a afinar la cotización aún más |
+| **Transmite confianza** | Lenguaje conversacional, sin tecnicismos. El agente recuerda tu perfil entre conversaciones — no vuelves a empezar de cero cada vez |
 | **Flujo autogestionado** | GREETING → póliza emitida en una sola conversación, sin intervención del equipo |
+
+**Cómo conversa:** texto libre o nota de voz, siempre. En el primer filtro también ofrece botones rápidos de un toque — nunca obligatorios ni un menú tipo IVR; escribir o hablar libremente funciona igual en cualquier momento.
 
 ---
 
@@ -33,9 +35,11 @@ Usuario escribe o envía nota de voz: "Quiero proteger a mi familia"
     ↓
 El agente autoriza tratamiento de datos (Ley 1581)
     ↓
-Pregunta sobre situación de vida y dependientes
+(Opcional) Si eres afiliado Colsubsidio, compartes tu ID → cotización más ajustada a tu perfil real
     ↓
-Recomienda el producto más adecuado con razón explícita
+Pregunta sobre tu situación de vida, dependientes y qué tan urgente es tu necesidad
+    ↓
+Recomienda el producto más adecuado con razón explícita, priorizada por relevancia
     ↓
 Usuario confirma y paga (link Wompi, dentro del chat)
     ↓
@@ -44,7 +48,7 @@ Wompi confirma el pago automáticamente vía webhook — verificado, no autorepo
 PDF de póliza enviado al chat, con QR de verificación
 ```
 
-Sin formularios. Sin menús. Sin salir del chat. La confirmación de pago la valida Wompi directamente — nadie puede activar una póliza sin haber pagado realmente.
+Sin formularios. Sin menús obligatorios. Sin salir del chat. La confirmación de pago la valida Wompi directamente — nadie puede activar una póliza sin haber pagado realmente. Si preguntas por algo fuera del catálogo (por ejemplo, seguro vehicular), el agente lo dice honestamente y te ofrece las alternativas reales disponibles, en vez de ignorar la pregunta.
 
 ---
 
@@ -80,6 +84,7 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 | Pagos | Wompi — Payment Links (sandbox) |
 | Deploy | Railway (API) + Vercel (pitch web) |
 | Dashboard | Metabase |
+| Tests | 770+ (unit + fuzz + invariant) |
 
 ---
 
@@ -104,17 +109,17 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 
 El PDF de cada póliza incluye un código QR que enlaza a su registro de auditoría — escaneable desde cualquier celular.
 
-**Próximamente:** registro inmutable en Celo Mainnet vía el contrato `AseguraLedger.sol` (sin custodia de fondos, solo registro de eventos). Esta integración está construida y probada pero no forma parte del flujo activo todavía.
+**Roadmap:** registro inmutable en Celo Mainnet para una capa adicional de auditoría pública (fuera del alcance del hackathon).
 
 ---
 
 ## Privacidad
 
-La autorización de tratamiento de datos se solicita antes de consultar cualquier perfil (Ley 1581 de 2012). Sin autorización, el flujo no continúa. Los datos del afiliado no se almacenan fuera de Supabase y no se comparten con terceros.
+La autorización de tratamiento de datos se solicita antes de consultar cualquier perfil (Ley 1581 de 2012). Sin autorización, el flujo no continúa. Compartir tu ID de afiliado es siempre opcional — decir "no" no interrumpe la cotización. Los datos del afiliado no se almacenan fuera de Supabase y no se comparten con terceros.
 
 ---
 
 ## Licencia
 
-MIT — aplica al contrato inteligente publicado en este repositorio.
+MIT.
 La lógica de negocio, prompts y reglas del agente son privadas.
