@@ -363,7 +363,6 @@ export function Slide7Demo({ active }: SlideProps) {
           <div style={{ background: 'white', padding: 16, borderRadius: 14, display: 'inline-block' }}>
             <img src="/qr-bot.svg" width={220} height={220} style={{ display: 'block' }} alt="QR Asegura Bot" />
           </div>
-          
           <a href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", padding: "10px 18px", backgroundColor: "#FFD700", color: "#000", fontSize: 13, fontWeight: 600, textDecoration: "none", borderRadius: "8px", transition: "0.2s ease", cursor: "pointer" }}>Pruébame</a>
           <div style={{ fontSize: 10, color: 'rgba(255,215,0,.45)' }}>Telegram · Disponible ahora</div>
         </div>
@@ -441,9 +440,9 @@ export function Slide8Impacto({ active }: SlideProps) {
 }
 
 /* ── Slide 9 — Equipo ──────────────────────────────────────────────────── */
-const TEAM: [string, string, string, string][] = [
+const TEAM: [string, string, string, string, string?][] = [
   ['JO', 'Juan Ospina', 'Administrador de Empresas', 'Estrategia & Pitch'],
-  ['AL', 'Alejo', 'Ingeniero de Software', 'Tech Lead & Arquitecto'],
+  ['AL', 'Alejo', 'Ingeniero de Software', 'Tech Lead & Arquitecto', '/team-alejo.jpeg'],
   ['MG', 'Maite Gómez', 'Especialista en Analítica', 'Datos & Propensión'],
   ['CG', 'Cristian Gómez', 'Ingeniero de Software', 'Desarrollo & Integraciones'],
   ['MP', 'María del Pilar', 'Economista', 'Mercado & Viabilidad'],
@@ -467,7 +466,7 @@ export function Slide9Equipo(_: SlideProps) {
         Equipo Asegura · Hackathon Colsubsidio × 30X · Julio 2026
       </div>
       <div style={{ display: 'flex', gap: 14, justifyContent: 'center' }}>
-        {TEAM.map(([initials, name, role, tag]) => (
+        {TEAM.map(([initials, name, role, tag, photo]) => (
           <div key={name} style={{ flex: 1, maxWidth: 195, background: 'rgba(255,255,255,.05)', borderRadius: 12, padding: '22px 16px', textAlign: 'center' }}>
             <div
               style={{
@@ -482,9 +481,14 @@ export function Slide9Equipo(_: SlideProps) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 margin: '0 auto',
+                overflow: 'hidden',
               }}
             >
-              {initials}
+              {photo ? (
+                <img src={photo} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                initials
+              )}
             </div>
             <div style={{ fontSize: 14, fontWeight: 700, color: 'white', marginTop: 12 }}>{name}</div>
             <div style={{ fontSize: 11, color: 'rgba(255,215,0,.6)', marginTop: 4, lineHeight: 1.3 }}>{role}</div>
@@ -532,7 +536,6 @@ export function Slide10Cierre(_: SlideProps) {
           <div style={{ background: 'white', padding: 16, borderRadius: 14, display: 'inline-block' }}>
             <img src="/qr-bot.svg" width={220} height={220} style={{ display: 'block' }} alt="QR Asegura Bot" />
           </div>
-          
           <a href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", padding: "10px 18px", backgroundColor: "#FFD700", color: "#000", fontSize: 13, fontWeight: 600, textDecoration: "none", borderRadius: "8px", transition: "0.2s ease", cursor: "pointer" }}>Pruébame</a>
         </div>
       </div>
