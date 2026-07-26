@@ -55,10 +55,15 @@ export const STATE_RESPONSES: ResponsesMap = {
         'Puedes enviar tus respuestas en audio o texto'
       );
     }
-    if (!c.beneficiaries || c.beneficiaries <= 0) {
-      return '¿Cuántas personas son en tu familia o grupo familiar?';
-    }
-    return '¿En qué rango de edades están? (esto me ayuda a ajustar la cobertura)';
+    // 2026-07-26 cleanup: this used to have a 3rd tier asking "¿En qué rango de edades
+    // están?" once coverage AND beneficiaries were both known. No field in the NLP intent
+    // schema ever captured a human beneficiary's age (only petAge, for pets), and
+    // QuotingService never read one — the question was unreachable from its only call
+    // site anyway (handleDiscovery's hasEnoughInfo/stuckWithoutCategory guard fires
+    // before this tier could ever be hit — see agent.service.ts:387-394) but stayed here
+    // as dead, confusing copy. Removed; Step 3's `dependents` question is the real,
+    // functional replacement.
+    return '¿Cuántas personas son en tu familia o grupo familiar?';
   },
 
   [ConversationState.QUOTING]: () =>
