@@ -690,6 +690,20 @@ export class AgentService {
         };
       }
 
+      // 2026-07-26: when answering a partial-count question ("¿cuántos perros tienes?"),
+      // petResolution matches the missing species (count=0). Treat it as a count
+      // supplement, not a species narrowing — clear resolution so the partial-count
+      // else-if below captures the merged counts instead. Only fires when the KNOWN
+      // species has a positive count and the OTHER is still 0 — if both are already
+      // known, let the user's deliberate narrowing through.
+      const p = newContext.petSpeciesCounts;
+      if (p && intent.petResolution && (
+        (p.gato && !p.perro && intent.petResolution === 'perro') ||
+        (p.perro && !p.gato && intent.petResolution === 'gato')
+      )) {
+        intent.petResolution = null;
+      }
+
       if (intent.petResolution === 'gato') {
         newContext.petType = 'gato';
       } else if (intent.petResolution === 'perro') {
@@ -704,6 +718,19 @@ export class AgentService {
           text: `Entendido, tienes ${newContext.petSpeciesCounts.gato} gato${newContext.petSpeciesCounts.gato !== 1 ? 's' : ''} y ${newContext.petSpeciesCounts.perro} perro${newContext.petSpeciesCounts.perro !== 1 ? 's' : ''}. ¿Quieres el seguro para los gatos, los perros, o para todos?`,
           context: newContext,
         };
+      } else if (newContext.petSpeciesCounts?.gato !== undefined || newContext.petSpeciesCounts?.perro !== undefined) {
+        // Partial counts — one species known, the other needs to be asked
+        const p = newContext.petSpeciesCounts!;
+        if (p.gato && !p.perro) {
+          return {
+            text: `Entendido, tienes ${p.gato} gato${p.gato !== 1 ? 's' : ''}. ¿Cuántos perros tienes?`,
+            context: newContext,
+          };
+        }
+        return {
+          text: `Entendido, tienes ${p.perro} perro${p.perro !== 1 ? 's' : ''}. ¿Cuántos gatos tienes?`,
+          context: newContext,
+        };
       } else {
         return {
           text: '¿Para cuál mascota? Escríbeme "el gato", "los perros" o "para todos".',
@@ -715,6 +742,19 @@ export class AgentService {
       if (intent.petResolution === 'all') {
         if (newContext.petSpeciesCounts?.gato && newContext.petSpeciesCounts?.perro) {
           return this.buildMixedSpeciesQuote(newContext);
+        }
+        // Partial counts — ask for the missing one
+        if (newContext.petSpeciesCounts?.gato && !newContext.petSpeciesCounts?.perro) {
+          return {
+            text: `Entendido, tienes ${newContext.petSpeciesCounts.gato} gato${newContext.petSpeciesCounts.gato !== 1 ? 's' : ''}. ¿Cuántos perros tienes?`,
+            context: newContext,
+          };
+        }
+        if (!newContext.petSpeciesCounts?.gato && newContext.petSpeciesCounts?.perro) {
+          return {
+            text: `Entendido, tienes ${newContext.petSpeciesCounts.perro} perro${newContext.petSpeciesCounts.perro !== 1 ? 's' : ''}. ¿Cuántos gatos tienes?`,
+            context: newContext,
+          };
         }
         // No per-species counts yet — ask for quantity breakdown
         return {
