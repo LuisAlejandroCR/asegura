@@ -30,7 +30,7 @@ interface InsuranceIntent {
 }
 
 interface INlpProvider {
-  extractIntent(text: string): Promise<InsuranceIntent>;
+  extractIntent(text: string, history?: Array<{ role: string; text: string }>): Promise<InsuranceIntent>;
 }
 
 export { InsuranceIntent, INlpProvider };

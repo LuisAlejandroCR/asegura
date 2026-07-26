@@ -3854,7 +3854,7 @@ describe('AgentService — terminal-state restart', () => {
     // folds in the authorization ask (same one-shot pattern as case GREETING itself), so
     // routing back through GREETING again would repeat that same text a second time on
     // the user's very next message (see the regression test below).
-    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.AUTHORIZATION, {});
+    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.AUTHORIZATION, expect.objectContaining({ lastMessages: expect.any(Array) }));
   });
 
   it('restarts (shows the GREETING text) on an ordinary follow-up message when state is REJECTED', async () => {
@@ -3866,7 +3866,7 @@ describe('AgentService — terminal-state restart', () => {
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).not.toContain('Entendido');
-    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.AUTHORIZATION, {});
+    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.AUTHORIZATION, expect.objectContaining({ lastMessages: expect.any(Array) }));
   });
 
   it('still restarts via the 4 greeting keywords on ABANDONED (unchanged behavior)', async () => {
@@ -4018,7 +4018,7 @@ describe('AgentService — terminal-state restart', () => {
       telegram.normalize.mockResolvedValue(makeMessage('¿sigues ahí?'));
       await service.handleMessage({});
       const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
-      expect(savedContext).toEqual({
+      expect(savedContext).toEqual(expect.objectContaining({
         petType: 'gato',
         dependents: 2,
         budget: 40000,
@@ -4028,7 +4028,8 @@ describe('AgentService — terminal-state restart', () => {
         phoneVerified: true,
         hasCompletedPurchase: true,
         policyIds: ['pol-1'],
-      });
+        lastMessages: expect.any(Array),
+      }));
     });
 
     it('the GREETING text acknowledges a remembered profile instead of a plain "¡Hola!"', async () => {

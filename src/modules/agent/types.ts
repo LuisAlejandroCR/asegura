@@ -182,6 +182,10 @@ interface ConversationContext {
   // future personalization touch reads it — see affiliate-lookup.service.ts's own field
   // comments for which parts are already consumed vs. just captured for now.
   affiliateProfile?: AffiliateRecord;
+  // Last N conversation exchanges for LLM context (role + text). Trimmed to
+  // MAX_HISTORY_LENGTH on each save. Session-scoped (not in PERSISTENT_FIELDS) so a
+  // restart starts fresh — durable facts already live in the other persistent fields.
+  lastMessages?: Array<{ role: 'user' | 'agent'; text: string }>;
   // 2026-07-26 live-test feedback ("the agent should redirect to a human when it doesn't
   // understand") — counts consecutive turns the agent genuinely failed to make sense of
   // (see ProcessResult.unclearReply in agent.service.ts). Reset to 0 the moment any turn

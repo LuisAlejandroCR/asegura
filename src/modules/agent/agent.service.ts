@@ -200,7 +200,7 @@ export class AgentService {
     const lowerText = msg.text.toLowerCase().trim().replace(/[.,!?¡¿:;]+$/, '').trim();
     const rawText = msg.text.trim().replace(/[.,!?¡¿:;]+$/, '').trim();
     const intent: InsuranceIntent = msg.text
-      ? await this.nlp.extractIntent(msg.text)
+      ? await this.nlp.extractIntent(msg.text, conv.context.lastMessages)
       : {
           productCategory: null, coverage: [], beneficiaries: 1, urgency: 'exploring',
           isAffirmative: false, isNegative: false, wantsAlternative: false, petResolution: null,
@@ -209,12 +209,26 @@ export class AgentService {
     const rawResult = await this.processMessage(conv.id, conv.state, conv.context, lowerText, intent, msg.contact, msg.photo, rawText);
     const result = this.applyCircuitBreaker(conv.context, rawResult, msg, conv.state);
 
+    // Maintain conversation history (last N exchanges, session-scoped)
+    const lastMessages = [...(conv.context.lastMessages ?? [])];
+    if (msg.text) {
+      lastMessages.push({ role: 'user', text: msg.text });
+    }
+    const replyText = result.texts?.[0] ?? result.text;
+    if (replyText) {
+      lastMessages.push({ role: 'agent', text: replyText });
+    }
+    const MAX_EXCHANGES = 10;
+    const trimmed = lastMessages.length > MAX_EXCHANGES * 2
+      ? lastMessages.slice(-(MAX_EXCHANGES * 2))
+      : lastMessages;
+
     // Persist state/context whenever either changes
     if (result.nextState || result.context) {
       await this.conversations.saveState(
         conv.id,
         result.nextState ?? conv.state,
-        result.context ?? conv.context,
+        { ...(result.context ?? conv.context), lastMessages: trimmed },
       );
     }
 

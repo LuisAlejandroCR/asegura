@@ -35,15 +35,15 @@ export class GroqNlpService implements INlpProvider {
   // straight to the fallback on the first attempt, unchanged.
   private static readonly RATE_LIMIT_RETRY_DELAY_MS = 2_500;
 
-  async extractIntent(text: string): Promise<InsuranceIntent> {
+  async extractIntent(text: string, history?: Array<{ role: string; text: string }>): Promise<InsuranceIntent> {
     try {
-      return await this.callGroq(text);
+      return await this.callGroq(text, history);
     } catch (err) {
       if (err instanceof GroqRateLimitError) {
         this.logger.warn(`Groq rate-limited, retrying once in ${GroqNlpService.RATE_LIMIT_RETRY_DELAY_MS}ms: ${err.message}`);
         await new Promise((resolve) => setTimeout(resolve, GroqNlpService.RATE_LIMIT_RETRY_DELAY_MS));
         try {
-          return await this.callGroq(text);
+          return await this.callGroq(text, history);
         } catch (retryErr) {
           this.logger.warn(`Groq retry failed, using fallback: ${retryErr}`);
           return this.fallbackIntent(text);
@@ -54,7 +54,11 @@ export class GroqNlpService implements INlpProvider {
     }
   }
 
-  private async callGroq(text: string): Promise<InsuranceIntent> {
+  private async callGroq(text: string, history?: Array<{ role: string; text: string }>): Promise<InsuranceIntent> {
+      const historyMessages = history?.slice(-10).map((h) => ({
+        role: h.role === 'agent' ? 'assistant' : h.role,
+        content: h.text,
+      })) ?? [];
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -129,6 +133,7 @@ Usa null dentro de cada objeto para el dato que no mencione (mismas reglas que p
 petAge/petBreed arriba). No repitas la misma información también en los campos petName/
 petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden quedar null.`,
             },
+            ...historyMessages,
             { role: 'user', content: text },
           ],
           response_format: { type: 'json_object' },
