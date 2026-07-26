@@ -54,6 +54,18 @@ describe('TelegramAdapter.normalize — unsupported media', () => {
     expect(result.messageId).toBe(4242);
   });
 
+  // 2026-07-26 stuck-loop escalation feature — a human being handed the conversation
+  // needs to know who to look for in Telegram (@handle), not just an opaque numeric id.
+  it('captures the sender\'s Telegram @username when present', async () => {
+    const result = await adapter.normalize(makeCtx({ from: { id: 222, username: 'alejoo_o' }, text: 'hola' }));
+    expect(result.username).toBe('alejoo_o');
+  });
+
+  it('leaves username unset when Telegram provides none (not every account has one)', async () => {
+    const result = await adapter.normalize(makeCtx({ text: 'hola' }));
+    expect(result.username).toBeUndefined();
+  });
+
   it('a document (e.g. PDF/file upload) also sets unsupportedInput to "image" (generic unreadable media)', async () => {
     const result = await adapter.normalize(makeCtx({ document: { file_id: 'doc-1', file_name: 'contract.pdf' } }));
     expect(result.unsupportedInput).toBe('image');

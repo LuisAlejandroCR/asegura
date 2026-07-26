@@ -2,6 +2,11 @@ interface NormalizedMessage {
   channelId: string;
   channel: 'telegram' | 'whatsapp';
   userId: string;
+  // Telegram's @handle (never guaranteed — many users have none). Only ever used for a
+  // human being routed the conversation to identify who they're picking up (the
+  // stuck-loop escalation, agent.service.ts) — never for logic/matching, since it can be
+  // absent or changed at any time.
+  username?: string;
   text: string;
   timestamp: Date;
   metadata?: Record<string, unknown>;

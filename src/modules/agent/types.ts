@@ -166,6 +166,14 @@ interface ConversationContext {
   // (QuotingService.budgetFromSalary) that was previously unreachable in the live agent
   // because nothing ever populated this field from a real conversation.
   rangoSalarial?: string;
+  // 2026-07-26 live-test feedback ("the agent should redirect to a human when it doesn't
+  // understand") — counts consecutive turns the agent genuinely failed to make sense of
+  // (see ProcessResult.unclearReply in agent.service.ts). Reset to 0 the moment any turn
+  // IS understood; once it reaches the escalation threshold the agent hands off to a
+  // human lead instead of repeating itself a 4th time. Deliberately NOT in
+  // persistent-context.ts — it describes THIS session's confusion, not a durable fact
+  // about the person, so a restarted conversation starts the count fresh.
+  consecutiveUnclearReplies?: number;
 }
 
 interface Conversation {

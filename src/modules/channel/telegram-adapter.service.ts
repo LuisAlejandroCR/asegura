@@ -77,10 +77,13 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
       }
     }
 
+    const username = msg?.from?.username ?? ctx.from?.username;
+
     return {
       channelId: String(msg?.chat.id ?? ctx.chat?.id),
       channel: 'telegram',
       userId: String(msg?.from?.id ?? ctx.from?.id),
+      ...(username && { username }),
       text,
       timestamp: msg?.date ? new Date(msg.date * 1000) : new Date(),
       metadata: { updateId: ctx.update.update_id },
