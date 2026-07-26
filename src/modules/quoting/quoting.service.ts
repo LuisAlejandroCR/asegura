@@ -28,25 +28,44 @@ export class QuotingService {
     return product ? { product, score: top } : null;
   }
 
+  // 2026-07-26 fix: "why this product" reasons used to surface in PUSH order, not
+  // relevance order — the exact-category branch pushed NO reason at all, the related-
+  // category branch pushed a raw code-y slug (`Categoría: vida`), and the persuasive
+  // hyper-personalization sentences were pushed last, so `formatQuote`'s `reasons[0]`
+  // (agent.service.ts) almost always displayed the least compelling line, or the slug.
+  // Weight-ranking and sorting at the end fixes the ORDER only — every `matchScore`
+  // computation below is byte-for-byte identical to before this change.
+  private static readonly REASON_WEIGHT = {
+    tier: 100,
+    family: 90,
+    species: 80,
+    budget: 60,
+    coverage: 40,
+    categoryExact: 20,
+    categoryRelated: 10,
+  } as const;
+
   private evaluateProduct(product: InsuranceProduct, signals: AffiliateSignals): InsuranceScore {
     const zero: InsuranceScore = { productId: product.id, matchScore: 0, reasons: [], monthlyPremium: product.basePremium, priority: 'low' };
     let matchScore = 0;
-    const reasons: string[] = [];
+    const weightedReasons: { weight: number; text: string }[] = [];
+    const addReason = (weight: number, text: string) => weightedReasons.push({ weight, text });
 
     // Hard filter: wrong category
     if (signals.productCategory && product.category !== signals.productCategory) {
       if (!this.isRelatedCategory(product.category, signals.productCategory)) return zero;
       matchScore += 20;
-      reasons.push(`Categoría: ${product.category}`);
+      addReason(QuotingService.REASON_WEIGHT.categoryRelated, 'Aunque buscabas otra categoría, esta opción también cubre parte de esa necesidad');
     } else if (signals.productCategory) {
       matchScore += 40;
+      addReason(QuotingService.REASON_WEIGHT.categoryExact, 'Coincide exactamente con el tipo de seguro que buscas');
     }
 
     // Hard filter: wrong pet type (gato vs perro products); 'mixto' skips the filter
     if (signals.petType && signals.petType !== 'mixto' && product.eligibility.pet && product.eligibility.pet !== 'any') {
       if (product.eligibility.pet !== signals.petType) return zero;
       matchScore += 20;
-      reasons.push(`Para ${signals.petType}s`);
+      addReason(QuotingService.REASON_WEIGHT.species, `Para ${signals.petType}s`);
     }
 
     // beneficiaries > 1 only — Groq's own JSON schema shows "beneficiaries": 1 as an
@@ -57,14 +76,14 @@ export class QuotingService {
     // the actual personalization pitch — real bug observed in an external test session.
     if (signals.beneficiaries && signals.beneficiaries > 1 && product.eligibility.family) {
       matchScore += 20;
-      reasons.push(`Cubre a ${signals.beneficiaries} personas`);
+      addReason(QuotingService.REASON_WEIGHT.family, `Cubre a ${signals.beneficiaries} personas`);
     }
 
     // Budget check: use explicit budget or infer from salary range
     const effectiveBudget = signals.budget ?? this.budgetFromSalary(signals.rangoSalarial);
     if (effectiveBudget && product.basePremium <= effectiveBudget) {
       matchScore += 15;
-      reasons.push(`Desde $${product.basePremium.toLocaleString()}/mes — dentro de tu presupuesto`);
+      addReason(QuotingService.REASON_WEIGHT.budget, `Desde $${product.basePremium.toLocaleString()}/mes — dentro de tu presupuesto`);
     }
 
     if (signals.coverage) {
@@ -73,7 +92,7 @@ export class QuotingService {
       ).length;
       if (matched > 0) {
         matchScore += matched * 5;
-        reasons.push(`Coberturas: ${product.coverages.slice(0, 2).join(', ')}`);
+        addReason(QuotingService.REASON_WEIGHT.coverage, `Coberturas: ${product.coverages.slice(0, 2).join(', ')}`);
       }
     }
 
@@ -99,25 +118,39 @@ export class QuotingService {
     // above). The only live income signal a user's own words can set is `budget` — reusing
     // `effectiveBudget` (already computed above for the existing budget boost) so the tier
     // actually reacts to what a real conversation can produce.
-    const hasDependents = !!signals.beneficiaries && signals.beneficiaries > 1;
+    // 2026-07-26 — `dependents` (Step 3's DISCOVERY question) is a real, live-captured
+    // signal, unlike `beneficiaries` (see the comment on that field above). When it was
+    // actually asked and answered, it takes precedence over the beneficiaries heuristic;
+    // when it's `undefined` (never asked), behavior is byte-for-byte the old fallback —
+    // every existing test/signal set that only ever set `beneficiaries` is unaffected.
+    const hasDependents = signals.dependents !== undefined
+      ? signals.dependents > 0
+      : (!!signals.beneficiaries && signals.beneficiaries > 1);
     const highIncome = (effectiveBudget ?? 0) >= 60000; // "Entre 3 y 4 SMLV"+ equivalent
 
     if (product.category === 'vida') {
       if (hasDependents && highIncome && product.id === 'vida-ahorro') {
         matchScore += 25;
-        reasons.push(`Tienes ${signals.beneficiaries} personas a cargo y un ingreso que permite ahorrar — Vida+Ahorro protege y capitaliza a la vez`);
+        addReason(QuotingService.REASON_WEIGHT.tier, `Tienes ${signals.beneficiaries} personas a cargo y un ingreso que permite ahorrar — Vida+Ahorro protege y capitaliza a la vez`);
       } else if (hasDependents && !highIncome && product.id === 'vida') {
         matchScore += 15;
-        reasons.push(`Tienes ${signals.beneficiaries} personas a cargo — proteger ese ingreso es la necesidad más directa`);
+        addReason(QuotingService.REASON_WEIGHT.tier, `Tienes ${signals.beneficiaries} personas a cargo — proteger ese ingreso es la necesidad más directa`);
       }
     }
 
     if (product.category === 'accidentes' && !hasDependents && highIncome && product.id === 'accidentes-premium') {
       matchScore += 20;
-      reasons.push('Tu ingreso permite una cobertura ampliada — Accidentes premium suma gastos médicos mayores e indemnización más alta');
+      addReason(QuotingService.REASON_WEIGHT.tier, 'Tu ingreso permite una cobertura ampliada — Accidentes premium suma gastos médicos mayores e indemnización más alta');
     }
 
     matchScore = Math.min(matchScore, 100);
+
+    // Array.sort is stable (Node ≥11) — reasons with the SAME weight keep their original
+    // push order, so this is purely a re-rank, never a scoring change.
+    const reasons = weightedReasons
+      .slice()
+      .sort((a, b) => b.weight - a.weight)
+      .map((r) => r.text);
 
     return {
       productId: product.id,

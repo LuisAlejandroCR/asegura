@@ -44,6 +44,13 @@ interface AffiliateSignals {
   depends?: string;
   // From xlsx: salary segment used as budget proxy when explicit budget unknown
   rangoSalarial?: RangoSalarial;
+  // 2026-07-26 — a real, live-captured signal (see ConversationContext.dependents,
+  // src/modules/agent/types.ts) unlike `beneficiaries`, which Groq's own JSON schema
+  // shows as an example value (`"beneficiaries": 1`) the LLM often defaults to even with
+  // no real family-size signal in the message. 0 is a meaningful, deliberate answer;
+  // undefined means the dependents question was never asked/answered — evaluateProduct
+  // falls back to the beneficiaries heuristic only in that undefined case.
+  dependents?: number;
 }
 
 export { InsuranceProduct, InsuranceScore, AffiliateSignals };

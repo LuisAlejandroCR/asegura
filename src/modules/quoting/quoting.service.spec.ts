@@ -471,6 +471,105 @@ describe('QuotingService — hyper-personalization tier (dependents/income)', ()
   });
 });
 
+// ── "why this product" reason ordering (2026-07-26 Step 1) ────────────────────
+// Reasons used to surface in PUSH order: the exact-category branch pushed NO reason at
+// all, the related-category branch pushed a raw slug (`Categoría: vida`), and the
+// persuasive tier sentences were pushed LAST — so `formatQuote`'s `reasons[0]`
+// (agent.service.ts) almost always displayed the least compelling line, or the slug
+// itself, verbatim, to the user. This weight-ranks and sorts the SAME reasons at return
+// time; matchScore arithmetic is untouched (see the pinned-literals invariant below).
+describe('QuotingService — weight-ranked "why this product" reasons (Step 1)', () => {
+  const service = makeService();
+
+  it('the persuasive tier sentence leads the list for a strong dependents signal', () => {
+    const scores = service.score({ productCategory: 'vida', beneficiaries: 3 });
+    const vida = scores.find((s) => s.productId === 'vida')!;
+    expect(vida.reasons[0]).toContain('a cargo');
+  });
+
+  it('a related-category match never leads (or appears at all) as a raw "Categoría:" slug', () => {
+    // asistencia products cross-sell for a 'hogar' signal (isRelatedCategory('asistencia','hogar')).
+    const scores = service.score({ productCategory: 'hogar' });
+    for (const s of scores) {
+      for (const r of s.reasons) {
+        expect(r).not.toMatch(/^Categoría:/);
+      }
+    }
+  });
+
+  it('an exact category match with no other signal still yields a real, human reason (previously pushed nothing at all)', () => {
+    const scores = service.score({ productCategory: 'accidentes' });
+    const std = scores.find((s) => s.productId === 'accidentes-personales')!;
+    expect(std.reasons.length).toBeGreaterThan(0);
+    expect(std.reasons[0]).not.toMatch(/^Categoría:/);
+  });
+
+  it('fuzz: no reason is ever a raw "Categoría: x" slug across many signal combinations', () => {
+    const categories: NonNullable<AffiliateSignals['productCategory']>[] = ['vida', 'hogar', 'accidentes', 'asistencia', 'mascotas'];
+    for (const productCategory of categories) {
+      for (const beneficiaries of [0, 1, 2, 5]) {
+        for (const budget of [undefined, 15000, 60000, 200000]) {
+          const scores = service.score({
+            productCategory, beneficiaries, budget,
+            petType: productCategory === 'mascotas' ? 'mixto' : undefined,
+          });
+          for (const s of scores) {
+            for (const r of s.reasons) {
+              expect(r).not.toMatch(/^Categoría:/);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // Pinned-literals invariant: proves the Step 1 change is a pure REORDER of reasons, not
+  // a scoring change — every matchScore below is byte-for-byte what this exact signal
+  // combination already produced before Step 1 (confirmed via `git diff`: no `matchScore
+  // +=` line was touched, only how `reasons` gets collected and sorted).
+  it('pinned-literals invariant: matchScore is unchanged for known signal combinations', () => {
+    const cases: { signals: AffiliateSignals; productId: string; expectedScore: number }[] = [
+      { signals: { productCategory: 'vida', beneficiaries: 3 }, productId: 'vida', expectedScore: 65 },
+      { signals: { productCategory: 'accidentes' }, productId: 'accidentes-personales', expectedScore: 40 },
+      { signals: { productCategory: 'vida', beneficiaries: 3, budget: 100_000 }, productId: 'vida-ahorro', expectedScore: 80 },
+      { signals: { productCategory: 'mascotas', petType: 'gato', coverage: ['medicina'] }, productId: 'medicina-prepagada-gatos', expectedScore: 75 },
+    ];
+    for (const { signals, productId, expectedScore } of cases) {
+      const scores = service.score(signals);
+      const found = scores.find((s) => s.productId === productId)!;
+      expect([productId, found.matchScore]).toEqual([productId, expectedScore]);
+    }
+  });
+});
+
+// ── Step 2: `dependents` wakes the dormant tiers with a trustworthy signal ─────
+// `beneficiaries` is untrustworthy by design (Groq's schema shows "beneficiaries": 1 as
+// its OWN example, so the LLM often defaults to 1 with no real signal). `dependents` is
+// only ever set by a real DISCOVERY question (Step 3) — when present, it takes
+// precedence; when absent (undefined), behavior is byte-for-byte the old
+// beneficiaries-only fallback, so every pre-existing test/signal set is unaffected.
+describe('QuotingService — dependents field precedence (Step 2)', () => {
+  const service = makeService();
+
+  it('dependents=0 suppresses the tier bonus even when beneficiaries suggests a family (dependents wins)', () => {
+    const scores = service.score({ productCategory: 'vida', beneficiaries: 4, dependents: 0 });
+    const vida = scores.find((s) => s.productId === 'vida')!;
+    expect(vida.reasons.some((r) => r.includes('a cargo'))).toBe(false);
+  });
+
+  it('dependents>0 wakes the tier bonus even when beneficiaries is absent entirely', () => {
+    const scores = service.score({ productCategory: 'vida', dependents: 2 });
+    const vida = scores.find((s) => s.productId === 'vida')!;
+    expect(vida.reasons.some((r) => r.includes('a cargo'))).toBe(true);
+  });
+
+  it('back-compat: dependents=undefined falls back to the beneficiaries heuristic exactly as before', () => {
+    const scores = service.score({ productCategory: 'vida', beneficiaries: 3 });
+    const vida = scores.find((s) => s.productId === 'vida')!;
+    expect(vida.reasons.some((r) => r.includes('a cargo'))).toBe(true);
+  });
+});
+
 // ── Fuzz tests ────────────────────────────────────────────────────────────────
 
 describe('QuotingService FUZZ', () => {
