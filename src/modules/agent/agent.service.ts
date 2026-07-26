@@ -449,10 +449,16 @@ export class AgentService {
   // for income: DISCOVERY's filter has no income question at all, so this is the one
   // signal Colsubsidio can supply directly if the user self-identifies with their
   // affiliate ID (looked up against SERIE in the synthetic affiliate CSV — see
-  // AffiliateLookupService). Never blocks the flow: a decline, an unrecognized ID, or
-  // the lookup being disabled (missing CSV file) all proceed to DISCOVERY identically,
-  // just without the rangoSalarial boost — same never-loop-forever contract as every
-  // other one-shot gate in this file.
+  // AffiliateLookupService). A decline ("no"), an unrecognized-but-numeric ID, or the
+  // lookup being disabled (missing CSV file) all proceed to DISCOVERY identically, just
+  // without the rangoSalarial boost — same never-loop-forever contract as every other
+  // one-shot gate in this file. A non-numeric, non-"no" answer does NOT proceed (see the
+  // digit-shape guard below) — that's the one thing this gate actually rejects.
+  //
+  // 2026-07-26 — SERIE is a plain row number into the real affiliate CSV (1..500000,
+  // matching its ~500K rows), NOT a document-length check like cédula's 6-10 digits.
+  private static readonly MAX_SERIE = 500_000;
+
   private handleAffiliateId(context: ConversationContext, text: string, rawText: string): ProcessResult {
     const baseContext: ConversationContext = { ...context, awaitingAffiliateId: undefined };
     const declines = /^no\b/i.test(text.trim()) || !rawText.trim();
@@ -461,7 +467,28 @@ export class AgentService {
       // Reuses the same digit-extraction convention as cédula (joinSpokenDigits handles
       // a number dictated one digit at a time by voice, e.g. "1, 2, 3, 4, 5, 6, 7, 8, 9.").
       const serie = this.joinSpokenDigits(rawText).replace(/\D/g, '');
-      if (serie && this.affiliateLookup.isEnabled()) {
+
+      // Real live-test bug (2026-07-26): a non-numeric, non-"no" answer ("Juan" — either
+      // a misheard voice transcription or a genuine misunderstanding of the question)
+      // used to be silently treated as an implicit decline, advancing to DISCOVERY
+      // without ever telling the user their answer didn't make sense. Only digits or an
+      // explicit "no" may pass this gate now — same "never silently guess" contract as
+      // cédula's own digit-shape validation a few turns later in this same flow. Range
+      // is 1–MAX_SERIE (not a digit-count check like cédula's 6-10 — SERIE is a plain
+      // sequential row number, 1..500000, matching the real CSV's row count, so most
+      // real values are far shorter than 6 digits; a length-based check would reject
+      // the majority of genuine SERIE values). Returns neither `context` nor
+      // `nextState`, so handleMessage persists nothing — the conversation stays exactly
+      // where it was and this same gate re-fires on the user's next message, never
+      // silently letting them continue past an invalid answer.
+      const serieNum = serie ? Number(serie) : NaN;
+      if (!serie || !Number.isFinite(serieNum) || serieNum < 1 || serieNum > AgentService.MAX_SERIE) {
+        return {
+          text: `Tu ID de afiliado debe ser un número entre 1 y ${AgentService.MAX_SERIE.toLocaleString('es-CO')}. Si no eres afiliado, escríbeme "no".`,
+        };
+      }
+
+      if (this.affiliateLookup.isEnabled()) {
         const record = this.affiliateLookup.findBySerie(serie);
         // 2026-07-26 feature request: "capture the complete row... so the agent will
         // know all about the registered user" — any match at all (not just one with

@@ -307,7 +307,8 @@ describe('AgentService — affiliate ID lookup', () => {
     });
     affiliateLookup.isEnabled.mockReturnValue(true);
     affiliateLookup.findBySerie.mockReturnValue(null);
-    telegram.normalize.mockResolvedValue(makeMessage('999999'));
+    // 300000 is well within the real CSV's 1..500000 SERIE range but has no fixture match.
+    telegram.normalize.mockResolvedValue(makeMessage('300000'));
     await service.handleMessage({});
     const sentText = telegram.sendChoices.mock.calls[0]?.[1] as string;
     expect(sentText).not.toContain('¡Encontré tu perfil!');
@@ -316,16 +317,18 @@ describe('AgentService — affiliate ID lookup', () => {
     expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.DISCOVERY, expect.anything());
   });
 
-  it('a spoken ID dictated digit-by-digit ("1, 2, 3, 4, 5, 6, 7, 8, 9.") is joined before lookup, same convention as cédula', async () => {
+  it('a spoken ID dictated digit-by-digit ("1, 2, 3, 4, 5, 6.") is joined before lookup, same convention as cédula', async () => {
     const { service, telegram, affiliateLookup } = buildService({
       state: ConversationState.AUTHORIZATION,
       context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
     });
     affiliateLookup.isEnabled.mockReturnValue(true);
     affiliateLookup.findBySerie.mockReturnValue(null);
-    telegram.normalize.mockResolvedValue(makeMessage('1, 2, 3, 4, 5, 6, 7, 8, 9.'));
+    // Digits joined to "123456" — within the 1..500000 SERIE range (unlike the full
+    // 9-digit dictation this test used before the range check existed).
+    telegram.normalize.mockResolvedValue(makeMessage('1, 2, 3, 4, 5, 6.'));
     await service.handleMessage({});
-    expect(affiliateLookup.findBySerie).toHaveBeenCalledWith('123456789');
+    expect(affiliateLookup.findBySerie).toHaveBeenCalledWith('123456');
   });
 
   it('does not even attempt a lookup when the service is disabled (no CSV configured) — degrades to DISCOVERY silently', async () => {
@@ -340,13 +343,89 @@ describe('AgentService — affiliate ID lookup', () => {
     expect(telegram.sendChoices).toHaveBeenCalledTimes(1);
   });
 
-  it('an empty/unparseable reply (no digits, not a decline) still proceeds to DISCOVERY — never loops forever', async () => {
-    const { service, conversations } = buildService({
+  it('a truly empty reply (no digits, not a decline) proceeds to DISCOVERY anyway — never loops forever on silence', async () => {
+    const { service, telegram, conversations } = buildService({
       state: ConversationState.AUTHORIZATION,
       context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
     });
-    await service.handleMessage({}); // default mock message text is 'test' — no digits, not "no"
-    expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.DISCOVERY, expect.anything());
+    // A literally empty msg.text bails out of handleMessage entirely before reaching
+    // this gate (see the `!msg.text && !msg.contact && !msg.photo` guard) — so to
+    // actually exercise the `!rawText.trim()` branch of `declines`, the message needs to
+    // be non-empty but reduce to nothing once punctuation is stripped (same trim/strip
+    // agent.service.ts applies to every incoming message before routing it).
+    telegram.normalize.mockResolvedValue(makeMessage('...'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.DISCOVERY, expect.anything(),
+    );
+  });
+
+  // Real live-test bug (2026-07-26, screenshot): a non-numeric, non-"no" answer
+  // ("Juan" — voice misheard the ID question, or a genuine misunderstanding) used to be
+  // silently treated as an implicit decline, advancing to DISCOVERY without ever
+  // telling the user their answer didn't make sense. Only digits or an explicit "no"
+  // may pass this gate now.
+  it('regression — a non-numeric, non-"no" reply ("Juan") is rejected and re-asked, never silently let through', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Juan'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/número entre 1 y 500/);
+    // Nothing persisted — the conversation stays exactly where it was, so this same
+    // gate re-fires on the user's next message (never silently lets them continue).
+    expect(conversations.saveState).not.toHaveBeenCalled();
+  });
+
+  it('the same gate re-fires correctly on the very next message after a rejected non-numeric reply', async () => {
+    // Simulates the real live-test sequence: "Juan" (rejected) then a real ID.
+    const { service, telegram, affiliateLookup } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+    });
+    affiliateLookup.isEnabled.mockReturnValue(true);
+    affiliateLookup.findBySerie.mockReturnValue(null);
+    telegram.normalize.mockResolvedValue(makeMessage('42'));
+    await service.handleMessage({});
+    expect(affiliateLookup.findBySerie).toHaveBeenCalledWith('42');
+    const sentText = telegram.sendChoices.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('número entre 1 y 500');
+  });
+
+  // 2026-07-26 clarification: SERIE is a row number into the real affiliate CSV
+  // (1..500000, matching its ~500K rows) — a value outside that range can never match a
+  // real row, so it's rejected the same way a non-numeric reply is, instead of wasting a
+  // lookup call on a value that's guaranteed to miss.
+  describe('regression — SERIE out of the real CSV\'s 1..500000 range is rejected, never looked up', () => {
+    it.each(['0', '500001', '999999999'])('rejects "%s" and re-asks without calling findBySerie', async (badSerie) => {
+      const { service, telegram, conversations, affiliateLookup } = buildService({
+        state: ConversationState.AUTHORIZATION,
+        context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+      });
+      affiliateLookup.isEnabled.mockReturnValue(true);
+      telegram.normalize.mockResolvedValue(makeMessage(badSerie));
+      await service.handleMessage({});
+      expect(affiliateLookup.findBySerie).not.toHaveBeenCalled();
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText.toLowerCase()).toMatch(/número entre 1 y 500/);
+      expect(conversations.saveState).not.toHaveBeenCalled();
+    });
+
+    it.each(['1', '500000', '42'])('accepts "%s" as within range and proceeds to lookup', async (goodSerie) => {
+      const { service, telegram, affiliateLookup } = buildService({
+        state: ConversationState.AUTHORIZATION,
+        context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+      });
+      affiliateLookup.isEnabled.mockReturnValue(true);
+      affiliateLookup.findBySerie.mockReturnValue(null);
+      telegram.normalize.mockResolvedValue(makeMessage(goodSerie));
+      await service.handleMessage({});
+      expect(affiliateLookup.findBySerie).toHaveBeenCalledWith(goodSerie);
+      const sentText = telegram.sendChoices.mock.calls[0]?.[1] as string;
+      expect(sentText).not.toContain('número entre 1 y 500');
+    });
   });
 
   // 2026-07-26 Step 4 — F01 hybrid-filter buttons presented once the affiliate-ID step
