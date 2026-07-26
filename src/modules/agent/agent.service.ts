@@ -430,6 +430,23 @@ export class AgentService {
       }
     }
 
+    // Catalog-honesty bridge (2026-07-26): "quiero asegurar mi carro" during DISCOVERY had
+    // no branch at all — no vehicular/empresa product exists, so it silently extracted no
+    // category and looped on the generic tier-1 question forever. QUOTE_PRESENTED already
+    // has this exact check (detectOutOfCatalogCategory); DISCOVERY never did. Guarded on
+    // productCategory still being unresolved so a real life story like "tengo dos hijos y
+    // una empresa" isn't hijacked by the 'empresa' keyword once vida/mascotas/etc. already
+    // matched something above.
+    if (!newContext.productCategory) {
+      const outOfCatalog = this.detectOutOfCatalogCategory(text);
+      if (outOfCatalog) {
+        return {
+          text: `Por ahora no tengo seguros de ${outOfCatalog}, pero sí tengo vida, accidentes, asistencia médica y mascotas. ¿Te interesa alguno de estos?`,
+          context: newContext,
+        };
+      }
+    }
+
     // First time detecting mixed pets — ask clarification before quoting
     if (newContext.petType === 'mixto') {
       return {
@@ -1270,7 +1287,15 @@ export class AgentService {
     if (!context.email) {
       const normalizedEmail = this.normalizeSpokenEmail(rawText);
       if (!/\S+@\S+\.\S+/.test(normalizedEmail)) {
-        return { text: '¿Cuál es tu correo electrónico? Ahí recibirás la póliza.' };
+        // Real live-test bug (2026-07-26): a user dictated an email by voice WITHOUT
+        // ever saying "arroba" ("juan gmail punto com") — normalizeSpokenEmail can't
+        // invent an @ that was never said, so this failed 3 times in a row with no hint
+        // as to why. Only shown when there's no @ at all (a genuine missing-symbol case,
+        // not just a malformed one) so a real typo doesn't get a confusing generic tip.
+        const hint = normalizedEmail.includes('@')
+          ? ''
+          : ' Si lo dictas por voz, recuerda decir *"arroba"* donde va el @ (ej: "juan arroba gmail punto com").';
+        return { text: `¿Cuál es tu correo electrónico? Ahí recibirás la póliza.${hint}` };
       }
       newContext.email = normalizedEmail;
       // 2026-07-24 business feedback: vida and medicina-prepagada-gatos/perros need

@@ -648,6 +648,36 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     });
   });
 
+  // Real live-test bug (2026-07-26): "juan.gmail.com" dictated by voice (the user never
+  // said "arroba" at all) failed the shape check 3 times in a row with the exact same
+  // re-ask, no hint as to why. normalizeSpokenEmail can't invent an @ that was never
+  // said — but the retry prompt can at least tell the user to say it next time.
+  describe('email dictation with no "arroba" at all gets a helpful hint', () => {
+    it('adds the "di arroba" hint when the text has no @ at all, even after normalization', async () => {
+      const { service, telegram } = buildService({
+        state: ConversationState.DATA_CAPTURE,
+        context: { cedula: '12345678', nombre: 'Juan Pérez' },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('juan.gmail.com'));
+      await service.handleMessage({});
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).toContain('¿Cuál es tu correo electrónico?');
+      expect(sentText.toLowerCase()).toContain('arroba');
+    });
+
+    it('does NOT add the hint for a malformed-but-attempted email that already has an @', async () => {
+      const { service, telegram } = buildService({
+        state: ConversationState.DATA_CAPTURE,
+        context: { cedula: '12345678', nombre: 'Juan Pérez' },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('juan@gmailcom'));
+      await service.handleMessage({});
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).toContain('¿Cuál es tu correo electrónico?');
+      expect(sentText.toLowerCase()).not.toContain('recuerda decir');
+    });
+  });
+
   it('regression — "falta el correo" at confirmation is recognized as a correction request naming email', async () => {
     // Real live-test bug: "falta el correo" / "correo falta" did not match any keyword
     // in the correction-trigger list (corregir/cambiar/editar/está mal/equivocad) and
@@ -2260,6 +2290,69 @@ describe('AgentService — DISCOVERY productCategory inference', () => {
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).not.toContain('rango de edades');
     expect(sentText).toContain('diferente');
+  });
+});
+
+// ── DISCOVERY — catalog-honesty bridge (2026-07-26, Step 5) ────────────────────
+// "Quiero asegurar mi carro" during DISCOVERY had no branch at all — no vehicular/
+// empresa product exists, so it silently extracted no category and looped forever on
+// the generic tier-1 question. QUOTE_PRESENTED already had this exact check
+// (detectOutOfCatalogCategory); DISCOVERY never did.
+describe('AgentService — DISCOVERY catalog-honesty bridge', () => {
+  it('regression — "quiero asegurar mi carro" gives an honest redirect instead of looping', async () => {
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('quiero asegurar mi carro'));
+    await service.handleMessage({});
+    expect(quoting.bestQuote).not.toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/no tengo seguros de vehículos/);
+    expect(sentText.toLowerCase()).toMatch(/vida, accidentes, asistencia médica y mascotas/);
+  });
+
+  it('"mi empresa necesita un seguro" also redirects honestly', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('mi empresa necesita un seguro'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/no tengo seguros de empresas/);
+  });
+
+  it('does NOT hijack a real life story that happens to contain "empresa" once a real category already matched', async () => {
+    const { service, telegram, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ productCategory: 'vida' }),
+    });
+    const vidaProduct = PRODUCTS.find((p) => p.category === 'vida')!;
+    quoting.bestQuote.mockReturnValue({
+      product: vidaProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('tengo dos hijos y una empresa'));
+    await service.handleMessage({});
+    expect(quoting.bestQuote).toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toMatch(/no tengo seguros de empresas/i);
+  });
+
+  it('still asks the normal tier-1 question for genuinely unrelated/unclear text (no regression)', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('hola quiero saber más'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toMatch(/no tengo seguros de/i);
   });
 });
 
