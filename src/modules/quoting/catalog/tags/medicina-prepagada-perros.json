@@ -1,0 +1,8 @@
+{
+  "category": "mascotas",
+  "budget": "high",
+  "family": false,
+  "pet": true,
+  "vehicle": false,
+  "savings": false
+}

@@ -1,0 +1,24 @@
+id: accidentes-personales
+name: Accidentes Personales
+company: MetLife
+public_price: 18000
+requires_quote: false
+category: accidentes
+ideal_for:
+  - personas activas
+  - trabajadores
+  - personas que se movilizan a diario
+  - solteros
+customer_needs:
+  - cobertura de accidentes
+  - reembolso de gastos médicos
+  - indemnización por hospitalización
+questions_to_ask:
+  - ¿Te movilizas frecuentemente por la ciudad?
+  - ¿Practicas deportes o actividades al aire libre?
+  - ¿Te gustaría tener cobertura para gastos médicos por accidentes?
+why_recommend: Cubre gastos médicos y pérdidas económicas derivadas de accidentes cotidianos, ideal para personas activas que se movilizan a diario.
+not_recommended_when:
+  - El usuario solo busca seguro de vida
+  - El usuario solo busca cobertura para mascotas
+url: https://www.colsubsidio.com/seguros/familiares/accidentes

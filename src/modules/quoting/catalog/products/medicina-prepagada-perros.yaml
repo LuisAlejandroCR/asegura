@@ -1,0 +1,26 @@
+id: medicina-prepagada-perros
+name: Medicina Prepagada Mascotas (Perros)
+company: VetPlus
+public_price: 96600
+requires_quote: false
+category: mascotas
+ideal_for:
+  - dueños de perros
+  - amantes de las mascotas
+  - buscadores de cobertura premium
+customer_needs:
+  - atención veterinaria integral
+  - consultas ilimitadas
+  - cirugías
+  - hospitalización
+  - exámenes diagnósticos
+questions_to_ask:
+  - ¿Tienes perro?
+  - ¿Quieres la mejor cobertura médica para tu perro?
+  - ¿Estás dispuesto a invertir en la salud preventiva de tu mascota?
+why_recommend: Medicina prepagada con consultas ilimitadas, cirugías y hospitalización para perros, de la mano de VetPlus.
+not_recommended_when:
+  - El usuario no tiene mascotas
+  - El usuario tiene un presupuesto limitado
+  - El usuario solo tiene gatos
+url: https://www.colsubsidio.com/seguros/mascotas/medicina-prepagada

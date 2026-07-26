@@ -1,0 +1,25 @@
+id: exequial
+name: Exequial
+company: Grupo Recordar
+public_price: 26000
+requires_quote: false
+category: asistencia
+ideal_for:
+  - familias
+  - adultos mayores a cargo
+  - casados
+  - personas previsoras
+customer_needs:
+  - servicios funerarios
+  - transporte nacional
+  - apoyo familiar
+  - despedida digna
+questions_to_ask:
+  - ¿Tienes familiares mayores que dependen de ti?
+  - ¿Has pensado en los gastos funerarios?
+  - ¿Quieres planear con anticipación para no cargar a tu familia?
+why_recommend: Garantiza una despedida digna sin que los gastos funerarios sean una carga para la familia.
+not_recommended_when:
+  - El usuario solo busca seguro de salud
+  - El usuario solo busca cobertura para mascotas
+url: https://www.colsubsidio.com/seguros/familiares/exequial

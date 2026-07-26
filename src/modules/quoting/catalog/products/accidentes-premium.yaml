@@ -1,0 +1,24 @@
+id: accidentes-premium
+name: Accidentes Personales (Premium)
+company: Chubb
+public_price: 28100
+requires_quote: false
+category: accidentes
+ideal_for:
+  - personas activas
+  - profesionales
+  - cabezas de familia
+  - trabajadores de alta exposición al riesgo
+customer_needs:
+  - cobertura amplia de accidentes
+  - gastos médicos mayores
+  - protección familiar
+questions_to_ask:
+  - ¿Buscas una cobertura de accidentes más amplia?
+  - ¿Quieres proteger también a tu familia?
+  - ¿Te interesan límites de indemnización más altos?
+why_recommend: Ofrece una cobertura amplia de accidentes con protección familiar incluida y mayores indemnizaciones que la versión base.
+not_recommended_when:
+  - El usuario tiene un presupuesto muy limitado
+  - El usuario solo busca cobertura para mascotas
+url: https://www.colsubsidio.com/seguros/familiares/accidentes

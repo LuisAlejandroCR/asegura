@@ -1,0 +1,25 @@
+id: asistencias-multiples
+name: Asistencias Múltiples
+company: GEA
+public_price: 20000
+requires_quote: false
+category: asistencia
+ideal_for:
+  - propietarios de vivienda
+  - conductores
+  - familias
+  - profesionales ocupados
+customer_needs:
+  - asistencia para el hogar
+  - asistencia vehicular
+  - orientación legal
+  - apoyo familiar 24/7
+questions_to_ask:
+  - ¿Tienes vehículo?
+  - ¿Tienes casa propia o vives en arriendo?
+  - ¿Te gustaría contar con asistencia legal y familiar 24/7?
+why_recommend: Brinda asistencia inmediata ante emergencias del hogar, el vehículo y la familia en un solo plan.
+not_recommended_when:
+  - El usuario solo busca seguro de vida
+  - El usuario solo busca cobertura para mascotas
+url: https://www.colsubsidio.com/seguros/familiares/asistencias-multiples

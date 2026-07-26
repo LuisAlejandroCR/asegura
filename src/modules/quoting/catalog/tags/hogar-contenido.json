@@ -1,0 +1,8 @@
+{
+  "category": "hogar",
+  "budget": "unknown",
+  "family": true,
+  "pet": false,
+  "vehicle": false,
+  "savings": false
+}

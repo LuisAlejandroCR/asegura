@@ -1,0 +1,25 @@
+id: incendio-deudores
+name: Incendio Deudores
+company: null
+public_price: null
+requires_quote: true
+category: deudores
+ideal_for:
+  - titulares de hipoteca
+  - propietarios de vivienda
+  - deudores
+  - propietarios
+customer_needs:
+  - cobertura de daños por incendio
+  - protección ante desastres naturales
+  - protección de la propiedad
+  - garantía del crédito
+questions_to_ask:
+  - ¿Tienes una hipoteca o crédito de vivienda?
+  - ¿Tienes casa propia?
+  - ¿Quieres proteger tus bienes ante incendios?
+why_recommend: Protege la vivienda ante incendios y fenómenos naturales, respaldando el crédito hipotecario.
+not_recommended_when:
+  - El usuario no tiene hipoteca ni crédito de vivienda
+  - El usuario no tiene propiedades
+url: https://www.colsubsidio.com/seguros/deudores-financieros/incendio

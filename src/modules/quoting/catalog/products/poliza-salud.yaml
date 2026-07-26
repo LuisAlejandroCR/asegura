@@ -1,0 +1,25 @@
+id: poliza-salud
+name: Póliza de Salud
+company: null
+public_price: null
+requires_quote: true
+category: salud
+ideal_for:
+  - familias
+  - conscientes de su salud
+  - personas con condiciones crónicas
+  - padres de familia
+customer_needs:
+  - atención médica preferencial
+  - consultas con especialistas
+  - cobertura flexible
+  - protección de salud
+questions_to_ask:
+  - ¿Necesitas atención médica especializada?
+  - ¿Tienes alguna condición médica preexistente?
+  - ¿Buscas una alternativa a la medicina prepagada tradicional?
+why_recommend: Ofrece atención médica preferencial con una póliza flexible que se adapta a las necesidades de cada persona.
+not_recommended_when:
+  - El usuario ya cuenta con un seguro de salud integral
+  - El usuario solo busca cobertura para mascotas
+url: https://www.colsubsidio.com/seguros/familiares/poliza-salud

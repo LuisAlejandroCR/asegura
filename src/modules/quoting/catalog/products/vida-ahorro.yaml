@@ -1,0 +1,27 @@
+id: vida-ahorro
+name: Vida + Ahorro
+company: BMI
+public_price: 20000
+requires_quote: false
+category: vida
+ideal_for:
+  - padres de familia
+  - casados
+  - ahorradores
+  - sostén del hogar
+  - planificadores a largo plazo
+customer_needs:
+  - protección de vida
+  - componente de ahorro
+  - crecimiento de capital
+  - cobertura por incapacidad
+questions_to_ask:
+  - ¿Quieres un seguro que también te ayude a ahorrar?
+  - ¿Tienes metas financieras a largo plazo?
+  - ¿Quieres proteger a tu familia mientras haces crecer tu capital?
+why_recommend: Protege a la familia y hace crecer el capital automáticamente, combinando seguro de vida con un componente de ahorro.
+not_recommended_when:
+  - El usuario solo busca cobertura para mascotas
+  - El usuario no tiene personas a cargo
+  - El usuario busca un producto de corto plazo
+url: https://www.colsubsidio.com/seguros/familiares/vida-ahorro

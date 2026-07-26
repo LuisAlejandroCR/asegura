@@ -1,0 +1,8 @@
+{
+  "category": "vida",
+  "budget": "low",
+  "family": true,
+  "pet": false,
+  "vehicle": false,
+  "savings": true
+}

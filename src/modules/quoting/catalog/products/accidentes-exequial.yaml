@@ -1,0 +1,24 @@
+id: accidentes-exequial
+name: Accidentes + Exequial
+company: Pan American Life
+public_price: 14000
+requires_quote: false
+category: accidentes
+ideal_for:
+  - familias
+  - casados
+  - trabajadores
+  - conscientes del presupuesto
+customer_needs:
+  - cobertura de accidentes
+  - servicios funerarios
+  - protección familiar
+questions_to_ask:
+  - ¿Quieres cobertura combinada de accidentes y servicios funerarios?
+  - ¿Buscas una solución económica para tu familia?
+  - ¿Te preocupa dejarle una carga financiera a tu familia?
+why_recommend: Combina protección ante accidentes y cobertura exequial en un solo plan económico.
+not_recommended_when:
+  - El usuario solo busca cobertura para mascotas
+  - El usuario solo busca productos de ahorro
+url: https://www.colsubsidio.com/seguros/familiares/accidente-exequial

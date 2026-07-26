@@ -1,0 +1,25 @@
+id: vida-deudores
+name: Vida Deudores
+company: null
+public_price: null
+requires_quote: true
+category: deudores
+ideal_for:
+  - deudores
+  - titulares de hipoteca
+  - titulares de crédito
+  - usuarios de crédito
+customer_needs:
+  - cancelación de la deuda por fallecimiento
+  - cobertura por incapacidad permanente
+  - protección del crédito
+  - alivio financiero para la familia
+questions_to_ask:
+  - ¿Tienes créditos o deudas pendientes?
+  - ¿Tienes una hipoteca?
+  - ¿Quieres evitar que tu familia herede tus deudas?
+why_recommend: Cancela las deudas pendientes ante fallecimiento o incapacidad permanente del titular del crédito.
+not_recommended_when:
+  - El usuario no tiene deudas ni créditos
+  - El usuario busca un producto de inversión
+url: https://www.colsubsidio.com/seguros/deudores-financieros/vida

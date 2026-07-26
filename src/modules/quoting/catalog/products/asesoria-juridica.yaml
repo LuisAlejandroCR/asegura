@@ -1,0 +1,25 @@
+id: asesoria-juridica
+name: Asesoría Jurídica
+company: null
+public_price: null
+requires_quote: true
+category: asistencia
+ideal_for:
+  - profesionales
+  - propietarios de vivienda
+  - familias
+  - emprendedores
+customer_needs:
+  - asesoría legal
+  - asesoría en derecho de familia
+  - revisión de contratos
+  - orientación legal
+questions_to_ask:
+  - ¿Necesitas asesoría legal en temas familiares o de vivienda?
+  - ¿Te gustaría resolver dudas legales sin pagar los costos de una consulta privada?
+  - ¿Tienes contratos que necesitas revisar?
+why_recommend: Orientación legal confiable sin los costos de una consulta privada, accesible para afiliados.
+not_recommended_when:
+  - El usuario solo busca seguro de salud
+  - El usuario solo busca cobertura para mascotas
+url: https://www.colsubsidio.com/seguros/familiares/asesoria-juridica

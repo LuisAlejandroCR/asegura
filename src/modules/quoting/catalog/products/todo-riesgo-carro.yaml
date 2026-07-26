@@ -1,0 +1,26 @@
+id: todo-riesgo-carro
+name: Todo Riesgo Carro
+company: null
+public_price: null
+requires_quote: true
+category: vehiculos
+ideal_for:
+  - propietarios de carro
+  - conductores
+  - personas que se movilizan a diario
+  - familias
+customer_needs:
+  - seguro integral para carro
+  - cobertura de accidentes
+  - protección contra robo
+  - servicio de grúa
+  - protección legal
+questions_to_ask:
+  - ¿Tienes carro?
+  - ¿Quieres una cobertura todo riesgo?
+  - ¿Te interesa la asistencia en vía y el servicio de grúa?
+why_recommend: Protege el vehículo ante accidentes, robos y daños a terceros con cobertura integral.
+not_recommended_when:
+  - El usuario no tiene carro
+  - El usuario solo busca el SOAT
+url: https://www.colsubsidio.com/seguros/vehiculos/carro

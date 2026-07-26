@@ -1,0 +1,8 @@
+{
+  "category": "asistencia",
+  "budget": "low",
+  "family": true,
+  "pet": false,
+  "vehicle": true,
+  "savings": false
+}

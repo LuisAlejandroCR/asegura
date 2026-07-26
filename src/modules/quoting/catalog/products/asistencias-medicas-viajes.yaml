@@ -1,0 +1,25 @@
+id: asistencias-medicas-viajes
+name: Asistencias Médicas Viajes
+company: null
+public_price: null
+requires_quote: true
+category: asistencia
+ideal_for:
+  - viajeros
+  - turistas
+  - viajeros de negocios
+  - visitantes internacionales
+customer_needs:
+  - atención de emergencias en el extranjero
+  - asistencia 24/7
+  - cobertura de gastos médicos
+  - soporte durante el viaje
+questions_to_ask:
+  - ¿Viajas al extranjero con frecuencia?
+  - ¿Necesitas cobertura médica internacional para tu próximo viaje?
+  - ¿Quieres estar protegido ante emergencias en el extranjero?
+why_recommend: Tranquilidad durante viajes con cobertura médica internacional disponible 24/7.
+not_recommended_when:
+  - El usuario no tiene planes de viajar
+  - El usuario busca un seguro de uso diario
+url: https://www.colsubsidio.com/seguros/familiares/asistencias-medicas-viajes

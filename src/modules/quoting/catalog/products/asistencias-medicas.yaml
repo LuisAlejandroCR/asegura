@@ -1,0 +1,25 @@
+id: asistencias-medicas
+name: Asistencias Médicas Familiares
+company: GEA
+public_price: 16800
+requires_quote: false
+category: asistencia
+ideal_for:
+  - familias
+  - padres de familia
+  - conscientes de su salud
+  - casados con hijos
+customer_needs:
+  - orientación médica telefónica
+  - consultas virtuales
+  - descuentos en medicamentos
+  - orientación nutricional
+questions_to_ask:
+  - ¿Tus hijos se enferman con frecuencia?
+  - ¿Te gustaría contar con un médico disponible por teléfono o videollamada?
+  - ¿Quieres ahorrar en medicamentos?
+why_recommend: Ofrece acceso rápido a orientación médica, consultas virtuales y descuentos en medicamentos sin pagar una póliza completa.
+not_recommended_when:
+  - El usuario solo busca cobertura para mascotas
+  - El usuario solo busca seguro de vida
+url: https://www.colsubsidio.com/seguros/familiares/asistencias-medicas

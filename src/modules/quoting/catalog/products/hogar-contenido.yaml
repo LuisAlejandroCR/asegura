@@ -1,0 +1,25 @@
+id: hogar-contenido
+name: Hogar Contenido
+company: null
+public_price: null
+requires_quote: true
+category: hogar
+ideal_for:
+  - propietarios de vivienda
+  - arrendatarios
+  - familias
+  - propietarios
+customer_needs:
+  - protección de contenidos del hogar
+  - cobertura por terremoto
+  - cobertura por incendio
+  - cobertura por robo
+questions_to_ask:
+  - ¿Tienes casa propia?
+  - ¿Quieres proteger las pertenencias de tu hogar?
+  - ¿Te preocupan los desastres naturales como terremotos o incendios?
+why_recommend: Protege las pertenencias del hogar ante daños por terremotos, incendios, robos y erupciones.
+not_recommended_when:
+  - El usuario no tiene casa propia ni vive en arriendo
+  - El usuario solo busca seguro de vida
+url: https://www.colsubsidio.com/seguros/hogar/contenido

@@ -1,0 +1,25 @@
+id: arrendamiento
+name: Arrendamiento
+company: null
+public_price: null
+requires_quote: true
+category: hogar
+ideal_for:
+  - arrendadores
+  - arrendatarios
+  - propietarios
+  - inversionistas
+customer_needs:
+  - protección de propiedad en arriendo
+  - daños por terremoto
+  - daños por incendio
+  - daños por robo
+questions_to_ask:
+  - ¿Tienes propiedades en arriendo?
+  - ¿Quieres proteger tu inversión inmobiliaria?
+  - ¿Te preocupan los daños a la propiedad por desastres naturales?
+why_recommend: Protege la propiedad en arriendo ante daños causados por terremotos, incendios, robos y erupciones.
+not_recommended_when:
+  - El usuario no arrienda ni alquila propiedades
+  - El usuario solo busca seguro de vida
+url: https://www.colsubsidio.com/seguros/hogar/arrendamiento

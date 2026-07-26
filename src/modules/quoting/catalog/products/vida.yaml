@@ -1,0 +1,23 @@
+id: vida
+name: Seguro de Vida
+company: Pan American Life
+public_price: 12000
+requires_quote: false
+category: vida
+ideal_for:
+  - padres de familia
+  - casados
+  - con hipoteca
+  - sostén del hogar
+customer_needs:
+  - protección financiera
+  - seguridad familiar
+questions_to_ask:
+  - ¿Tienes hijos?
+  - ¿Alguien depende de tus ingresos?
+  - ¿Actualmente tienes un seguro de vida?
+why_recommend: Protege económicamente a las personas que dependen de los ingresos del asegurado.
+not_recommended_when:
+  - El usuario solo busca cobertura para mascotas
+  - El usuario no tiene personas a cargo
+url: https://www.colsubsidio.com/seguros/familiares/vida

@@ -1,0 +1,25 @@
+id: desempleo-deudores
+name: Desempleo Deudores
+company: null
+public_price: null
+requires_quote: true
+category: deudores
+ideal_for:
+  - empleados
+  - deudores
+  - trabajadores formales
+  - usuarios de crédito
+customer_needs:
+  - cobertura de cuotas de crédito
+  - protección por desempleo
+  - cobertura por incapacidad temporal
+  - tranquilidad financiera
+questions_to_ask:
+  - ¿Tienes un crédito activo?
+  - ¿Eres empleado formal?
+  - ¿Te preocupa dejar de pagar tus cuotas si pierdes tu empleo?
+why_recommend: Cubre las cuotas crediticias ante despido o incapacidad temporal, protegiendo la estabilidad financiera.
+not_recommended_when:
+  - El usuario no tiene empleo formal
+  - El usuario no tiene deudas ni créditos
+url: https://www.colsubsidio.com/seguros/deudores-financieros/desempleo

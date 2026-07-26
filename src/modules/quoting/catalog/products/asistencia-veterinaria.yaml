@@ -1,0 +1,26 @@
+id: asistencia-veterinaria
+name: Asistencia Veterinaria
+company: GEA
+public_price: 14500
+requires_quote: false
+category: mascotas
+ideal_for:
+  - dueños de mascotas
+  - dueños de perros
+  - dueños de gatos
+  - familias con mascotas
+customer_needs:
+  - consulta veterinaria
+  - refuerzos de vacunación
+  - urgencias
+  - búsqueda y localización de mascotas
+  - exámenes de laboratorio
+questions_to_ask:
+  - ¿Tienes perro o gato?
+  - ¿Te gustaría contar con asistencia veterinaria 24/7?
+  - ¿Quieres cubrir consultas, vacunas y emergencias?
+why_recommend: Brinda atención veterinaria rápida, emergencias 24/7 y servicios complementarios para perros y gatos.
+not_recommended_when:
+  - El usuario no tiene mascotas
+  - El usuario busca seguro de salud para personas
+url: https://www.colsubsidio.com/seguros/mascotas/asistencia-veterinaria

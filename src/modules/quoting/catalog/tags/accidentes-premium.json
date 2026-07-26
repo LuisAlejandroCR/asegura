@@ -1,0 +1,8 @@
+{
+  "category": "accidentes",
+  "budget": "medium",
+  "family": true,
+  "pet": false,
+  "vehicle": false,
+  "savings": false
+}

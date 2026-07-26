@@ -1,0 +1,25 @@
+id: bicicleta-patineta
+name: Bicicleta / Patineta
+company: null
+public_price: null
+requires_quote: true
+category: vehiculos
+ideal_for:
+  - ciclistas
+  - estudiantes
+  - personas que se movilizan en la ciudad
+  - conscientes del medio ambiente
+customer_needs:
+  - protección para bicicleta/patineta
+  - cobertura de accidentes
+  - protección contra robo
+  - daños a terceros
+questions_to_ask:
+  - ¿Usas bicicleta o patineta para movilizarte?
+  - ¿Quieres proteger tu vehículo ante robos o accidentes?
+  - ¿Necesitas cobertura de responsabilidad civil ante terceros?
+why_recommend: Protege la bicicleta o patineta ante accidentes, robos y daños a terceros como medio de transporte urbano.
+not_recommended_when:
+  - El usuario no tiene bicicleta ni patineta
+  - El usuario busca seguro para carro
+url: https://www.colsubsidio.com/seguros/vehiculos/bicicleta-patineta

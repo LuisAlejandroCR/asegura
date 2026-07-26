@@ -1,0 +1,25 @@
+id: seguro-mascotas-perro-gato
+name: Seguro Mascotas (Perro/Gato)
+company: null
+public_price: null
+requires_quote: true
+category: mascotas
+ideal_for:
+  - dueños de mascotas
+  - dueños de perros
+  - dueños de gatos
+  - familias con mascotas
+customer_needs:
+  - asistencia médica veterinaria
+  - protección ante daños
+  - cobertura para mascotas
+  - tranquilidad
+questions_to_ask:
+  - ¿Tienes perro o gato?
+  - ¿Te preocupa que tu mascota cause daños a terceros?
+  - ¿Quieres asistencia veterinaria para tu mascota?
+why_recommend: Asistencia médica veterinaria y protección ante daños que pueda causar la mascota, en un solo plan.
+not_recommended_when:
+  - El usuario no tiene mascotas
+  - El usuario ya cuenta con cobertura para mascotas
+url: https://www.colsubsidio.com/seguros/mascotas/perro-gato

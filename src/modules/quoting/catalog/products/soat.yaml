@@ -1,0 +1,25 @@
+id: soat
+name: SOAT
+company: null
+public_price: null
+requires_quote: true
+category: vehiculos
+ideal_for:
+  - conductores
+  - propietarios de vehículos
+  - personas que se movilizan a diario
+  - familias con carro
+customer_needs:
+  - seguro obligatorio de accidentes
+  - cobertura médica por accidentes de tránsito
+  - cumplimiento legal
+  - protección básica
+questions_to_ask:
+  - ¿Tienes vehículo?
+  - ¿Necesitas el SOAT para tu carro o moto?
+  - ¿Te gustaría combinar el SOAT con otro seguro?
+why_recommend: Seguro obligatorio que protege a ocupantes y peatones ante accidentes de tránsito, cumpliendo con la ley.
+not_recommended_when:
+  - El usuario no tiene vehículo
+  - El usuario ya tiene SOAT
+url: https://www.colsubsidio.com/seguros/vehiculos/soat

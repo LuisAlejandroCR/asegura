@@ -1,0 +1,25 @@
+id: todo-riesgo-moto
+name: Todo Riesgo Moto
+company: null
+public_price: null
+requires_quote: true
+category: vehiculos
+ideal_for:
+  - motociclistas
+  - personas que se movilizan a diario
+  - domiciliarios
+  - conductores jóvenes
+customer_needs:
+  - seguro integral para moto
+  - cobertura de accidentes
+  - protección contra robo
+  - responsabilidad civil ante terceros
+questions_to_ask:
+  - ¿Tienes moto?
+  - ¿Usas tu moto a diario?
+  - ¿Quieres proteger tu moto ante robos y accidentes?
+why_recommend: Cobertura integral para motos ante accidentes, robos y daños a terceros.
+not_recommended_when:
+  - El usuario no tiene moto
+  - El usuario solo busca el SOAT
+url: https://www.colsubsidio.com/seguros/vehiculos/moto
