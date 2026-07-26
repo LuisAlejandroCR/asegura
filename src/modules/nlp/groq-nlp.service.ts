@@ -234,6 +234,25 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       intent.isNegative = true;
     }
 
+    // Real live-test bug (2026-07-26): every override above only ever turns
+    // isAffirmative OFF — there was nothing to turn it back ON when Groq's own
+    // classification simply misses a clear, unambiguous confirmation ("Quiero ese.", no
+    // question mark), leaving a genuine "yes" stuck at false and the conversation
+    // silently re-showing the same quote instead of advancing. fallbackIntent already
+    // trusts isAffirmativeText as its primary signal; the primary (Groq) path deserves
+    // the same deterministic floor, respecting every negation guard already computed
+    // above (question mark, wantsAlternative, denied desire) so this can never
+    // re-introduce one of those bugs.
+    if (
+      !intent.isAffirmative
+      && this.isAffirmativeText(lower)
+      && (!text.includes('?') && !text.includes('¿') || GroqNlpService.hasStandaloneSi(text))
+      && !intent.wantsAlternative
+      && !this.deniesDesireText(lower)
+    ) {
+      intent.isAffirmative = true;
+    }
+
     // Not in Groq's JSON schema — this deterministic extraction is the only source.
     intent.dependents = this.extractDependents(lower);
 

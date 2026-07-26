@@ -557,6 +557,60 @@ describe('GroqNlpService.postProcess — negated desire deterministic override (
   });
 });
 
+// Real live-test bug (2026-07-26): "Quiero ese." (a clear, unambiguous confirmation, no
+// question mark) got re-shown the same quote instead of advancing to phone verification.
+// Every existing override in postProcess only ever turns isAffirmative OFF (question
+// mark, wantsAlternative, denied desire) — nothing corrected Groq's own occasional
+// under-detection back to true. fallbackIntent already trusts isAffirmativeText as its
+// primary signal; the primary (Groq) path needed the same deterministic floor.
+describe('GroqNlpService.postProcess — positive confirmation deterministic floor (2026-07-26 live bug)', () => {
+  const service = makeService();
+
+  function wronglyNegative(): InsuranceIntent {
+    return {
+      productCategory: 'vida', petType: null, coverage: [], beneficiaries: 1,
+      urgency: 'exploring', isAffirmative: false, isNegative: false,
+      wantsAlternative: false, petResolution: null,
+    };
+  }
+
+  it('regression — "Quiero ese." forces isAffirmative=true even when Groq said isAffirmative=false', () => {
+    const result = postProcess(service, wronglyNegative(), 'Quiero ese.');
+    expect(result.isAffirmative).toBe(true);
+  });
+
+  it.each([
+    'Dame ese',
+    'Listo',
+    'Confirmo',
+  ])('"%s" also forces isAffirmative=true when Groq under-detected it', (text) => {
+    const result = postProcess(service, wronglyNegative(), text);
+    expect(result.isAffirmative).toBe(true);
+  });
+
+  it('does NOT force isAffirmative when the text is a genuine question ("¿Quiero ese?" stays false)', () => {
+    const result = postProcess(service, wronglyNegative(), '¿Quiero ese?');
+    expect(result.isAffirmative).toBe(false);
+  });
+
+  it('does NOT force isAffirmative when the text names an alternative request instead', () => {
+    const result = postProcess(service, wronglyNegative(), 'Otra opción, por favor');
+    expect(result.isAffirmative).toBe(false);
+  });
+
+  it('does NOT force isAffirmative when the text is a negated decline ("no quiero ese")', () => {
+    const result = postProcess(service, wronglyNegative(), 'no quiero ese');
+    expect(result.isAffirmative).toBe(false);
+  });
+
+  it('regression guard — still correctly overrides to false for an unambiguous alternative request even when Groq wrongly said true', () => {
+    const wronglyAffirmative: InsuranceIntent = { ...wronglyNegative(), isAffirmative: true };
+    const result = postProcess(service, wronglyAffirmative, 'Otra opción.');
+    expect(result.isAffirmative).toBe(false);
+    expect(result.wantsAlternative).toBe(true);
+  });
+});
+
 describe('GroqNlpService.fallbackIntent — negated desire deterministic override (2026-07-26 live bug)', () => {
   const service = makeService();
 
