@@ -97,6 +97,25 @@ describe('ReminderService', () => {
   // 2026-07-25 feature request: a conversation that goes quiet through the nudge AND the
   // extra 3-minute grace period afterward gets auto-closed, so it doesn't sit open forever.
   describe('auto-close after the nudge also goes unanswered', () => {
+    // Real live-test bug (screenshot, 2026-07-26): the auto-close updated the DB but
+    // never told the user anything — from the chat's own point of view, nothing
+    // happened at all no matter how long they waited after the nudge. The whole point
+    // of "chat ended due to lack of information" was a visible outcome.
+    it('sends a closing message to the user, not just a silent DB update', async () => {
+      const telegram = makeTelegram();
+      const conversations = makeConversations({ state: ConversationState.DISCOVERY, context: {} });
+      const service = new ReminderService(telegram, conversations);
+
+      service.schedule('conv-1', 'user-1');
+      await jest.advanceTimersByTimeAsync(60_000 + 180_000);
+
+      // Called twice total: once for the 60s nudge, once for the close message.
+      expect(telegram.sendText).toHaveBeenCalledTimes(2);
+      expect(telegram.sendText).toHaveBeenNthCalledWith(2, 'user-1', expect.any(String));
+      const closeText = telegram.sendText.mock.calls[1][1] as string;
+      expect(closeText).not.toBe(telegram.sendText.mock.calls[0][1]); // distinct from the nudge text
+    });
+
     it('closes as "insufficient_info" when no productCategory was ever captured', async () => {
       const telegram = makeTelegram();
       const conversations = makeConversations({ state: ConversationState.DISCOVERY, context: {} });
@@ -130,7 +149,7 @@ describe('ReminderService', () => {
       );
     });
 
-    it('does not close a conversation that already reached a terminal state some other way', async () => {
+    it('does not close a conversation that already reached a terminal state some other way, and does not message it either', async () => {
       const telegram = makeTelegram();
       const conversations = makeConversations({ state: ConversationState.COMPLETED });
       const service = new ReminderService(telegram, conversations);
@@ -139,6 +158,8 @@ describe('ReminderService', () => {
       await jest.advanceTimersByTimeAsync(60_000 + 180_000);
 
       expect(conversations.saveState).not.toHaveBeenCalled();
+      // Only the 60s nudge should have gone out — no separate close message.
+      expect(telegram.sendText).toHaveBeenCalledTimes(1);
     });
 
     it('a reply during the grace period (cancel) prevents the auto-close', async () => {

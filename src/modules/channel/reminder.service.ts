@@ -25,6 +25,12 @@ const REMINDER_TEXT = '¿Sigues ahí? Aquí estoy cuando quieras continuar 😊'
 // don't keep counting a truly-dead chat as still "in progress". 3 more minutes after the
 // nudge (4 total since the user's last message) before giving up.
 const CLOSE_DELAY_MS = 180_000;
+// Real live-test bug (2026-07-25/26, screenshot): the auto-close above updated the DB
+// (ABANDONED + abandonReason) but never told the USER anything — from the chat's own
+// point of view, nothing happened at all after the nudge, no matter how long you waited.
+// The whole point of "chat ended due to lack of information" was a visible outcome, not
+// a silent analytics label.
+const TIMEOUT_CLOSE_TEXT = 'Como no he sabido de ti en un rato, cierro esta conversación por ahora. Cuando quieras continuar, aquí estoy — 24/7, sin esperas 😊';
 
 const TERMINAL_STATES = new Set<ConversationState>([
   ConversationState.COMPLETED,
@@ -54,7 +60,7 @@ export class ReminderService {
 
       const closeTimer = setTimeout(() => {
         this.closeTimers.delete(conversationId);
-        void this.closeIfStillStalled(conversationId);
+        void this.closeIfStillStalled(conversationId, userId);
       }, CLOSE_DELAY_MS);
       this.closeTimers.set(conversationId, closeTimer);
     }, REMINDER_DELAY_MS);
@@ -74,14 +80,16 @@ export class ReminderService {
     }
   }
 
-  private async closeIfStillStalled(conversationId: string): Promise<void> {
+  private async closeIfStillStalled(conversationId: string, userId: string): Promise<void> {
     const conv = await this.conversations.findById(conversationId);
     if (!conv || TERMINAL_STATES.has(conv.state)) return;
 
     const reason = conv.context?.productCategory ? 'no_response' : 'insufficient_info';
+    await this.telegram.sendText(userId, TIMEOUT_CLOSE_TEXT)
+      .catch((err) => this.logger.warn(`closeIfStillStalled sendText failed: ${err}`));
     await this.conversations.saveState(conversationId, ConversationState.ABANDONED, {
       ...conv.context,
       abandonReason: reason,
-    }).catch((err) => this.logger.warn(`closeIfStillStalled failed: ${err}`));
+    }).catch((err) => this.logger.warn(`closeIfStillStalled saveState failed: ${err}`));
   }
 }
