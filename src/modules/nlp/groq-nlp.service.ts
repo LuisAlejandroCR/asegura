@@ -59,6 +59,7 @@ export class GroqNlpService implements INlpProvider {
         role: h.role === 'agent' ? 'assistant' : h.role,
         content: h.text,
       })) ?? [];
+      this.logger.log(`callGroq text="${text.slice(0, 120)}"`);
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
