@@ -219,6 +219,58 @@ describe('AgentService — affiliate ID lookup', () => {
     expect(savedContext.rangoSalarial).toBeUndefined();
   });
 
+  // 2026-07-26 feature request: "capture the complete row... so the agent will know all
+  // about the registered user" — the FULL record persists as affiliateProfile, and a
+  // known petCount pre-fills context.petCount (same precedent as dependents above).
+  it('captures the FULL affiliate record as affiliateProfile and pre-fills petCount from it', async () => {
+    const { service, telegram, conversations, affiliateLookup } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+    });
+    const fullRecord = {
+      rangoSalarial: 'Entre 1 y 1.5 SMLV', genero: 'F', rangoEdad: '20 a 35 años', categoria: 'A',
+      ciudadAfiliado: 'LA MESA', productoIdPrevio: 'medicina-prepagada-gatos',
+      primaMensualPrevia: 81800, petCount: 1,
+    };
+    affiliateLookup.isEnabled.mockReturnValue(true);
+    affiliateLookup.findBySerie.mockReturnValue(fullRecord);
+    telegram.normalize.mockResolvedValue(makeMessage('1103'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.affiliateProfile).toEqual(fullRecord);
+    expect(savedContext.petCount).toBe(1);
+  });
+
+  it('a record found with fields OTHER than rangoSalarial/dependents/petCount is still enriched, not dropped', async () => {
+    const { service, telegram, conversations, affiliateLookup } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
+    });
+    affiliateLookup.isEnabled.mockReturnValue(true);
+    affiliateLookup.findBySerie.mockReturnValue({ genero: 'M', ciudadAfiliado: 'BOGOTA D.C.' });
+    telegram.normalize.mockResolvedValue(makeMessage('7'));
+    await service.handleMessage({});
+    // Reaches DISCOVERY with F01 choices attached, so this dispatches via sendChoices,
+    // not sendText (same convention as the sibling "valid ID" test above).
+    const sentText = telegram.sendChoices.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('¡Encontré tu perfil!');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.affiliateProfile).toEqual({ genero: 'M', ciudadAfiliado: 'BOGOTA D.C.' });
+  });
+
+  it('does NOT overwrite an already-known petCount with a stale looked-up value', async () => {
+    const { service, telegram, conversations, affiliateLookup } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true, petCount: 3 },
+    });
+    affiliateLookup.isEnabled.mockReturnValue(true);
+    affiliateLookup.findBySerie.mockReturnValue({ petCount: 1 });
+    telegram.normalize.mockResolvedValue(makeMessage('1103'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.petCount).toBe(3);
+  });
+
   it('a looked-up dependents=0 causes DISCOVERY to skip the dependents question on the very next turn', async () => {
     const { service, telegram, affiliateLookup } = buildService({
       state: ConversationState.AUTHORIZATION,
@@ -1217,6 +1269,37 @@ describe('AgentService — payment method choice (Tarjeta Colsubsidio vs Link de
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain('checkout.wompi.co');
     expect(sentText.toLowerCase()).not.toMatch(/coincidencia|emparejamos/);
+  });
+
+  // Real live-test bug: nothing told the user the chat stays open/available while a real
+  // Wompi payment link is still pending — ties to the 34-minute PAYMENT_CLOSE_DELAY_MS
+  // fix (reminder.service.ts) so the user isn't surprised the conversation didn't close.
+  it('reassures the user the conversation stays available while a payment link is pending', async () => {
+    const { service, telegram, wompi } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com',
+        quoteProductId: PRODUCTS[0].id, awaitingPaymentMethodChoice: true,
+      },
+      intent: makeIntent({}),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('link de pago'));
+    await service.handleMessage({});
+    expect(wompi.createPaymentLink).toHaveBeenCalled();
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/se mantiene disponible|sigue disponible|puedes cerrar/);
+  });
+
+  it('the "link still active" re-show also reassures the chat stays available', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.PAYMENT,
+      context: { checkoutUrl: 'https://checkout.wompi.co/l/test123', quoteProductId: PRODUCTS[0].id },
+      intent: makeIntent({ isNegative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿ya casi?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/se mantiene disponible|sigue disponible/);
   });
 
   it('"Tarjeta Colsubsidio" generates the exact same real Wompi link, with themed copy, not a faked instant success', async () => {
@@ -2238,6 +2321,35 @@ describe('AgentService — QUOTE_PRESENTED honest response to an out-of-catalog 
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain(vidaProduct.name);
+  });
+
+  // Real live-test bug: asistencias-multiples genuinely covers "Asistencia vehículo" —
+  // asking about THAT coverage while it's on screen must not get the same "no tengo
+  // seguros de vehículos" denial as someone asking for a dedicated car-insurance policy.
+  it('regression — does NOT deny vehicle coverage when the shown product already includes "Asistencia vehículo"', async () => {
+    const asistenciasMultiples = PRODUCTS.find(p => p.id === 'asistencias-multiples')!;
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: asistenciasMultiples.id, productCategory: 'asistencia' },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿la asistencia también cubre si se vara mi vehículo?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).not.toMatch(/no tengo seguros de vehículos/);
+  });
+
+  it('still denies a genuinely unrelated vehicle request when nothing shown covers it (e.g. a vida quote)', async () => {
+    const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: vidaProduct.id, productCategory: 'vida' },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('¿y tienen seguro para mi carro?'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText.toLowerCase()).toMatch(/no tengo|no ofrecemos|no cuento con/);
   });
 });
 
@@ -3625,6 +3737,79 @@ describe('AgentService — terminal-state restart', () => {
     expect(conversations.saveState).not.toHaveBeenCalled();
   });
 
+  // 2026-07-26 feature request: a COMPLETED customer asking about their OWN,
+  // already-purchased policy used to get the same generic "¡Todo listo!" text no matter
+  // what was asked — answer with the real purchased product instead.
+  describe('AgentService — post-purchase policy inquiry (COMPLETED)', () => {
+    it('answers a real question about the purchased policy using the actual product', async () => {
+      const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.COMPLETED,
+        context: { hasCompletedPurchase: true, nombre: 'Ana', cedula: '123', purchasedProductIds: [vidaProduct.id] },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('¿qué cubre mi póliza?'));
+      await service.handleMessage({});
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).toContain(vidaProduct.name);
+      for (const coverage of vidaProduct.coverages) {
+        expect(sentText).toContain(coverage);
+      }
+      // Never a sales pitch for something already bought.
+      expect(sentText).not.toContain('¿Te interesa o prefieres que busquemos otra opción?');
+      expect(conversations.saveState).not.toHaveBeenCalled();
+    });
+
+    it('answers for EACH product when the customer bought more than one', async () => {
+      const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+      const petProduct = PRODUCTS.find(p => p.category === 'mascotas')!;
+      const { service, telegram } = buildService({
+        state: ConversationState.COMPLETED,
+        context: { hasCompletedPurchase: true, purchasedProductIds: [vidaProduct.id, petProduct.id] },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('cuéntame de mi póliza'));
+      await service.handleMessage({});
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).toContain(vidaProduct.name);
+      expect(sentText).toContain(petProduct.name);
+    });
+
+    it('does NOT intercept a normal message with no policy question, even in COMPLETED with purchasedProductIds set', async () => {
+      const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+      const { service, telegram } = buildService({
+        state: ConversationState.COMPLETED,
+        context: { hasCompletedPurchase: true, purchasedProductIds: [vidaProduct.id] },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('gracias, todo bien'));
+      await service.handleMessage({});
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).toContain('¡Todo listo!');
+    });
+
+    it('falls back to the generic COMPLETED text when purchasedProductIds is empty/absent', async () => {
+      const { service, telegram } = buildService({
+        state: ConversationState.COMPLETED,
+        context: { hasCompletedPurchase: true },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('¿qué cubre mi póliza?'));
+      await service.handleMessage({});
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).toContain('¡Todo listo!');
+    });
+
+    it('a policy question containing "ayuda" answers about the policy instead of restarting to GREETING', async () => {
+      const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.COMPLETED,
+        context: { hasCompletedPurchase: true, purchasedProductIds: [vidaProduct.id] },
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('necesito ayuda, ¿qué cubre mi póliza?'));
+      await service.handleMessage({});
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).toContain(vidaProduct.name);
+      expect(conversations.saveState).not.toHaveBeenCalled();
+    });
+  });
+
   // 2026-07-26 persistent memory — "la siguiente conversación nunca debe empezar desde
   // cero" (Diseño preguntas.docx). Durable profile facts survive an ABANDONED/REJECTED
   // restart; session-scoped state (the quote in progress, one-shot gates) still resets.
@@ -3841,5 +4026,220 @@ describe('AgentService — stuck-loop circuit breaker + human escalation', () =>
     await service.handleMessage({});
     // Only one sendText call — to the user with the escalation message. No admin call.
     expect(telegram.sendText).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Comprehensive end-to-end live-test scenarios (2026-07-26) ─────────────────────────
+// Each scenario below chains multiple real service.handleMessage() calls, manually
+// threading each turn's saved context into the next buildService() call — the same
+// convention already used by the mixed-species regression test above (this codebase has
+// no infrastructure for re-using one service instance across turns; conversations.
+// getOrCreate is a fixed, one-time snapshot per buildService() call). Answers, one
+// scenario each, the exact questions raised in a real live-test review:
+describe('AgentService — end-to-end live-test scenarios (comprehensive)', () => {
+  // Q: "is it the user asked twice?" — no: DATA_CAPTURE only asks a field while it's
+  // genuinely empty. A live "asked twice" report traces to ASR mis-transcribing an
+  // email ("arroba" misheard), not this state machine re-asking a validly-answered field.
+  it('SCENARIO 1 — DATA_CAPTURE never re-asks cédula/nombre/email once validly answered', async () => {
+    const { service: s1, telegram: t1, conversations: c1 } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { quoteProductId: PRODUCTS[0].id },
+      intent: makeIntent({}),
+    });
+    t1.normalize.mockResolvedValue(makeMessage('12345678'));
+    await s1.handleMessage({});
+    const ctx1 = c1.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(ctx1.cedula).toBe('12345678');
+    expect(t1.sendText.mock.calls[0]?.[1]).toContain('nombre completo');
+
+    const { service: s2, telegram: t2, conversations: c2 } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: ctx1,
+      intent: makeIntent({}),
+    });
+    t2.normalize.mockResolvedValue(makeMessage('Ana Torres'));
+    await s2.handleMessage({});
+    const ctx2 = c2.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(ctx2.nombre).toBe('Ana Torres');
+    expect(ctx2.cedula).toBe('12345678'); // untouched, never re-asked
+    const sentText2 = t2.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText2).not.toContain('documento de identidad');
+    expect(sentText2).toContain('correo');
+
+    const { service: s3, telegram: t3, conversations: c3 } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: ctx2,
+      intent: makeIntent({}),
+    });
+    t3.normalize.mockResolvedValue(makeMessage('ana@test.com'));
+    await s3.handleMessage({});
+    const ctx3 = c3.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(ctx3.email).toBe('ana@test.com');
+    const sentText3 = t3.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText3).not.toContain('¿Cuál es tu nombre completo?');
+    expect(sentText3).not.toContain('número de documento');
+    expect(sentText3).toContain('Resumen de tu compra');
+  });
+
+  // Q: "if user wants to select a specific insurance offered before, what should be the
+  // agent behavior?" — resolves the exact previously-shown product by name/position/
+  // price, never confirms whichever product happens to be on screen instead.
+  it('SCENARIO 2 — selecting a specific previously-shown option resolves to THAT product, not the current one', async () => {
+    const p1 = PRODUCTS.find(p => p.id === 'asistencias-medicas')!; // $16.800
+    const p2 = PRODUCTS.find(p => p.id === 'asistencias-multiples')!; // $20.000
+
+    // Turn 1: p1 already shown, "otro" surfaces p2.
+    const { service: s1, telegram: t1, conversations: c1, quoting: q1 } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: p1.id, shownProductIds: [p1.id], productCategory: 'asistencia' },
+      intent: makeIntent({ wantsAlternative: true, productCategory: null }),
+    });
+    q1.score.mockReturnValue([
+      { productId: p2.id, matchScore: 70, reasons: [], monthlyPremium: p2.basePremium, priority: 'high' },
+    ]);
+    t1.normalize.mockResolvedValue(makeMessage('otro'));
+    await s1.handleMessage({});
+    const ctx1 = c1.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(ctx1.quoteProductId).toBe(p2.id);
+    expect(t1.sendText.mock.calls[0]?.[1]).toContain(p2.name);
+
+    // Turn 2: user asks to go back to "la primera opción" — must resolve to p1, not p2.
+    const { service: s2, telegram: t2, conversations: c2 } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: ctx1,
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    t2.normalize.mockResolvedValue(makeMessage('mejor la primera opción que me ofreciste'));
+    await s2.handleMessage({});
+    const ctx2 = c2.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(ctx2.quoteProductId).toBe(p1.id);
+    const sentText2 = t2.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText2).toContain(p1.name);
+    expect(sentText2).not.toContain(p2.name);
+  });
+
+  // Q: "what if asks for an insurance out of scope?" — an honest decline for a genuinely
+  // unrelated category, but never a false denial of coverage the shown product ALREADY
+  // includes (the asistencias-multiples "Asistencia vehículo" false-positive fix).
+  it('SCENARIO 3 — out-of-scope request: honest decline when unrelated, no false denial when already covered', async () => {
+    const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+    const { service: s1, telegram: t1 } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: vidaProduct.id, productCategory: 'vida' },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    t1.normalize.mockResolvedValue(makeMessage('¿y tienen seguro para mi carro?'));
+    await s1.handleMessage({});
+    expect((t1.sendText.mock.calls[0]?.[1] as string).toLowerCase()).toMatch(/no tengo|no ofrecemos|no cuento con/);
+
+    const asistenciasMultiples = PRODUCTS.find(p => p.id === 'asistencias-multiples')!;
+    const { service: s2, telegram: t2 } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: asistenciasMultiples.id, productCategory: 'asistencia' },
+      intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+    });
+    t2.normalize.mockResolvedValue(makeMessage('¿la asistencia también cubre si se vara mi vehículo?'));
+    await s2.handleMessage({});
+    expect((t2.sendText.mock.calls[0]?.[1] as string).toLowerCase()).not.toMatch(/no tengo seguros de vehículos/);
+  });
+
+  // Q: "what if the user wants to change an insurance [category] and the agent can
+  // understand?" — defers to AFTER the current purchase closes, never abandons the
+  // quote already on screen mid-flow.
+  it('SCENARIO 4 — switching category mid-quote is deferred to after purchase, never an immediate switch', async () => {
+    const petProduct = PRODUCTS.find(p => p.category === 'mascotas')!;
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: petProduct.id, productCategory: 'mascotas', petType: 'gato' },
+      intent: makeIntent({ productCategory: 'vida' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('también quiero un seguro de vida para mí'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain(petProduct.name); // current purchase named, not dropped
+    expect(sentText.toLowerCase()).toMatch(/primero cerremos|en cuanto quede lista/);
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.quoteProductId).toBe(petProduct.id); // unchanged — never switched immediately
+    expect(savedContext.pendingCrossSell).toBe('vida');
+  });
+
+  // Q: "when it's redirect to a human what it expect user and agent?" — the user sees
+  // one specific, exact message; the agent notifies ADMIN_CHAT_ID with who/where/what,
+  // and never actually ends or transitions the conversation (a handoff, not a hangup).
+  it('SCENARIO 5 — 3 consecutive unclear replies escalate to a human, with the exact expected user+agent behavior', async () => {
+    const product = PRODUCTS[0];
+    let context: ConversationContext = { quoteProductId: product.id };
+    let conversations;
+    let telegram;
+    for (let turn = 1; turn <= 3; turn++) {
+      const built = buildService({
+        state: ConversationState.QUOTE_PRESENTED,
+        context,
+        intent: makeIntent({ isAffirmative: false, isNegative: false, wantsAlternative: false, productCategory: null }),
+      });
+      telegram = built.telegram;
+      conversations = built.conversations;
+      telegram.normalize.mockResolvedValue(makeMessage('mmh no sé qué decir'));
+      await built.service.handleMessage({});
+      context = (conversations.saveState.mock.calls[0]?.[2] as ConversationContext) ?? context;
+    }
+    // User-facing expectation: the exact escalation text, nothing else.
+    expect(telegram!.sendText.mock.calls[0]?.[1]).toBe(
+      'Parece que no te estoy ayudando bien, serás redirigido a mi líder de servicio 🙏',
+    );
+    // Agent-facing expectation: counter resets (no repeat-escalation spam next turn),
+    // and the conversation state itself is untouched — a handoff, not an ending.
+    expect(context.consecutiveUnclearReplies).toBe(0);
+    expect(conversations!.saveState).toHaveBeenCalledWith('conv-1', ConversationState.QUOTE_PRESENTED, expect.anything());
+  });
+
+  // Q: payment-active messaging + post-purchase inquiry + persistent memory — all three
+  // tie together: the user is told the chat stays open, a real purchased policy answers
+  // real questions in COMPLETED, and that fact survives an ABANDONED restart.
+  it('SCENARIO 6 — payment-active reassurance, post-purchase inquiry, and persistent memory across a restart', async () => {
+    // Step A: the payment link message reassures the chat stays available.
+    const { service: s1, telegram: t1 } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', nombre: 'Ana Torres', email: 'ana@test.com', quoteProductId: PRODUCTS[0].id, awaitingPaymentMethodChoice: true },
+      intent: makeIntent({}),
+    });
+    t1.normalize.mockResolvedValue(makeMessage('link de pago'));
+    await s1.handleMessage({});
+    expect((t1.sendText.mock.calls[0]?.[1] as string).toLowerCase()).toMatch(/se mantiene disponible|sigue disponible/);
+
+    // Step B: purchase completed — a real policy question gets a real answer.
+    const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
+    const { service: s2, telegram: t2 } = buildService({
+      state: ConversationState.COMPLETED,
+      context: {
+        hasCompletedPurchase: true, nombre: 'Ana Torres', cedula: '12345678',
+        purchasedProductIds: [vidaProduct.id],
+        affiliateProfile: { rangoSalarial: 'Entre 1 y 1.5 SMLV', ciudadAfiliado: 'BOGOTA D.C.' },
+      },
+      intent: makeIntent({}),
+    });
+    t2.normalize.mockResolvedValue(makeMessage('¿qué cubre mi póliza?'));
+    await s2.handleMessage({});
+    const sentText2 = t2.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText2).toContain(vidaProduct.name);
+    for (const coverage of vidaProduct.coverages) expect(sentText2).toContain(coverage);
+
+    // Step C: this same durable profile survives an ABANDONED → GREETING restart.
+    const { service: s3, telegram: t3, conversations: c3 } = buildService({
+      state: ConversationState.ABANDONED,
+      context: {
+        hasCompletedPurchase: true, nombre: 'Ana Torres', cedula: '12345678', email: 'ana@test.com',
+        purchasedProductIds: [vidaProduct.id],
+        affiliateProfile: { rangoSalarial: 'Entre 1 y 1.5 SMLV', ciudadAfiliado: 'BOGOTA D.C.' },
+        productCategory: 'vida', // session-scoped — must NOT survive
+      },
+    });
+    t3.normalize.mockResolvedValue(makeMessage('sigo aquí'));
+    await s3.handleMessage({});
+    const ctx3 = c3.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(ctx3.purchasedProductIds).toEqual([vidaProduct.id]);
+    expect(ctx3.affiliateProfile).toEqual({ rangoSalarial: 'Entre 1 y 1.5 SMLV', ciudadAfiliado: 'BOGOTA D.C.' });
+    expect(ctx3.nombre).toBe('Ana Torres');
+    expect(ctx3.productCategory).toBeUndefined(); // session-scoped, correctly dropped
   });
 });

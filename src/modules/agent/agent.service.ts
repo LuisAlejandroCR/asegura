@@ -99,6 +99,14 @@ export class AgentService {
   private static readonly MORE_INFO_PATTERN =
     /\b(cu[eé]ntame\s+m[aá]s|expl[ií]came|de\s+qu[eé]\s+se\s+trata|beneficios|cu[aá]l(?:\s+de\s+todos)?\s+es\s+mejor|mejor\s+para\s+m[ií])\b/i;
 
+  // 2026-07-26 feature request: a COMPLETED customer asking about their OWN,
+  // already-purchased policy ("¿qué cubre mi seguro de vida?", "cuéntame de mi póliza")
+  // used to get the exact same generic "¡Todo listo!" text no matter what was actually
+  // asked. Checked only in COMPLETED (processMessage's default: branch) — never confused
+  // with MORE_INFO_PATTERN above, which answers about a product still being SHOPPED for.
+  private static readonly POLICY_INQUIRY_PATTERN =
+    /\b(mi p[oó]liza|mi seguro|lo que compr[eé]|lo que ya tengo|qu[eé]\s+cubre|c[oó]mo funciona mi|mi cobertura)\b/i;
+
   // 2026-07-26 live-test bug: "Prefiero la anterior.", "Quiero la primera opción que me
   // ofreciste.", "la que vale 16.800", "¿alguna más económica?" all reference a SPECIFIC
   // product already shown this conversation (or a cheaper one among them) — none of
@@ -412,6 +420,18 @@ export class AgentService {
             context: remembered,
           };
         }
+        // Checked BEFORE the hola/ayuda keyword restart below — "necesito ayuda con mi
+        // póliza" is a real question about an existing purchase, not a request to start
+        // over. Gated on purchasedProductIds (not policyId/policyIds, already cleared by
+        // wompi-webhook.controller.ts for whatever purchase comes next in this
+        // conversation) — see the field comment in types.ts.
+        if (
+          currentState === ConversationState.COMPLETED &&
+          context.purchasedProductIds?.length &&
+          AgentService.POLICY_INQUIRY_PATTERN.test(text)
+        ) {
+          return this.answerPolicyInquiry(context);
+        }
         if (text.includes('hola') || text.includes('ayuda') || text.includes('inicio') || text === '/start') {
           return {
             text: STATE_RESPONSES[ConversationState.GREETING](context),
@@ -443,18 +463,25 @@ export class AgentService {
       const serie = this.joinSpokenDigits(rawText).replace(/\D/g, '');
       if (serie && this.affiliateLookup.isEnabled()) {
         const record = this.affiliateLookup.findBySerie(serie);
-        // Either signal alone is enough to enrich — a record with only `dependents: 0`
-        // (SEGMENTO_GRUPO_FAMILIAR="AFILLIADO SIN GRUPO_FAMILIAR", no RANGO_SALARIAL) must
-        // not be silently dropped just because rangoSalarial is missing.
-        if (record && (record.rangoSalarial !== undefined || record.dependents !== undefined)) {
+        // 2026-07-26 feature request: "capture the complete row... so the agent will
+        // know all about the registered user" — any match at all (not just one with
+        // rangoSalarial/dependents) is enriched now; affiliateProfile carries the FULL
+        // row forward (see types.ts), even the fields nothing else reads yet.
+        if (record) {
           const enriched: ConversationContext = {
             ...baseContext,
             serieId: serie,
+            affiliateProfile: record,
             ...(record.rangoSalarial !== undefined ? { rangoSalarial: record.rangoSalarial } : {}),
-            // Only pre-fill dependents when DISCOVERY hasn't already asked/answered it —
-            // never overwrite a real user answer with a looked-up default.
+            // Only pre-fill dependents/petCount when DISCOVERY hasn't already asked/
+            // answered them — never overwrite a real user answer with a looked-up
+            // default. Same precedent for both: a historical CSV signal is trusted
+            // exactly like a live answer once given, so it's never re-asked.
             ...(record.dependents !== undefined && baseContext.dependents === undefined
               ? { dependents: record.dependents, askedDependents: true }
+              : {}),
+            ...(record.petCount !== undefined && baseContext.petCount === undefined
+              ? { petCount: record.petCount }
               : {}),
           };
           return {
@@ -946,7 +973,7 @@ export class AgentService {
     // something else entirely. Must check this BEFORE falling through to the
     // neutral-message re-show below.
     const outOfCatalog = this.detectOutOfCatalogCategory(text);
-    if (outOfCatalog) {
+    if (outOfCatalog && !this.mentionsAlreadyCoveredTopic(text, context)) {
       return {
         text: `Por ahora no tengo seguros de ${outOfCatalog}, pero sí tengo vida, accidentes, asistencia médica y mascotas. ¿Te interesa alguno de estos?`,
       };
@@ -1048,6 +1075,24 @@ export class AgentService {
       if (text.includes(keyword)) return label;
     }
     return null;
+  }
+
+  // Real live-test bug: asistencias-multiples genuinely covers "Asistencia vehículo" —
+  // a question about THAT coverage while it's already on screen ("¿la asistencia también
+  // cubre mi carro?") got the same "no tengo seguros de vehículos" denial as someone
+  // asking for a dedicated car-insurance policy that genuinely doesn't exist. Checked
+  // against every product actually in this purchase (selectedProductIds, or the single
+  // quoteProductId) — coverage text only ever comes from the real catalog (rule #12), so
+  // this can never manufacture a false "yes we cover that."
+  private mentionsAlreadyCoveredTopic(text: string, context: ConversationContext): boolean {
+    const productIds = context.selectedProductIds?.length ? context.selectedProductIds : (context.quoteProductId ? [context.quoteProductId] : []);
+    const coverageText = productIds
+      .map((id) => PRODUCTS.find((p) => p.id === id))
+      .filter((p): p is InsuranceProduct => !!p)
+      .flatMap((p) => p.coverages)
+      .join(' ')
+      .toLowerCase();
+    return Object.keys(AgentService.OUT_OF_CATALOG_KEYWORDS).some((keyword) => text.includes(keyword) && coverageText.includes(keyword));
   }
 
   // buildMultiQuote (removed 2026-07-24) used to set productCategory to the FIRST
@@ -1657,6 +1702,10 @@ export class AgentService {
       }
       newContext.policyId = policyIds[0];
       newContext.policyIds = policyIds;
+      // Accumulates permanently, unlike policyId/policyIds — see the field comment in
+      // types.ts. Deduped in case the same product is ever bought again in a later
+      // cross-sell within this same conversation.
+      newContext.purchasedProductIds = [...new Set([...(context.purchasedProductIds ?? []), ...productIds])];
 
       // No resolvable product at all — nothing to ask a payment method for. Let
       // createPaymentLinkFlow's own guard abort cleanly instead of asking a pointless
@@ -1786,7 +1835,8 @@ export class AgentService {
         `🔗 [Pagar ${amountStr} — Link seguro Wompi](${checkoutUrl})\n\n` +
         `Acepta tarjeta débito/crédito, Nequi y PSE.\n\n` +
         `⏱️ El link vence en ${AgentService.PAYMENT_LINK_EXPIRY_MINUTES} minutos.\n\n` +
-        `En cuanto tu pago sea confirmado, te aviso aquí automáticamente con tu póliza.`
+        `En cuanto tu pago sea confirmado, te aviso aquí automáticamente con tu póliza. ` +
+        `Puedes cerrar esta conversación y volver cuando quieras — se mantiene disponible mientras tu pago esté pendiente.`
       );
 
       return {
@@ -1838,7 +1888,7 @@ export class AgentService {
 
     if (context.checkoutUrl) {
       return {
-        text: `Tu link de pago sigue activo: [Pagar aquí](${context.checkoutUrl})\n\nEn cuanto Wompi confirme tu pago, te aviso automáticamente aquí mismo — no necesitas escribirme de nuevo.`,
+        text: `Tu link de pago sigue activo: [Pagar aquí](${context.checkoutUrl})\n\nEn cuanto Wompi confirme tu pago, te aviso automáticamente aquí mismo — no necesitas escribirme de nuevo. Esta conversación se mantiene disponible mientras tanto.`,
         context,
       };
     }
@@ -1928,6 +1978,32 @@ export class AgentService {
       `👉 Ver detalles: ${product.url}\n` +
       `💰 Desde $${product.basePremium.toLocaleString('es-CO')}/mes${othersLine}\n\n` +
       `¿Te interesa o prefieres que busquemos otra opción?`
+    );
+  }
+
+  // 2026-07-26 feature request: answers a COMPLETED customer's question about their OWN,
+  // already-purchased policy — never a sales pitch (no "¿te interesa?", no persuasive
+  // "reason" — that would read as re-selling something already bought). Falls back to
+  // the generic COMPLETED text if none of the recorded ids still resolve to a real
+  // product (shouldn't happen, but products.data.ts is hand-edited — rule #12 means
+  // never fabricate a detail card for a product that no longer exists).
+  private answerPolicyInquiry(context: ConversationContext): ProcessResult {
+    const products = (context.purchasedProductIds ?? [])
+      .map((id) => PRODUCTS.find((p) => p.id === id))
+      .filter((p): p is InsuranceProduct => !!p);
+    if (products.length === 0) {
+      return { text: STATE_RESPONSES[ConversationState.COMPLETED](context) };
+    }
+    return { text: products.map((p) => this.formatPurchasedProductDetail(p)).join('\n\n') };
+  }
+
+  private formatPurchasedProductDetail(product: InsuranceProduct): string {
+    const cov = product.coverages.map((c) => `✅ ${c}`).join('\n');
+    return (
+      `🛡️ *${product.name}* con ${product.insurer}\n${cov}\n\n` +
+      `💰 $${product.basePremium.toLocaleString('es-CO')}/mes\n` +
+      `👉 Más detalles: ${product.url}\n\n` +
+      `¿Tienes alguna otra duda sobre tu póliza?`
     );
   }
 

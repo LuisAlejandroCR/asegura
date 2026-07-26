@@ -1,3 +1,5 @@
+import type { AffiliateRecord } from '../quoting/affiliate-lookup.service';
+
 enum ConversationState {
   GREETING = 'greeting',
   AUTHORIZATION = 'authorization',
@@ -82,6 +84,13 @@ interface ConversationContext {
   selectedProductIds?: string[];
   policyId?: string;
   policyIds?: string[];
+  // 2026-07-26 feature request: unlike policyId/policyIds (purchase-in-progress,
+  // deliberately reset in the post-purchase followUpContext for the NEXT purchase — see
+  // wompi-webhook.controller.ts), this accumulates every product id ever actually
+  // ISSUED for this conversation and is never reset — the durable record a later
+  // "¿qué cubre mi póliza?" question in COMPLETED reads from, since by then
+  // policyId/policyIds have already been cleared for whatever comes next.
+  purchasedProductIds?: string[];
   checkoutUrl?: string;
   // Set the instant DATA_CAPTURE starts, before phoneVerified is true — signals that the
   // next message is expected to be a Telegram contact-share (or another attempt) rather
@@ -166,6 +175,13 @@ interface ConversationContext {
   // (QuotingService.budgetFromSalary) that was previously unreachable in the live agent
   // because nothing ever populated this field from a real conversation.
   rangoSalarial?: string;
+  // 2026-07-26 feature request: "capture the complete row... so the agent will know all
+  // about the registered user" — the FULL affiliate CSV row (see AffiliateRecord), not
+  // just the two fields already wired into live scoring above. Captured verbatim (rule
+  // #12 — never invented) and persisted so it survives a restart, ready for whatever
+  // future personalization touch reads it — see affiliate-lookup.service.ts's own field
+  // comments for which parts are already consumed vs. just captured for now.
+  affiliateProfile?: AffiliateRecord;
   // 2026-07-26 live-test feedback ("the agent should redirect to a human when it doesn't
   // understand") — counts consecutive turns the agent genuinely failed to make sense of
   // (see ProcessResult.unclearReply in agent.service.ts). Reset to 0 the moment any turn

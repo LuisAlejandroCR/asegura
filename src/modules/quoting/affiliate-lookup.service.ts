@@ -1,7 +1,7 @@
-// affiliate-lookup.service.ts: This script is for looking up an affiliate's historical
-// signals (RANGO_SALARIAL, primarily) by SERIE from the synthetic affiliate CSV, so
-// DISCOVERY can honor "nunca preguntar lo que ya sabemos" (Diseño preguntas.docx, Nivel
-// 1) for income — the one signal the hackathon's DISCOVERY filter never asks directly.
+// affiliate-lookup.service.ts: This script is for looking up an affiliate's full
+// historical row by SERIE from the synthetic affiliate CSV, so the agent can honor
+// "nunca preguntar lo que ya sabemos" (Diseño preguntas.docx, Nivel 1) for every signal
+// Colsubsidio already has on file, not just income.
 //
 // Optional integration, same pattern as Wompi/Telegram/LLM elsewhere in this codebase:
 // a missing/misconfigured file logs a warning and disables the feature gracefully,
@@ -16,18 +16,48 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 
+// 2026-07-26 feature request: "capture the complete row... so the agent will know all
+// about the registered user" — every field is captured verbatim from the CSV (rule #12
+// — never invented, always the literal value on file), even where nothing downstream
+// reads it yet. Fields already wired into live scoring/DISCOVERY are documented as such;
+// the rest are captured for context/persistence, ready for a future consumer.
 export interface AffiliateRecord {
+  // ── Already consumed live (QuotingService.budgetFromSalary, dependents question skip)
   rangoSalarial?: string;
-  // 2026-07-26 live-test feedback: the lookup only ever wired RANGO_SALARIAL, ignoring
-  // SEGMENTO_GRUPO_FAMILIAR sitting in the same row — "AFILLIADO SIN GRUPO_FAMILIAR" (no
-  // registered family group, ~58% of real rows) confidently means dependents=0, so
-  // DISCOVERY's dependents question can be skipped entirely, honoring "nunca preguntar
-  // lo que ya sabemos" for a signal we already have. Other SEGMENTO_GRUPO_FAMILIAR
-  // values ("FAMILIA NUCLEAR INTEGRAL", "PAREJA CONYUGAL", etc.) confirm a family EXISTS
-  // but not the exact count, so they're deliberately NOT mapped here (rule #12 — no
-  // inventing a number the data doesn't actually give us); the question still gets asked
-  // for those.
+  // "AFILLIADO SIN GRUPO_FAMILIAR" (no registered family group, ~58% of real rows)
+  // confidently means dependents=0 — DISCOVERY's dependents question can be skipped
+  // entirely. Other SEGMENTO_GRUPO_FAMILIAR values ("FAMILIA NUCLEAR INTEGRAL", etc.)
+  // confirm a family EXISTS but not the exact count, so they're deliberately NOT mapped
+  // to a number here (rule #12) — the question still gets asked for those.
   dependents?: number;
+  // A real, already-known pet count — same "never ask what we already know" principle
+  // as dependents above. Only present on rows where CONTACTADO="SI" and a pet product
+  // was actually sold (see productoIdPrevio) — same confidence level as dependents.
+  petCount?: number;
+
+  // ── Captured, persisted, not yet wired into any scoring rule (available for future use)
+  genero?: string;
+  rangoEdad?: string;
+  categoria?: string;
+  segmentoGrupoFamiliar?: string;
+  segmentoPoblacional?: string;
+  piramideNueva?: string;
+  empresaFoco?: boolean;
+  ciudadAfiliado?: string;
+  hoteles?: boolean;
+  piscilago?: boolean;
+  drogueria?: boolean;
+  agencias?: boolean;
+  vivienda?: boolean;
+  // Historical contact/sales outcome from a PRIOR (non-Telegram) commercial attempt —
+  // only populated on rows where CONTACTADO="SI" in the source CSV.
+  contactado?: boolean;
+  canalContacto?: string;
+  diasPrimeraRespuesta?: number;
+  estadoVenta?: string;
+  churnPosterior?: boolean;
+  productoIdPrevio?: string;
+  primaMensualPrevia?: number;
 }
 
 @Injectable()
@@ -86,10 +116,28 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
       crlfDelay: Infinity,
     });
 
+    // Column-name → index map (not fixed positional indices) so the parser tolerates a
+    // narrower header (e.g. this file's own unit tests, which use small fixture CSVs
+    // with only a few columns) and stays correct if the real CSV's column order ever
+    // changes upstream.
+    let columnIndex: Record<string, number> = {};
     let serieIdx = -1;
-    let rangoSalarialIdx = -1;
-    let segmentoFamiliarIdx = -1;
     let isHeader = true;
+
+    const col = (cols: string[], name: string): string | undefined => {
+      const i = columnIndex[name];
+      return i !== undefined && i >= 0 ? cols[i]?.trim() : undefined;
+    };
+    const boolCol = (cols: string[], name: string): boolean | undefined => {
+      const v = col(cols, name);
+      return v === 'SI' ? true : v === 'NO' ? false : undefined;
+    };
+    const intCol = (cols: string[], name: string): number | undefined => {
+      const v = col(cols, name);
+      if (!v) return undefined;
+      const n = parseInt(v, 10);
+      return Number.isFinite(n) ? n : undefined;
+    };
 
     for await (const rawLine of rl) {
       const line = rawLine.replace(/\r$/, '');
@@ -97,9 +145,9 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
       const cols = line.split(';');
 
       if (isHeader) {
-        serieIdx = cols.indexOf('SERIE');
-        rangoSalarialIdx = cols.indexOf('RANGO_SALARIAL');
-        segmentoFamiliarIdx = cols.indexOf('SEGMENTO_GRUPO_FAMILIAR');
+        columnIndex = {};
+        cols.forEach((name, i) => { columnIndex[name] = i; });
+        serieIdx = columnIndex['SERIE'] ?? -1;
         isHeader = false;
         if (serieIdx === -1) {
           throw new Error('CSV header missing SERIE column');
@@ -109,11 +157,59 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
 
       const serie = cols[serieIdx]?.trim();
       if (!serie) continue;
+
       const record: AffiliateRecord = {};
-      const rangoSalarial = rangoSalarialIdx >= 0 ? cols[rangoSalarialIdx]?.trim() : undefined;
+
+      const rangoSalarial = col(cols, 'RANGO_SALARIAL');
       if (rangoSalarial) record.rangoSalarial = rangoSalarial;
-      const segmentoFamiliar = segmentoFamiliarIdx >= 0 ? cols[segmentoFamiliarIdx]?.trim() : undefined;
+
+      const segmentoFamiliar = col(cols, 'SEGMENTO_GRUPO_FAMILIAR');
+      if (segmentoFamiliar) record.segmentoGrupoFamiliar = segmentoFamiliar;
       if (segmentoFamiliar === 'AFILLIADO SIN GRUPO_FAMILIAR') record.dependents = 0;
+
+      const genero = col(cols, 'GENERO');
+      if (genero) record.genero = genero;
+      const rangoEdad = col(cols, 'RANGO_EDAD');
+      if (rangoEdad) record.rangoEdad = rangoEdad;
+      const categoria = col(cols, 'CATEGORIA');
+      if (categoria) record.categoria = categoria;
+      const segmentoPoblacional = col(cols, 'SEGMENTO_POBLACIONAL');
+      if (segmentoPoblacional) record.segmentoPoblacional = segmentoPoblacional;
+      const piramideNueva = col(cols, 'PIRAMIDE_NUEVA');
+      if (piramideNueva) record.piramideNueva = piramideNueva;
+      const empresaFoco = col(cols, 'EMPRESA_FOCO');
+      if (empresaFoco) record.empresaFoco = empresaFoco === 'X';
+      const ciudadAfiliado = col(cols, 'CIUDAD_AFILIADO');
+      if (ciudadAfiliado) record.ciudadAfiliado = ciudadAfiliado;
+
+      const hoteles = boolCol(cols, 'HOTELES');
+      if (hoteles !== undefined) record.hoteles = hoteles;
+      const piscilago = boolCol(cols, 'PISCILAGO');
+      if (piscilago !== undefined) record.piscilago = piscilago;
+      const drogueria = boolCol(cols, 'DROGUERIA');
+      if (drogueria !== undefined) record.drogueria = drogueria;
+      const agencias = boolCol(cols, 'AGENCIAS');
+      if (agencias !== undefined) record.agencias = agencias;
+      const vivienda = boolCol(cols, 'VIVIENDA');
+      if (vivienda !== undefined) record.vivienda = vivienda;
+
+      const contactado = boolCol(cols, 'CONTACTADO');
+      if (contactado !== undefined) record.contactado = contactado;
+      const canalContacto = col(cols, 'CANAL_CONTACTO');
+      if (canalContacto) record.canalContacto = canalContacto;
+      const diasPrimeraRespuesta = intCol(cols, 'DIAS_PRIMERA_RESPUESTA');
+      if (diasPrimeraRespuesta !== undefined) record.diasPrimeraRespuesta = diasPrimeraRespuesta;
+      const estadoVenta = col(cols, 'ESTADO_VENTA');
+      if (estadoVenta) record.estadoVenta = estadoVenta;
+      const churnPosterior = boolCol(cols, 'CHURN_POSTERIOR');
+      if (churnPosterior !== undefined) record.churnPosterior = churnPosterior;
+      const productoIdPrevio = col(cols, 'PRODUCTO_ID');
+      if (productoIdPrevio) record.productoIdPrevio = productoIdPrevio;
+      const primaMensualPrevia = intCol(cols, 'PRIMA_MENSUAL');
+      if (primaMensualPrevia !== undefined) record.primaMensualPrevia = primaMensualPrevia;
+      const petCount = intCol(cols, 'PET_COUNT');
+      if (petCount !== undefined && petCount > 0) record.petCount = petCount;
+
       this.bySerie.set(serie, record);
     }
   }

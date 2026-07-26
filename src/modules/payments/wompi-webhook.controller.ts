@@ -173,6 +173,11 @@ export class WompiWebhookController {
       // something" apart from "never bought anything", so a declined cross-sell doesn't
       // get recorded as the same conversation status as never having purchased at all.
       hasCompletedPurchase: true,
+      // 2026-07-26 feature request: unlike policyId/policyIds, this DOES carry forward —
+      // it's the durable record a later "¿qué cubre mi póliza?" question in COMPLETED
+      // reads from (see AgentService's answerPolicyInquiry), since policyId/policyIds
+      // are gone by then, reset for whatever the NEXT purchase in this conversation is.
+      purchasedProductIds: newContext.purchasedProductIds,
     };
     await this.conversations.saveState(conversation.id, ConversationState.DISCOVERY, followUpContext);
 

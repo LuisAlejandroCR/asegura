@@ -20,9 +20,17 @@ const PERSISTENT_FIELDS = [
   'dependents', 'beneficiaries', 'budget',
   'cedula', 'documentType', 'nombre', 'email', 'phoneVerified', 'verifiedPhone',
   'hasCompletedPurchase', 'policyIds',
+  // 2026-07-26 — durable purchase-history record (see the field comment in types.ts) —
+  // unlike policyIds, this is never reset for a new purchase, so it's what a post-restart
+  // "¿qué cubre mi póliza?" question actually has left to answer from.
+  'purchasedProductIds',
   // 2026-07-26 — the affiliate's own historical salary band never changes turn to turn;
   // re-doing the ID lookup on every restart would be pointless when we already have it.
   'rangoSalarial', 'serieId',
+  // 2026-07-26 — the full affiliate CSV row (see types.ts's field comment) is exactly
+  // the kind of durable "what Colsubsidio already knows about this person" fact this
+  // allowlist exists for — re-doing the SERIE lookup on every restart would be pointless.
+  'affiliateProfile',
 ] as const satisfies readonly (keyof ConversationContext)[];
 
 function pickPersistentFields(context: ConversationContext): ConversationContext {

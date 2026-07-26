@@ -15,6 +15,7 @@ describe('pickPersistentFields', () => {
       verifiedPhone: '+573001234567',
       hasCompletedPurchase: true,
       policyIds: ['pol-1', 'pol-2'],
+      purchasedProductIds: ['vida', 'medicina-prepagada-gatos'],
     };
     const result = pickPersistentFields(context);
     expect(result).toEqual(context);
