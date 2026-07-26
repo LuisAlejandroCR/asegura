@@ -2041,7 +2041,7 @@ describe('AgentService — QUOTE_PRESENTED back-reference resolution', () => {
 // "asistencia" shopper ended up with "vida"). Staying anchored in QUOTE_PRESENTED means
 // back-reference resolution and the cross-sell-defer check both keep working.
 describe('AgentService — QUOTE_PRESENTED category exhaustion stays anchored', () => {
-  it('regression — exhausting a category stays in QUOTE_PRESENTED, keeps productCategory/coverage/quoteProductId', async () => {
+  it('regression — exhausting a category stays in QUOTE_PRESENTED, keeps productCategory/coverage/quoteProductId, and offers the waitlist', async () => {
     const p1 = PRODUCTS[0];
     const { service, telegram, conversations, quoting } = buildService({
       state: ConversationState.QUOTE_PRESENTED,
@@ -2054,14 +2054,177 @@ describe('AgentService — QUOTE_PRESENTED category exhaustion stays anchored', 
     telegram.normalize.mockResolvedValue(makeMessage('otra'));
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    expect(sentText).toContain('No tengo más opciones');
-    // Neither nextState nor context changed at all, so there's nothing new to persist --
-    // the conversation row stays exactly as it was (state QUOTE_PRESENTED,
-    // productCategory/coverage/quoteProductId all untouched), confirmed by saveState
-    // never even being called.
+    // Live-test feedback (2026-07-26): once a category's alternatives run out, offer to
+    // capture contact info (a real lead) instead of a dead end — applies to any category,
+    // not only mascotas.
+    expect(sentText).toContain('¿Te interesa?');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.quoteProductId).toBe(p1.id);
+    expect(savedContext.productCategory).toBe('accidentes');
+    expect(savedContext.coverage).toEqual(['protección']);
+    expect(savedContext.awaitingContactConsent).toBe(true);
+    const savedState = conversations.saveState.mock.calls[0]?.[1] as ConversationState;
+    expect(savedState).toBe(ConversationState.QUOTE_PRESENTED);
+  });
+
+});
+
+// ── Lead capture — waitlist offer when a category's alternatives run out ───────
+// Real live-test bug (2026-07-26, "flow is broken"): awaitingContactConsent was set by
+// handleQuotation (category exhaustion, above) but only ever CHECKED inside
+// `case ConversationState.AUTHORIZATION` in processMessage — unreachable, since the
+// conversation stays anchored in QUOTE_PRESENTED with no nextState change. The reply to
+// "¿te interesa?" silently fell through to handleQuotation's normal logic instead, with
+// no working answer path at all. Fixed by checking the flag at the top of handleQuotation
+// itself. This whole flow (consent → name → email → phone → admin notification → end
+// chat) had ZERO test coverage before this round — the gap that let it ship broken.
+describe('AgentService — lead capture after category exhaustion', () => {
+  it('"sí" to the waitlist offer moves to DATA_CAPTURE and asks for a name', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id, productCategory: 'accidentes', awaitingContactConsent: true },
+      intent: makeIntent({ isAffirmative: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('¿cuál es tu nombre?');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.awaitingContactConsent).toBeUndefined();
+    expect(savedContext.awaitingContactName).toBe(true);
+    const savedState = conversations.saveState.mock.calls[0]?.[1] as ConversationState;
+    expect(savedState).toBe(ConversationState.DATA_CAPTURE);
+  });
+
+  it('"no" to the waitlist offer ends the chat politely (ABANDONED)', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id, awaitingContactConsent: true },
+      intent: makeIntent({ isNegative: true }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('no'));
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.ABANDONED, expect.anything(),
+    );
+  });
+
+  it('"no" to the waitlist offer ends in COMPLETED (not ABANDONED) when a purchase already happened this conversation', async () => {
+    const { service, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id, awaitingContactConsent: true, hasCompletedPurchase: true },
+      intent: makeIntent({ isNegative: true }),
+    });
+    await service.handleMessage({});
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1', ConversationState.COMPLETED, expect.anything(),
+    );
+  });
+
+  it('an unclear reply to the waitlist offer re-asks instead of silently falling through to normal quote handling', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id, awaitingContactConsent: true },
+      intent: makeIntent({ isAffirmative: false, isNegative: false }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('mmh no sé'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('¿Te interesa?');
     expect(conversations.saveState).not.toHaveBeenCalled();
   });
 
+  it('end-to-end: consent → name → email → phone captures the lead, notifies ADMIN_CHAT_ID, and ends the chat', async () => {
+    // Step 1: consent
+    const { service: s1, conversations: c1 } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: PRODUCTS[0].id, productCategory: 'accidentes', awaitingContactConsent: true },
+      intent: makeIntent({ isAffirmative: true }),
+    });
+    await s1.handleMessage({});
+    const ctxAfterConsent = c1.saveState.mock.calls[0]?.[2] as ConversationContext;
+
+    // Step 2: name
+    const { service: s2, telegram: t2, conversations: c2 } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: ctxAfterConsent,
+    });
+    t2.normalize.mockResolvedValue(makeMessage('Camila Rojas'));
+    await s2.handleMessage({});
+    const sentText2 = t2.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText2).toContain('correo electrónico');
+    const ctxAfterName = c2.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(ctxAfterName.contactName).toBe('Camila Rojas');
+    expect(ctxAfterName.awaitingContactEmail).toBe(true);
+
+    // Step 3: email
+    const { service: s3, telegram: t3, conversations: c3 } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: ctxAfterName,
+    });
+    t3.normalize.mockResolvedValue(makeMessage('camila@example.com'));
+    await s3.handleMessage({});
+    const sentText3 = t3.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText3).toContain('número de teléfono');
+    const ctxAfterEmail = c3.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(ctxAfterEmail.contactEmail).toBe('camila@example.com');
+    expect(ctxAfterEmail.awaitingContactPhone).toBe(true);
+
+    // Step 4: phone — captures the lead, notifies ADMIN_CHAT_ID, ends the chat
+    const { service: s4, telegram: t4, conversations: c4, config: config4 } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: ctxAfterEmail,
+    });
+    config4.get.mockImplementation((key: string) => (key === 'ADMIN_CHAT_ID' ? '999999' : undefined));
+    t4.normalize.mockResolvedValue(makeMessage('3001234567'));
+    await s4.handleMessage({});
+    // notifyAdminLead is fired (not awaited) before the user-facing reply, so it's the
+    // FIRST sendText call in mock-call order — find the user's own reply by chat id.
+    const userCall = t4.sendText.mock.calls.find((call) => call[0] === 'u1');
+    const sentText4 = userCall?.[1] as string;
+    expect(sentText4).toContain('Listo');
+    const ctxAfterPhone = c4.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(ctxAfterPhone.contactPhone).toBe('3001234567');
+    expect(ctxAfterPhone.awaitingContactPhone).toBeUndefined();
+    const savedState4 = c4.saveState.mock.calls[0]?.[1] as ConversationState;
+    expect(savedState4).toBe(ConversationState.ABANDONED);
+
+    const adminCall = t4.sendText.mock.calls.find((call) => call[0] === '999999');
+    expect(adminCall).toBeDefined();
+    const adminText = adminCall![1] as string;
+    expect(adminText).toContain('Camila Rojas');
+    expect(adminText).toContain('camila@example.com');
+    expect(adminText).toContain('3001234567');
+    expect(adminText).toContain('accidentes');
+  });
+
+  it('an invalid phone (fewer than 7 digits) is rejected and re-asked, never captured as-is', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { contactName: 'Camila Rojas', contactEmail: 'camila@example.com', awaitingContactPhone: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('123'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('al menos 7 dígitos');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.contactPhone).toBeUndefined();
+    expect(savedContext.awaitingContactPhone).toBe(true);
+  });
+
+  it('does not notify ADMIN_CHAT_ID when it is not configured — degrades silently', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { contactName: 'Camila Rojas', contactEmail: 'camila@example.com', awaitingContactPhone: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('3001234567'));
+    await service.handleMessage({});
+    // Only the user's own chat id (u1) receives a message — no separate admin call.
+    expect(telegram.sendText).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('AgentService — QUOTE_PRESENTED category exhaustion stays anchored (continued)', () => {
   it('regression — end-to-end: after exhaustion, "quiero la primera opción" correctly goes back instead of hallucinating a new category', async () => {
     const asistenciasMedicas = PRODUCTS.find((p) => p.id === 'asistencias-medicas')!;
     const exequial = PRODUCTS.find((p) => p.id === 'exequial')!;
@@ -2746,8 +2909,10 @@ describe('AgentService — DISCOVERY mixed pets', () => {
   // which narrowed straight to a SINGLE product (medicina-prepagada-perros x2) and
   // silently dropped the cat from the quote entirely — no combined quote, no ask, the cat
   // just vanished. Giving counts for BOTH species in one message is itself unambiguous
-  // evidence the user wants BOTH insured, regardless of what petResolution says.
-  it('regression — reporting both species counts in one message ("Una gata y dos perros") quotes BOTH products, even if petResolution is misread as a single species', async () => {
+  // evidence the user wants BOTH insured, regardless of what petResolution says — the
+  // correct next step is the "gatos, perros, o todos?" question (restored below, this
+  // is the flow that worked this morning), never a silent narrow to one species.
+  it('regression — reporting both species counts in one message ("Una gata y dos perros") asks gatos/perros/todos, never silently narrows to a single species', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DISCOVERY,
       context: { petType: 'mixto', productCategory: 'mascotas' },
@@ -2758,17 +2923,13 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     telegram.normalize.mockResolvedValue(makeMessage('Una gata y dos perros.'));
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    expect(sentText).toContain('gatos');
-    expect(sentText).toContain('perros');
-    expect(sentText).toContain('81.800');
-    expect(sentText).toContain('96.600');
-    // 1 gato x 81.800 + 2 perros x 96.600 = 275.000 (both products shown, not perros-only)
-    expect(sentText).toContain('275.000');
-    expect(sentText).not.toContain('¿Quieres el seguro para los gatos');
+    expect(sentText).toContain('¿Quieres el seguro para los gatos, los perros, o para todos?');
+    expect(sentText).toContain('1 gato');
+    expect(sentText).toContain('2 perros');
+    expect(sentText).not.toContain('Tu cotización personalizada');
     const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
-    expect(savedContext.selectedProductIds).toEqual(
-      expect.arrayContaining(['medicina-prepagada-gatos', 'medicina-prepagada-perros']),
-    );
+    expect(savedContext.petSpeciesCounts).toEqual({ gato: 1, perro: 2 });
+    expect(savedContext.petType).toBe('mixto'); // never narrowed away by the misread petResolution
   });
 
   // Same bug as above, but split across TWO messages instead of one — completing a
@@ -2776,7 +2937,7 @@ describe('AgentService — DISCOVERY mixed pets', () => {
   // which can equally get petResolution misread as a narrowing ('perro') rather than a
   // count supplement. The fix must clear it based on the MERGED per-species counts
   // (both known after this turn), not just on what the current message alone mentioned.
-  it('regression — completing a split count answer ("un gato" then "dos perros") quotes BOTH products, even if the 2nd message\'s petResolution is misread as a single species', async () => {
+  it('regression — completing a split count answer ("un gato" then "dos perros") asks gatos/perros/todos, even if the 2nd message\'s petResolution is misread as a single species', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DISCOVERY,
       context: { petType: 'mixto', productCategory: 'mascotas', petSpeciesCounts: { gato: 1, perro: 0 } },
@@ -2785,30 +2946,26 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     telegram.normalize.mockResolvedValue(makeMessage('dos perros'));
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('¿Quieres el seguro para los gatos, los perros, o para todos?');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.petSpeciesCounts).toEqual({ gato: 1, perro: 2 });
+    expect(savedContext.petType).toBe('mixto');
+  });
+
+  // The individual-vs-ambos question's answer is handled by the petResolution branches
+  // above on the NEXT turn — "para todos" builds the combined quote.
+  it('"para todos" after the gatos/perros/todos question quotes BOTH species products, each at its own per-species price', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { petType: 'mixto', productCategory: 'mascotas', petSpeciesCounts: { gato: 1, perro: 2 } },
+      intent: makeIntent({ productCategory: 'mascotas', petResolution: 'all' }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('para todos'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain('gatos');
     expect(sentText).toContain('perros');
     expect(sentText).toContain('275.000');
-    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
-    expect(savedContext.selectedProductIds).toEqual(
-      expect.arrayContaining(['medicina-prepagada-gatos', 'medicina-prepagada-perros']),
-    );
-  });
-
-  // Real live-test feedback (2026-07-26): once both per-species counts are known, asking
-  // "¿quieres el seguro para los gatos, los perros, o para todos?" is a redundant extra
-  // step — reporting a count for a species already answers "do you want it insured".
-  it('regression — once both species counts are known, quotes both products immediately instead of asking an extra "gatos, perros o todos?" question', async () => {
-    const { service, telegram, conversations } = buildService({
-      state: ConversationState.DISCOVERY,
-      context: { petType: 'mixto', productCategory: 'mascotas', petSpeciesCounts: { gato: 1, perro: 0 } },
-      intent: makeIntent({ productCategory: 'mascotas', petResolution: null }),
-    });
-    telegram.normalize.mockResolvedValue(makeMessage('dos perros'));
-    await service.handleMessage({});
-    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    expect(sentText).not.toContain('¿Quieres el seguro para los gatos');
-    expect(sentText).toContain('gatos');
-    expect(sentText).toContain('perros');
     const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
     expect(savedContext.selectedProductIds).toEqual(
       expect.arrayContaining(['medicina-prepagada-gatos', 'medicina-prepagada-perros']),
@@ -4069,11 +4226,11 @@ describe('AgentService — terminal-state restart', () => {
   // cero" (Diseño preguntas.docx). Durable profile facts survive an ABANDONED/REJECTED
   // restart; session-scoped state (the quote in progress, one-shot gates) still resets.
   describe('persistent memory across a restart', () => {
-    it('carries forward pets/dependents/budget/KYC/purchase-history facts, drops session-scoped state', async () => {
+    it('carries forward petCount/dependents/budget/KYC/purchase-history facts, drops session-scoped state', async () => {
       const { service, telegram, conversations } = buildService({
         state: ConversationState.ABANDONED,
         context: {
-          petType: 'gato',
+          petCount: 2,
           dependents: 2,
           budget: 40000,
           cedula: '12345678',
@@ -4083,6 +4240,8 @@ describe('AgentService — terminal-state restart', () => {
           hasCompletedPurchase: true,
           policyIds: ['pol-1'],
           // session-scoped — must NOT survive:
+          petType: 'gato',
+          petSpeciesCounts: { gato: 1, perro: 1 },
           productCategory: 'mascotas',
           quoteProductId: 'medicina-prepagada-gatos',
           shownProductIds: ['medicina-prepagada-gatos'],
@@ -4095,7 +4254,7 @@ describe('AgentService — terminal-state restart', () => {
       await service.handleMessage({});
       const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
       expect(savedContext).toEqual(expect.objectContaining({
-        petType: 'gato',
+        petCount: 2,
         dependents: 2,
         budget: 40000,
         cedula: '12345678',
@@ -4106,6 +4265,47 @@ describe('AgentService — terminal-state restart', () => {
         policyIds: ['pol-1'],
         lastMessages: expect.any(Array),
       }));
+      // Real live-test bug (2026-07-26): a stale petType/petSpeciesCounts silently
+      // surviving a restart let a fresh "Mi mascota" tap skip straight to a one-species
+      // quote with zero re-confirmation — these must now reset like productCategory does.
+      expect(savedContext.petType).toBeUndefined();
+      expect(savedContext.petSpeciesCounts).toBeUndefined();
+    });
+
+    // Real live-test bug (2026-07-26, screenshot): reproduces the exact reported symptom
+    // end-to-end — a conversation restarted from ABANDONED with a stale mixed-species
+    // profile left over from an earlier, unrelated mascotas inquiry. Tapping "Mi mascota"
+    // fresh must ask the species question again, never jump straight to a one-species
+    // quote using counts the user never restated this conversation.
+    it('regression — a fresh "Mi mascota" tap after a restart asks the species question again, never reuses a stale species breakdown', async () => {
+      const { service: s1, conversations: c1 } = buildService({
+        state: ConversationState.ABANDONED,
+        context: {
+          petType: 'perro', // stale from an earlier, unrelated inquiry — must NOT survive
+          petSpeciesCounts: { gato: 1, perro: 2 },
+          quoteProductId: 'medicina-prepagada-perros',
+        },
+      });
+      await s1.handleMessage({}); // any message restarts to GREETING
+      const restartedContext = c1.saveState.mock.calls[0]?.[2] as ConversationContext;
+      expect(restartedContext.petType).toBeUndefined();
+      expect(restartedContext.petSpeciesCounts).toBeUndefined();
+
+      // Fresh DISCOVERY turn: tapping the F01 "Mi mascota" button sets productCategory
+      // fresh (never persisted, same as always) — with petType/petSpeciesCounts correctly
+      // gone now, this must ask the species question, not skip straight to a quote.
+      const { service: s2, telegram: t2, conversations: c2 } = buildService({
+        state: ConversationState.DISCOVERY,
+        context: { ...restartedContext, discoveryFilter: true },
+        intent: makeIntent({ productCategory: 'mascotas' }),
+      });
+      t2.normalize.mockResolvedValue(makeMessage('🐾 Mi mascota'));
+      await s2.handleMessage({});
+      const sentText = t2.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).toContain('¿Tus mascotas son gatos, perros');
+      expect(sentText).not.toContain('Tu cotización personalizada');
+      const savedContext2 = c2.saveState.mock.calls[0]?.[2] as ConversationContext;
+      expect(savedContext2.quoteProductId).toBeUndefined();
     });
 
     it('the GREETING text acknowledges a remembered profile instead of a plain "¡Hola!"', async () => {

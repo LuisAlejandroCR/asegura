@@ -325,6 +325,22 @@ export class AgentService {
     await this.telegram.sendText(adminChatId, text);
   }
 
+  // 2026-07-26 — a lead captured after every product in a category ran out (the
+  // "¿te interesa que te avise?" waitlist offer). Same optional-integration pattern as
+  // notifyAdminEscalation above: degrades silently with no ADMIN_CHAT_ID configured,
+  // reuses telegram.sendText instead of a dedicated leads store — this app has none.
+  private async notifyAdminLead(context: ConversationContext): Promise<void> {
+    const adminChatId = this.config.get<string>('ADMIN_CHAT_ID');
+    if (!adminChatId) return;
+    const text =
+      `📋 *Nuevo lead — sin oferta disponible*\n\n` +
+      `Nombre: ${context.contactName}\n` +
+      `Correo: ${context.contactEmail}\n` +
+      `Teléfono: ${context.contactPhone}\n` +
+      `Categoría de interés: ${context.productCategory ?? 'no especificada'}`;
+    await this.telegram.sendText(adminChatId, text);
+  }
+
   private async processMessage(
     convId: string,
     currentState: ConversationState,
@@ -371,30 +387,8 @@ export class AgentService {
         if (context.awaitingAffiliateId) {
           return this.handleAffiliateId(context, text, rawText);
         }
-    // Handle contact consent response from the waitlist offer
-    if (context.awaitingContactConsent) {
-      if (intent.isAffirmative) {
-        return {
-          text: 'Genial, ¿cuál es tu nombre?',
-          nextState: ConversationState.DATA_CAPTURE,
-          context: { ...context, awaitingContactConsent: undefined, awaitingContactName: true },
-        };
-      }
-      if (intent.isNegative || intent.abandonIntent) {
-        const terminalState = context.hasCompletedPurchase
-          ? ConversationState.COMPLETED
-          : ConversationState.ABANDONED;
-        return {
-          text: STATE_RESPONSES[terminalState](context),
-          nextState: terminalState,
-        };
-      }
-      return {
-        text: 'No entendí. Si quieres, puedo guardar tus datos y avisarte cuando tengamos más opciones. ¿Te interesa? Responde "sí" o "no".',
-      };
-    }
 
-    if (intent.isAffirmative) {
+        if (intent.isAffirmative) {
           return {
             // 2026-07-26 (feedback): the "puedes responder por texto o audio" reassurance
             // moved up into GREETING itself (conversation-state.machine.ts) — saying it
@@ -720,15 +714,16 @@ export class AgentService {
       } else if (intent.petType && intent.petType !== 'mixto') {
         newContext.petType = intent.petType;
       } else if (newContext.petSpeciesCounts?.gato && newContext.petSpeciesCounts?.perro) {
-        // Real live-test feedback (2026-07-26): once BOTH counts are known, giving a
-        // count for a species IS the signal the user wants it insured — asking yet
-        // another "¿gatos, perros, o todos?" after already answering "cuántos tienes" is
-        // a redundant extra step. Go straight to the combined quote (both products,
-        // each priced against its own species count); narrowing to a single species
-        // stays available afterward via handleQuotation's own "solo perros"/"solo gatos"
-        // guard once the combined quote is on screen.
-        if (!newContext.coverage?.length) newContext.coverage = ['medicina veterinaria'];
-        return this.buildMixedSpeciesQuote(newContext);
+        // 2026-07-26 correction: once both counts are known, ask whether the user wants
+        // insurance individually per species ("los gatos"/"los perros") or combined for
+        // both ("para todos") — this is the flow that worked this morning; a same-day
+        // attempt to skip straight to the combined quote here was itself a regression,
+        // reverted. The user's answer is then handled by the petResolution branches
+        // above (gato/perro/all) on the NEXT turn.
+        return {
+          text: `Entendido, tienes ${newContext.petSpeciesCounts.gato} gato${newContext.petSpeciesCounts.gato !== 1 ? 's' : ''} y ${newContext.petSpeciesCounts.perro} perro${newContext.petSpeciesCounts.perro !== 1 ? 's' : ''}. ¿Quieres el seguro para los gatos, los perros, o para todos?`,
+          context: newContext,
+        };
       } else if (newContext.petSpeciesCounts?.gato !== undefined || newContext.petSpeciesCounts?.perro !== undefined) {
         // Partial counts — one species known, the other needs to be asked
         const p = newContext.petSpeciesCounts!;
@@ -984,6 +979,35 @@ export class AgentService {
   // ── Quotation ────────────────────────────────────────────────────────────────
 
   private handleQuotation(context: ConversationContext, text: string, intent: InsuranceIntent): ProcessResult {
+    // Real bug (2026-07-26): this flag is set below when a category's alternatives run
+    // out, but the conversation stays anchored in QUOTE_PRESENTED/QUOTING (no nextState
+    // change) — so the reply to "¿te interesa?" is processed back through THIS same
+    // method, not through AUTHORIZATION. A previous version checked this flag inside
+    // `case ConversationState.AUTHORIZATION` in processMessage, which is unreachable from
+    // here — dead code that never actually fired, leaving the waitlist offer with no
+    // working answer path at all. Checked first, before anything else in this method.
+    if (context.awaitingContactConsent) {
+      if (intent.isAffirmative) {
+        return {
+          text: 'Genial, ¿cuál es tu nombre?',
+          nextState: ConversationState.DATA_CAPTURE,
+          context: { ...context, awaitingContactConsent: undefined, awaitingContactName: true },
+        };
+      }
+      if (intent.isNegative || intent.abandonIntent) {
+        const terminalState = context.hasCompletedPurchase
+          ? ConversationState.COMPLETED
+          : ConversationState.ABANDONED;
+        return {
+          text: STATE_RESPONSES[terminalState](context),
+          nextState: terminalState,
+        };
+      }
+      return {
+        text: 'No entendí. Si quieres, puedo guardar tus datos y avisarte cuando tengamos más opciones. ¿Te interesa? Responde "sí" o "no".',
+      };
+    }
+
     const currentProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
 
     // Real live-test bug (screenshot, 2026-07-25): "salir" then "terminar", sent right
@@ -1147,15 +1171,15 @@ export class AgentService {
       // detectAllMentionedCategories), but an ambiguous non-answer can no longer hijack
       // the conversation into a different category.
       //
-      // 2026-07-26: when a pet-specific product is exhausted, offer the waitlist instead.
-      if (context.petType && context.productCategory === 'mascotas') {
-        return {
-          text: 'No tenemos más oferta en el momento. Si nos compartes tus datos te voy a avisar cuando la oferta aumente. ¿Te interesa?',
-          context: { ...context, awaitingContactConsent: true },
-        };
-      }
+      // Live-test feedback (2026-07-26): once every product in a category has been
+      // shown, offer to capture contact info (name/email/phone — see `awaitingContact*`
+      // above) instead of just asking to search a different category — a real lead, not
+      // a dead end. Applies to any category, not only mascotas (this used to be scoped
+      // to `context.petType && productCategory === 'mascotas'` only, leaving every other
+      // exhausted category with no lead-capture offer at all).
       return {
-        text: 'No tengo más opciones en esta categoría. ¿Quieres que busquemos en otra?',
+        text: 'No tenemos más oferta en el momento. Si nos compartes tus datos te voy a avisar cuando la oferta aumente. ¿Te interesa?',
+        context: { ...context, awaitingContactConsent: true },
       };
     }
 
@@ -1579,10 +1603,16 @@ export class AgentService {
       const terminalState = context.hasCompletedPurchase
         ? ConversationState.COMPLETED
         : ConversationState.ABANDONED;
+      const leadContext = { ...context, contactPhone: phone, awaitingContactPhone: undefined };
+      // Fire-and-forget, same pattern as notifyAdminEscalation — never blocks or breaks
+      // the real response if it fails or ADMIN_CHAT_ID isn't configured.
+      this.notifyAdminLead(leadContext).catch((err) =>
+        this.logger.warn(`Admin lead notification failed: ${err}`),
+      );
       return {
         text: 'Listo ✅ Te avisaremos cuando tengamos nuevas opciones. Si cambias de opinión mientras tanto, aquí estoy.',
         nextState: terminalState,
-        context: { ...context, contactPhone: phone, awaitingContactPhone: undefined },
+        context: leadContext,
       };
     }
 
