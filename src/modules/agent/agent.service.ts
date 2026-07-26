@@ -209,8 +209,10 @@ export class AgentService {
     const rawResult = await this.processMessage(conv.id, conv.state, conv.context, lowerText, intent, msg.contact, msg.photo, rawText);
     const result = this.applyCircuitBreaker(conv.context, rawResult, msg, conv.state);
 
-    // Maintain conversation history (last N exchanges, session-scoped)
-    const lastMessages = [...(conv.context.lastMessages ?? [])];
+    // Maintain conversation history (last N exchanges, session-scoped). Read from the
+    // context that will be persisted — on restart, result.context drops lastMessages via
+    // pickPersistentFields, so old history is not carried across a restart.
+    const lastMessages = [...((result.context ?? conv.context).lastMessages ?? [])];
     if (msg.text) {
       lastMessages.push({ role: 'user', text: msg.text });
     }
