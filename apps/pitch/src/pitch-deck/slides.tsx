@@ -1,18 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { TangramLogo, ColsubK } from './TangramLogo';
 import HookIntro from './HookIntro';
 import AfiliadosCounter from './AfiliadosCounter';
-import FunnelSpiral from './FunnelSpiral';
 import VideoShowcase, { VideoStepPicker } from './VideoShowcase';
 import WhyPicker from '../components/WhyPicker';
-
-import juanImg from '../asegura-knowledge-base/descubrimientos/asegura-knowledge-base/descubrimientos/reference/team_images/juan.png';
-import alejoImg from '../asegura-knowledge-base/descubrimientos/reference/team_images/alejo.jpeg';
-import maiteImg from '../asegura-knowledge-base/descubrimientos/reference/team_images/maite.png';
-import cristianImg from '../asegura-knowledge-base/descubrimientos/reference/team_images/cristian.png';
-import mariaImg from '../asegura-knowledge-base/descubrimientos/reference/team_images/maria.png';
-
-
 
 export interface SlideProps {
   active: boolean;
@@ -147,18 +138,68 @@ export function Slide2Solucion(_: SlideProps) {
   );
 }
 
-/* ── Slide 3 — Cómo funciona (embudo espiral animado) ─────────────────── */
-export function Slide3Flujo({ active }: SlideProps) {
+/* ── Slide 3 — Cómo funciona (flujo) ──────────────────────────────────── */
+const FLOW_STEPS: [string, string, string][] = [
+  ['🎙️', 'Escribe', 'o habla'],
+  ['🔒', 'Autoriza datos', 'Ley 1581'],
+  ['👤', 'El agente', 'te perfila'],
+  ['🎯', 'Recomienda', 'con razón'],
+  ['💳', 'Paga con', 'Wompi · chat'],
+  ['📄', 'PDF + QR', 'al instante'],
+];
+
+export function Slide3Flujo(_: SlideProps) {
   return (
-    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 36 }}>
-      <div style={{ textAlign: 'center', marginBottom: 4, flexShrink: 0 }}>
-        <div style={{ fontSize: 22, fontWeight: 700, color: 'white' }}>El flujo completo</div>
-        <div style={{ fontSize: 12, color: 'rgba(255,215,0,.55)' }}>
-          Del mercado total a la póliza — o al lead calificado.
-        </div>
+    <div
+      style={{
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%,-50%)',
+        textAlign: 'center',
+        width: '100%',
+        maxWidth: 1200,
+        padding: '0 40px',
+      }}
+    >
+      <div style={{ fontSize: 24, fontWeight: 700, color: 'white', marginBottom: 6 }}>El flujo completo</div>
+      <div style={{ fontSize: 13, color: 'rgba(255,215,0,.55)', marginBottom: 40 }}>
+        De principio a fin, en una sola conversación.
       </div>
-      <div style={{ flex: 1, width: '100%', minHeight: 0 }}>
-        <FunnelSpiral active={active} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'nowrap' }}>
+        {FLOW_STEPS.map(([icon, title, sub], i) => (
+          <Fragment key={title}>
+            {i > 0 && <div style={{ fontSize: 20, color: '#FFD700', marginBottom: 22, padding: '0 4px' }}>→</div>}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 112 }}>
+              <div
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: '50%',
+                  background: '#FFD700',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 22,
+                }}
+              >
+                {icon}
+              </div>
+              <div style={{ fontSize: 11, color: 'white', marginTop: 10, textAlign: 'center', lineHeight: 1.4 }}>
+                {title}
+                <br />
+                {sub}
+              </div>
+            </div>
+          </Fragment>
+        ))}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 36, flexWrap: 'wrap' }}>
+        {['Sin formularios', 'Sin menús', 'Sin salir del chat'].map((t) => (
+          <span key={t} style={{ border: '1px solid rgba(255,215,0,.3)', color: '#FFD700', borderRadius: 4, padding: '5px 14px', fontSize: 11 }}>
+            {t}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -368,8 +409,8 @@ export function Slide7Demo({ active }: SlideProps) {
           <VideoStepPicker step={step} onSelect={setStep} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
-          <div style={{ background: 'white', padding: 16, borderRadius: 14, display: 'inline-block' }}>
-            <img src="/qr-bot.svg" width={220} height={220} style={{ display: 'block' }} alt="QR Asegura Bot" />
+          <div style={{ background: 'white', padding: 10, borderRadius: 10, display: 'inline-block' }}>
+            <img src="/qr-bot.svg" width={120} height={120} style={{ display: 'block' }} alt="QR Asegura Bot" />
           </div>
           <div style={{ fontSize: 13, color: '#FFD700', fontWeight: 600 }}>t.me/asegura_bot</div>
           <div style={{ fontSize: 10, color: 'rgba(255,215,0,.45)' }}>Telegram · Disponible ahora</div>
@@ -450,7 +491,7 @@ export function Slide8Impacto({ active }: SlideProps) {
 /* ── Slide 9 — Equipo ──────────────────────────────────────────────────── */
 const TEAM: [string, string, string, string][] = [
   ['JO', 'Juan Ospina', 'Administrador de Empresas', 'Estrategia & Pitch'],
-  [alejoImg, 'Alejo', 'Ingeniero de Software', 'Tech Lead & Arquitecto'],
+  ['AL', 'Alejo', 'Ingeniero de Software', 'Tech Lead & Arquitecto'],
   ['MG', 'Maite Gómez', 'Especialista en Analítica', 'Datos & Propensión'],
   ['CG', 'Cristian Gómez', 'Ingeniero de Software', 'Desarrollo & Integraciones'],
   ['MP', 'María del Pilar', 'Economista', 'Mercado & Viabilidad'],
@@ -536,8 +577,8 @@ export function Slide10Cierre(_: SlideProps) {
           El seguro que nunca duerme.
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-          <div style={{ background: 'white', padding: 16, borderRadius: 14, display: 'inline-block' }}>
-            <img src="/qr-bot.svg" width={220} height={220} style={{ display: 'block' }} alt="QR Asegura Bot" />
+          <div style={{ background: 'white', padding: 10, borderRadius: 10, display: 'inline-block' }}>
+            <img src="/qr-bot.svg" width={100} height={100} style={{ display: 'block' }} alt="QR Asegura Bot" />
           </div>
           <div style={{ fontSize: 13, color: '#FFD700' }}>t.me/asegura_bot</div>
         </div>
