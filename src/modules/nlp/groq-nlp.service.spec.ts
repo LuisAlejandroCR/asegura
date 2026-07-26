@@ -826,7 +826,18 @@ describe('GroqNlpService.postProcess — productCategory inference from petType'
   });
 
   it('does NOT infer mascotas when text has no pet keywords and petType is null', () => {
-    expect(postProcess(service, noCategory(), 'necesito proteger a mi familia').productCategory).toBeNull();
+    expect(postProcess(service, noCategory(), 'no sé qué quiero todavía').productCategory).toBeNull();
+  });
+
+  // Real live-test bug (2026-07-26): this used to assert productCategory stays null for
+  // "necesito proteger a mi familia" — true for MASCOTAS specifically (no pet keyword
+  // here), but wrong to generalize: "familia" is (and always was, in fallbackIntent) a
+  // real vida keyword. Tapping the F01 "❤️ Mi familia" button got "No logré entender
+  // bien eso." instead of proceeding, because Groq itself sometimes fails to classify a
+  // short emoji-prefixed label and this guardrail used to only ever infer 'mascotas',
+  // never 'vida'/'asistencia'/'accidentes'. Now shares fallbackIntent's own keyword map.
+  it('regression — infers productCategory vida from "familia" when Groq returns null (the F01 "Mi familia" button case)', () => {
+    expect(postProcess(service, noCategory(), 'necesito proteger a mi familia').productCategory).toBe('vida');
   });
 
   it('does NOT override productCategory when Groq already set it', () => {
@@ -1166,5 +1177,42 @@ describe('GroqNlpService.fallbackIntent — F01 button label invariant (Step 4)'
   it('every F01_CHOICES label is covered by this invariant (catches a label added without a matching test)', () => {
     const coveredLabels = [...categoryLabels.map(([label]) => label), '🤔 No estoy seguro'];
     expect(new Set(F01_CHOICES)).toEqual(new Set(coveredLabels));
+  });
+});
+
+// Real live-test bug (2026-07-26, screenshot): tapping "❤️ Mi familia" got "No logré
+// entender bien eso." plus the DISCOVERY question repeated verbatim, instead of
+// proceeding with productCategory='vida'. The invariant above only ever proved
+// fallbackIntent honors the F01 label promise — but Groq itself (the PRIMARY path,
+// actually used whenever it's up) has zero prompt examples for these short
+// emoji-prefixed labels and can fail to classify one on its own; postProcess's own
+// productCategory guardrail used to only ever infer 'mascotas' in that case, leaving
+// vida/asistencia/accidentes buttons with no floor to fall back on at all. This proves
+// the SAME promise holds for postProcess when Groq returns productCategory=null.
+describe('GroqNlpService.postProcess — F01 button label invariant, primary path (2026-07-26 regression)', () => {
+  const service = makeService();
+
+  function groqReturnedNull(): InsuranceIntent {
+    return {
+      productCategory: null, petType: null, coverage: [], beneficiaries: 1,
+      urgency: 'exploring', isAffirmative: false, isNegative: false,
+      wantsAlternative: false, petResolution: null,
+    };
+  }
+
+  const categoryLabels: [string, NonNullable<InsuranceIntent['productCategory']>][] = [
+    ['❤️ Mi familia', 'vida'],
+    ['🏥 Mi salud', 'asistencia'],
+    ['🐾 Mi mascota', 'mascotas'],
+    ['🤕 Accidentes', 'accidentes'],
+  ];
+
+  it.each(categoryLabels)('"%s" → productCategory "%s" even when Groq itself returned null', (label, expectedCategory) => {
+    const result = postProcess(service, groqReturnedNull(), label);
+    expect(result.productCategory).toBe(expectedCategory);
+  });
+
+  it('does NOT force a category for "🤔 No estoy seguro" — no button forces a category', () => {
+    expect(postProcess(service, groqReturnedNull(), '🤔 No estoy seguro').productCategory).toBeNull();
   });
 });

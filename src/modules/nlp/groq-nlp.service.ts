@@ -208,6 +208,15 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     if (!intent.productCategory) {
       if (intent.petType || hasCat || hasDog || hasAll || safeLower.includes('mascota')) {
         intent.productCategory = 'mascotas';
+      } else {
+        // Real live-test bug (2026-07-26): this guardrail only ever covered mascotas —
+        // an F01 button tap ("❤️ Mi familia", "🏥 Mi salud", "🤕 Accidentes") that Groq
+        // itself failed to classify (no prompt example for these short emoji labels) had
+        // no floor to fall back on for vida/asistencia/accidentes, silently falling
+        // through to the generic "no logré entender" loop. Same shared keyword map
+        // fallbackIntent already uses (and the F01 button label invariant test already
+        // proves correct) — never trusted twice by two different implementations.
+        intent.productCategory = GroqNlpService.matchCategoryKeyword(safeLower);
       }
     }
 
@@ -358,6 +367,37 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     return text.replace(GroqNlpService.DENIAL_PATTERN, ' ');
   }
 
+  // Real live-test bug (2026-07-26): tapping the F01 "❤️ Mi familia" button got "No
+  // logré entender bien eso." plus the same DISCOVERY question repeated verbatim,
+  // instead of proceeding with productCategory='vida'. Root cause: this exact
+  // keyword→category map already existed, but ONLY inside fallbackIntent — proven
+  // correct by the "F01 button label invariant" test (Step 4), which is the whole
+  // reason these labels are trusted as a NLP-recognizable promise at all. postProcess
+  // (the PRIMARY Groq path, actually exercised whenever Groq is up) never consulted it —
+  // Groq's own system prompt has zero examples for these short emoji-prefixed labels, so
+  // an "❤️ Mi familia" tap that Groq itself fails to classify had no deterministic floor
+  // to fall back on, unlike mascotas (which already had one). Extracted here so BOTH
+  // paths share the exact same mapping and can never drift apart again.
+  private static readonly CATEGORY_KEYWORDS: readonly [string, NonNullable<InsuranceIntent['productCategory']>][] = [
+    ['vida', 'vida'], ['hogar', 'hogar'], ['casa', 'hogar'],
+    ['accidente', 'accidentes'], ['asistencia', 'asistencia'],
+    // "salud" is the colloquial term for the catalog's "asistencia" (asistencia médica)
+    // category — real live-test message "Ahora el de salud." got no category at all
+    // without this alias, and just re-showed the previously quoted product unchanged.
+    ['salud', 'asistencia'],
+    // "gatic" covers the "gatica"/"gatico" diminutives — a bare "gato"/"gata" substring
+    // check misses them entirely (real bug: "una gatica" matched no category at all).
+    ['mascota', 'mascotas'], ['perro', 'mascotas'], ['gato', 'mascotas'], ['gata', 'mascotas'], ['gatic', 'mascotas'], ['michi', 'mascotas'],
+    ['familia', 'vida'], ['hijo', 'vida'],
+  ];
+
+  private static matchCategoryKeyword(safeLower: string): InsuranceIntent['productCategory'] {
+    for (const [key, val] of GroqNlpService.CATEGORY_KEYWORDS) {
+      if (safeLower.includes(key)) return val;
+    }
+    return null;
+  }
+
   // Real live-test bug (2026-07-26): "No, no quiero Ezequial porque ya tengo. Explícame de
   // qué se trata." has no '?'/'¿' (ASR drops it), so the existing question-mark guard
   // below doesn't save it, and it names no alternative-product phrase, so
@@ -440,22 +480,7 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     // the mascotas category (or 'gato' species) just because "gato" appears as a
     // substring of the denial itself.
     const safeLower = GroqNlpService.stripDeniedPets(lower);
-    const categories: Record<string, InsuranceIntent['productCategory']> = {
-      vida: 'vida', hogar: 'hogar', casa: 'hogar',
-      accidente: 'accidentes', asistencia: 'asistencia',
-      // "salud" is the colloquial term for the catalog's "asistencia" (asistencia médica)
-      // category — real live-test message "Ahora el de salud." got no category at all
-      // without this alias, and just re-showed the previously quoted product unchanged.
-      salud: 'asistencia',
-      // "gatic" covers the "gatica"/"gatico" diminutives — a bare "gato"/"gata" substring
-      // check misses them entirely (real bug: "una gatica" matched no category at all).
-      mascota: 'mascotas', perro: 'mascotas', gato: 'mascotas', gata: 'mascotas', gatic: 'mascotas', michi: 'mascotas',
-      familia: 'vida', hijo: 'vida',
-    };
-    let category: InsuranceIntent['productCategory'] = null;
-    for (const [key, val] of Object.entries(categories)) {
-      if (safeLower.includes(key)) { category = val; break; }
-    }
+    const category = GroqNlpService.matchCategoryKeyword(safeLower);
 
     let petType: InsuranceIntent['petType'] = null;
     if (category === 'mascotas') {
