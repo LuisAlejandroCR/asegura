@@ -510,6 +510,8 @@ export class AgentService {
           const enriched: ConversationContext = {
             ...baseContext,
             serieId: serie,
+            cedula: serie,
+            documentType: 'CC',
             affiliateProfile: record,
             ...(record.rangoSalarial !== undefined ? { rangoSalarial: record.rangoSalarial } : {}),
             // Only pre-fill dependents/petCount when DISCOVERY hasn't already asked/
