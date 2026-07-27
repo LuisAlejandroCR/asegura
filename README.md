@@ -79,7 +79,7 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 | Backend | NestJS + TypeScript |
 | NLP | Groq (llama-3.1-8b-instant) + Whisper (voz) |
 | Base de datos | Supabase (Postgres) |
-| Canal MVP | Telegram (grammy) |
+| Canal MVP | Telegram |
 | Canal futuro | WhatsApp Business API |
 | Pagos | Wompi — Payment Links (sandbox) |
 | Deploy | Railway (API) + Vercel (pitch web) |
@@ -111,13 +111,13 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 
 El PDF de cada póliza incluye un código QR que enlaza a su registro de auditoría — escaneable desde cualquier celular.
 
-**Roadmap:** registro inmutable en Celo Mainnet para una capa adicional de auditoría pública (fuera del alcance del hackathon).
+**Roadmap:** registro inmutable en Celo Mainnet para una capa adicional de auditoría pública
 
 ---
 
 ## Privacidad
 
-La autorización de tratamiento de datos se solicita antes de consultar cualquier perfil (Ley 1581 de 2012). Sin autorización, el flujo no continúa. Compartir tu ID de afiliado es siempre opcional — decir "no" no interrumpe la cotización. Los datos del afiliado no se almacenan fuera de Supabase y no se comparten con terceros.
+La autorización de tratamiento de datos se solicita antes de consultar cualquier perfil (Ley 1581 de 2012). Sin autorización, el flujo no continúa. 
 
 ---
 
