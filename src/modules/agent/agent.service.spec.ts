@@ -103,6 +103,42 @@ describe('AgentService — AUTHORIZATION', () => {
     expect(sentText).not.toMatch(/texto o audio/i);
   });
 
+  // Real live-test feedback (2026-07-26): a RETURNING affiliate — serieId already known
+  // from a successful lookup in an earlier conversation, surviving a restart via
+  // persistent memory — got asked "Ingresa tu ID..." all over again instead of skipping
+  // straight to DISCOVERY with an honest acknowledgment.
+  it('regression — "sí" skips the affiliate-ID question and goes straight to DISCOVERY when serieId is already known', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: { serieId: '42', rangoSalarial: 'Entre 4 y 6 SMLV' },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    // Reaches DISCOVERY with F01 choices attached, so this dispatches via sendChoices,
+    // not sendText (same convention as the affiliate-lookup "found" path).
+    const sentText = telegram.sendChoices.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('Ingresa tu ID');
+    expect(sentText).toContain('Ya te habías afiliado a Colsubsidio');
+    expect(sentText).toContain('Tienes familia');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.awaitingAffiliateId).toBeUndefined();
+    expect(savedContext.autorizado).toBe(true);
+    expect(savedContext.discoveryFilter).toBe(true);
+    const savedState = conversations.saveState.mock.calls[0]?.[1] as ConversationState;
+    expect(savedState).toBe(ConversationState.DISCOVERY);
+  });
+
+  it('a genuinely fresh user (no serieId known yet) still asks for the affiliate ID — unchanged behavior', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.AUTHORIZATION,
+      context: {},
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('sí'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).toContain('Ingresa tu ID');
+  });
+
   it('"si" (without accent) also authorizes', async () => {
     const { service, telegram, conversations } = buildService({ state: ConversationState.AUTHORIZATION });
     telegram.normalize.mockResolvedValue(makeMessage('si'));
@@ -445,6 +481,99 @@ describe('AgentService — affiliate ID lookup', () => {
     expect(choices.length).toBeGreaterThan(0);
     const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
     expect(savedContext.discoveryFilter).toBe(true);
+  });
+});
+
+// Real live-test bug (2026-07-26, screenshot): tapping "❤️ Mi familia" returned an
+// "asistencia" category product ("Asistencias médicas familiares") as the FIRST quote
+// instead of a vida product. Exhaustive testing against the real QuotingService found no
+// realistic signal combination where a related category outscores an exact match (see
+// quoting.service.spec.ts), so this isn't a scoring bug — the more likely cause is Groq
+// itself confidently misclassifying a short emoji-prefixed button label, which the
+// existing null-only guardrail (Sesión 72) never corrects. A button tap is an exact,
+// known string with zero ambiguity — F01_CATEGORY_MAP now forces the category
+// deterministically, overriding both a stale already-set productCategory AND whatever
+// the NLP layer returned for this exact turn.
+describe('AgentService — F01 button taps deterministically force productCategory (2026-07-26)', () => {
+  it('regression — "❤️ Mi familia" overrides an already-set, stale productCategory from an earlier turn', async () => {
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      // Stale from an earlier, ambiguous turn — must NOT survive the button tap.
+      context: { productCategory: 'asistencia', coverage: ['familia'] },
+      intent: makeIntent({ productCategory: 'asistencia' }), // simulates Groq also getting it wrong
+    });
+    const vidaProduct = PRODUCTS.find((p) => p.category === 'vida')!;
+    quoting.bestQuote.mockReturnValue({
+      product: vidaProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('❤️ Mi familia'));
+    await service.handleMessage({});
+    expect(quoting.bestQuote).toHaveBeenCalledWith(expect.objectContaining({ productCategory: 'vida' }));
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.productCategory).toBe('vida');
+  });
+
+  it.each([
+    ['❤️ Mi familia', 'vida'],
+    ['🏥 Mi salud', 'asistencia'],
+    ['🐾 Mi mascota', 'mascotas'],
+    ['🤕 Accidentes', 'accidentes'],
+  ])('regression — "%s" forces productCategory "%s" even when the NLP layer returns something else entirely', async (label, expectedCategory) => {
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ productCategory: null }), // simulates Groq failing to classify
+    });
+    // Mascotas short-circuits to the species-clarification question before ever calling
+    // bestQuote — for the other 3, a real match must be mocked so the quote succeeds
+    // (an unmocked/failed bestQuote() resets productCategory to undefined, which would
+    // make this assertion pass for the wrong reason).
+    const matchingProduct = PRODUCTS.find((p) => p.category === expectedCategory);
+    if (matchingProduct) {
+      quoting.bestQuote.mockReturnValue({
+        product: matchingProduct,
+        score: { reasons: [], matchScore: 40, monthlyPremium: matchingProduct.basePremium, priority: 'medium', productId: matchingProduct.id },
+      });
+    }
+    telegram.normalize.mockResolvedValue(makeMessage(label));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.productCategory).toBe(expectedCategory);
+  });
+
+  it('"🤔 No estoy seguro" still never forces a category — unchanged behavior', async () => {
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { productCategory: 'vida' }, // even a stale one stays untouched by this button
+      intent: makeIntent({ productCategory: null }),
+    });
+    const vidaProduct = PRODUCTS.find((p) => p.category === 'vida')!;
+    quoting.bestQuote.mockReturnValue({
+      product: vidaProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: vidaProduct.basePremium, priority: 'medium', productId: vidaProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('🤔 No estoy seguro'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.productCategory).toBe('vida'); // untouched, not cleared either
+  });
+
+  it('a normal free-text message (not an exact button label) still only fills in when productCategory was empty — unchanged behavior', async () => {
+    const { service, telegram, conversations, quoting } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { productCategory: 'asistencia' },
+      intent: makeIntent({ productCategory: 'vida' }), // a real category mention in free text
+    });
+    const asistenciaProduct = PRODUCTS.find((p) => p.category === 'asistencia')!;
+    quoting.bestQuote.mockReturnValue({
+      product: asistenciaProduct,
+      score: { reasons: [], matchScore: 40, monthlyPremium: asistenciaProduct.basePremium, priority: 'medium', productId: asistenciaProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('también quiero un seguro de vida'));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.productCategory).toBe('asistencia'); // free text never overrides an in-progress category
   });
 });
 
@@ -2222,6 +2351,113 @@ describe('AgentService — lead capture after category exhaustion', () => {
     // Only the user's own chat id (u1) receives a message — no separate admin call.
     expect(telegram.sendText).toHaveBeenCalledTimes(1);
   });
+
+  // Real live-test bug (2026-07-26, screenshot): a RETURNING customer (nombre/email
+  // already known — the greeting itself says "Ya tengo parte de tu perfil de una
+  // conversación anterior") still got asked "¿cuál es tu nombre?" then "¿cuál es tu
+  // correo?" from scratch when accepting the waitlist offer, instead of reusing what's
+  // already known — the exact "nunca preguntar lo que ya sabemos" violation the
+  // affiliate-ID/persistent-memory features exist to prevent elsewhere.
+  describe('regression — never re-asks for name/email/phone already known from an earlier purchase', () => {
+    it('skips straight to asking for email when nombre is already known', async () => {
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.QUOTE_PRESENTED,
+        context: {
+          quoteProductId: PRODUCTS[0].id, awaitingContactConsent: true,
+          nombre: 'Juan Pérez', hasCompletedPurchase: true,
+        },
+        intent: makeIntent({ isAffirmative: true }),
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('sí'));
+      await service.handleMessage({});
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).not.toContain('¿cuál es tu nombre?');
+      expect(sentText).toContain('correo electrónico');
+      const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+      expect(savedContext.contactName).toBe('Juan Pérez');
+      expect(savedContext.awaitingContactName).toBeUndefined();
+      expect(savedContext.awaitingContactEmail).toBe(true);
+    });
+
+    it('skips straight to asking for phone when BOTH nombre and email are already known', async () => {
+      const { service, telegram, conversations } = buildService({
+        state: ConversationState.QUOTE_PRESENTED,
+        context: {
+          quoteProductId: PRODUCTS[0].id, awaitingContactConsent: true,
+          nombre: 'Juan Pérez', email: 'juan@test.com', hasCompletedPurchase: true,
+        },
+        intent: makeIntent({ isAffirmative: true }),
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('sí'));
+      await service.handleMessage({});
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).not.toContain('¿cuál es tu nombre?');
+      expect(sentText).not.toContain('¿Cuál es tu correo electrónico?');
+      expect(sentText).toContain('número de teléfono');
+      const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+      expect(savedContext.contactName).toBe('Juan Pérez');
+      expect(savedContext.contactEmail).toBe('juan@test.com');
+      expect(savedContext.awaitingContactPhone).toBe(true);
+    });
+
+    it('skips ALL the way to notifying + ending the chat when nombre, email, and verifiedPhone are all already known', async () => {
+      const { service, telegram, conversations, config } = buildService({
+        state: ConversationState.QUOTE_PRESENTED,
+        context: {
+          quoteProductId: PRODUCTS[0].id, awaitingContactConsent: true,
+          nombre: 'Juan Pérez', email: 'juan@test.com', verifiedPhone: '+573001234567',
+          hasCompletedPurchase: true, productCategory: 'accidentes',
+        },
+        intent: makeIntent({ isAffirmative: true }),
+      });
+      config.get.mockImplementation((key: string) => (key === 'ADMIN_CHAT_ID' ? '999999' : undefined));
+      telegram.normalize.mockResolvedValue(makeMessage('sí'));
+      await service.handleMessage({});
+      const userCall = telegram.sendText.mock.calls.find((call) => call[0] === 'u1');
+      expect(userCall?.[1] as string).toContain('Listo');
+      const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+      expect(savedContext.contactPhone).toBe('+573001234567');
+      const savedState = conversations.saveState.mock.calls[0]?.[1] as ConversationState;
+      expect(savedState).toBe(ConversationState.COMPLETED); // hasCompletedPurchase was true
+      const adminCall = telegram.sendText.mock.calls.find((call) => call[0] === '999999');
+      expect(adminCall?.[1] as string).toContain('Juan Pérez');
+    });
+
+    it('a fresh customer (nothing known yet) still asks for name first — unchanged behavior', async () => {
+      const { service, telegram } = buildService({
+        state: ConversationState.QUOTE_PRESENTED,
+        context: { quoteProductId: PRODUCTS[0].id, awaitingContactConsent: true },
+        intent: makeIntent({ isAffirmative: true }),
+      });
+      telegram.normalize.mockResolvedValue(makeMessage('sí'));
+      await service.handleMessage({});
+      const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+      expect(sentText).toContain('¿cuál es tu nombre?');
+    });
+  });
+});
+
+// Real live-test bug (2026-07-26, screenshot): a voice-dictated email kept failing the
+// same way 4 times in a row — Whisper's punctuation model inserts a comma right after a
+// spoken filler word ("arroba," instead of clean trailing whitespace), and the original
+// `\s+arroba\s+`/`\s+punto\s+` patterns required LITERAL whitespace on both sides, so the
+// comma silently broke the match and left "arroba" un-converted to "@".
+describe('AgentService — normalizeSpokenEmail handles ASR-inserted commas around "arroba"/"punto"', () => {
+  it.each([
+    ['juan arroba, gmail punto com', 'juan@gmail.com'],
+    ['juan arroba gmail punto, com', 'juan@gmail.com'],
+    ['juan, arroba gmail, punto, com', 'juan@gmail.com'],
+  ])('"%s" is normalized to a valid email despite the stray commas', async (spoken, expected) => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { contactName: 'Camila Rojas', awaitingContactEmail: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage(spoken));
+    await service.handleMessage({});
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(savedContext.contactEmail).toBe(expected);
+    expect(savedContext.awaitingContactPhone).toBe(true);
+  });
 });
 
 describe('AgentService — QUOTE_PRESENTED category exhaustion stays anchored (continued)', () => {
@@ -3615,6 +3851,32 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).not.toContain('rango de edades');
+    const saveCall = conversations.saveState.mock.calls[0];
+    expect(saveCall?.[1]).toBe(ConversationState.QUOTE_PRESENTED);
+  });
+
+  // Real live-test bug (2026-07-26, screenshot): the guard above required BOTH coverage
+  // AND beneficiaries before attempting a best-effort quote — matching the OLD "rango de
+  // edades" text's own trigger condition from before the 2026-07-26 cleanup that swapped
+  // its copy for "¿Cuántas personas son en tu familia o grupo familiar?" but left this
+  // guard's condition untouched. Coverage getting set WITHOUT beneficiaries (e.g. a vague
+  // "proteger a mi familia" message) fell through this gap straight to that dead text —
+  // confirmed live: it has no functional handler for its own answer at all.
+  it('regression — attempts a quote instead of showing the dead "cuántas personas en tu familia" text when coverage is known but beneficiaries never was', async () => {
+    const anyProduct = PRODUCTS[0];
+    const { service, telegram, quoting, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { coverage: ['familia'] }, // beneficiaries deliberately never set
+      intent: makeIntent({ productCategory: null, coverage: [] }),
+    });
+    quoting.bestQuote.mockReturnValue({
+      product: anyProduct,
+      score: { reasons: [], matchScore: 20, monthlyPremium: anyProduct.basePremium, priority: 'low', productId: anyProduct.id },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('quiero proteger a mi familia'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toContain('grupo familiar');
     const saveCall = conversations.saveState.mock.calls[0];
     expect(saveCall?.[1]).toBe(ConversationState.QUOTE_PRESENTED);
   });

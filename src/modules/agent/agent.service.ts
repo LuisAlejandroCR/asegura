@@ -67,6 +67,26 @@ const PAYMENT_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'paymen
 // its single source of truth — a label is a promise the parser must actually honor.
 export const F01_CHOICES = ['❤️ Mi familia', '🏥 Mi salud', '🐾 Mi mascota', '🤕 Accidentes', '🤔 No estoy seguro'];
 
+// Real live-test bug (2026-07-26, screenshot): tapping "❤️ Mi familia" returned a
+// completely different category's product ("Asistencias médicas familiares", GEA) as
+// the FIRST quote. Investigated exhaustively against the real QuotingService — no
+// realistic dependents/budget/coverage combination ever lets a related category
+// outscore an exact match under the current scoring weights, so this isn't a scoring
+// bug. The more likely cause: Groq's own classification of a short emoji-prefixed
+// button label can be simply WRONG (not just null) — the existing productCategory
+// guardrail (groq-nlp.service.ts's matchCategoryKeyword, Sesión 72) only ever fills in
+// a NULL, it never corrects a confident-but-wrong answer. A button tap is a UI element
+// with an EXACT, KNOWN string and zero ambiguity — unlike free text, there is no
+// legitimate reading of "❤️ Mi familia" other than "vida". Keyed by the SAME lowercased
+// form `handleDiscovery` already receives (`text`, computed once in `handleMessage`).
+// "🤔 No estoy seguro" is deliberately absent — no button forces a category by design.
+const F01_CATEGORY_MAP: Record<string, NonNullable<InsuranceIntent['productCategory']>> = {
+  '❤️ mi familia': 'vida',
+  '🏥 mi salud': 'asistencia',
+  '🐾 mi mascota': 'mascotas',
+  '🤕 accidentes': 'accidentes',
+};
+
 @Injectable()
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
@@ -341,6 +361,66 @@ export class AgentService {
     await this.telegram.sendText(adminChatId, text);
   }
 
+  // Real live-test bug (2026-07-26): a RETURNING customer (nombre/email already known
+  // from a previous purchase or a persisted profile — the greeting itself says "Ya
+  // tengo parte de tu perfil de una conversación anterior") still got asked "¿cuál es tu
+  // nombre?" then "¿cuál es tu correo?" from scratch when accepting the waitlist offer —
+  // the exact "nunca preguntar lo que ya sabemos" violation the affiliate-ID lookup and
+  // persistent-memory features exist to prevent everywhere else. Pre-fills
+  // contactName/contactEmail/contactPhone from whatever's already known
+  // (nombre/email/verifiedPhone) and only asks for whichever piece is still missing; if
+  // everything is already known, skips straight to notifying and ending the chat.
+  private beginLeadCapture(context: ConversationContext): ProcessResult {
+    const filled: ConversationContext = {
+      ...context,
+      awaitingContactConsent: undefined,
+      contactName: context.contactName ?? context.nombre,
+      contactEmail: context.contactEmail ?? context.email,
+      contactPhone: context.contactPhone ?? context.verifiedPhone,
+    };
+    if (!filled.contactName) {
+      return {
+        text: 'Genial, ¿cuál es tu nombre?',
+        nextState: ConversationState.DATA_CAPTURE,
+        context: { ...filled, awaitingContactName: true },
+      };
+    }
+    if (!filled.contactEmail) {
+      return {
+        text: 'Gracias. ¿Cuál es tu correo electrónico?',
+        nextState: ConversationState.DATA_CAPTURE,
+        context: { ...filled, awaitingContactEmail: true },
+      };
+    }
+    if (!filled.contactPhone) {
+      return {
+        text: 'Perfecto. Por último, ¿cuál es tu número de teléfono?',
+        nextState: ConversationState.DATA_CAPTURE,
+        context: { ...filled, awaitingContactPhone: true },
+      };
+    }
+    return this.finalizeLead(filled);
+  }
+
+  // Extracted so both the "everything already known" fast path (beginLeadCapture above)
+  // and the "just finished asking for the phone number" path (handleDataCapture below)
+  // share the exact same notify+end logic instead of duplicating it.
+  private finalizeLead(context: ConversationContext): ProcessResult {
+    const terminalState = context.hasCompletedPurchase
+      ? ConversationState.COMPLETED
+      : ConversationState.ABANDONED;
+    // Fire-and-forget, same pattern as notifyAdminEscalation — never blocks or breaks
+    // the real response if it fails or ADMIN_CHAT_ID isn't configured.
+    this.notifyAdminLead(context).catch((err) =>
+      this.logger.warn(`Admin lead notification failed: ${err}`),
+    );
+    return {
+      text: 'Listo ✅ Te avisaremos cuando tengamos nuevas opciones. Si cambias de opinión mientras tanto, aquí estoy.',
+      nextState: terminalState,
+      context,
+    };
+  }
+
   private async processMessage(
     convId: string,
     currentState: ConversationState,
@@ -389,6 +469,22 @@ export class AgentService {
         }
 
         if (intent.isAffirmative) {
+          // Real live-test feedback (2026-07-26): a RETURNING affiliate — `serieId`
+          // already known from a successful lookup in an earlier conversation, surviving
+          // this restart via persistent memory — still got asked "Ingresa tu ID..." all
+          // over again, the exact "nunca preguntar lo que ya sabemos" violation this
+          // whole affiliate-lookup feature exists to prevent. `serieId` is always set the
+          // moment a lookup succeeds (handleAffiliateId), regardless of which other
+          // fields that CSV row happened to have, so it's the one reliable signal here.
+          if (context.serieId) {
+            const knownContext: ConversationContext = { ...context, autorizado: true, discoveryFilter: true };
+            return {
+              text: `Ya te habías afiliado a Colsubsidio, así que ya tengo tu perfil.\n\n${STATE_RESPONSES[ConversationState.DISCOVERY](knownContext)}`,
+              nextState: ConversationState.DISCOVERY,
+              context: knownContext,
+              choices: F01_CHOICES,
+            };
+          }
           return {
             // 2026-07-26 (feedback): the "puedes responder por texto o audio" reassurance
             // moved up into GREETING itself (conversation-state.machine.ts) — saying it
@@ -670,7 +766,17 @@ export class AgentService {
       };
     }
 
-    if (!context.productCategory && intent.productCategory) newContext.productCategory = intent.productCategory;
+    // Real live-test bug (2026-07-26, screenshot): a button tap must never be silently
+    // misclassified — see F01_CATEGORY_MAP's own comment for the full story. Checked
+    // BEFORE the normal "fill in if empty" assignment below so a fresh, deliberate tap
+    // always wins, even over an already-set productCategory (which could be stale or
+    // wrong from an earlier, more ambiguous turn).
+    const f01Category = F01_CATEGORY_MAP[text];
+    if (f01Category) {
+      newContext.productCategory = f01Category;
+    } else if (!context.productCategory && intent.productCategory) {
+      newContext.productCategory = intent.productCategory;
+    }
     // Handle clarification response when we already know it's a mixed-pet household
     if (context.petType === 'mixto') {
       // Extract species counts from current message and merge with previously known.
@@ -924,14 +1030,25 @@ export class AgentService {
     // coverage at all — real live-test bug, e.g. "vida, accidentes y asistencia médica").
     const hasEnoughInfo = !!newContext.productCategory;
 
-    // Dead-end guard: STATE_RESPONSES[DISCOVERY]'s third tier ("¿En qué rango de edades
-    // están?") fires once coverage AND beneficiaries are both known — but no field in the
-    // NLP intent schema captures a human beneficiary's age (only petAge, for pets), and
-    // QuotingService never uses ages at all. If productCategory still never got extracted
-    // by this point, that question is permanently unanswerable — every reply loops back to
-    // it forever (real live-test bug: repeated indefinitely across "todos", ages, etc. with
-    // productCategory never set). Attempt a best-effort quote instead of asking it.
-    const stuckWithoutCategory = !hasEnoughInfo && !!newContext.coverage?.length && !!newContext.beneficiaries;
+    // Dead-end guard: STATE_RESPONSES[DISCOVERY]'s third tier ("¿Cuántas personas son en
+    // tu familia o grupo familiar?", originally "¿En qué rango de edades están?") — no
+    // field in the NLP intent schema captures a human beneficiary's age or count for
+    // THIS tier (only petAge, for pets), and nothing anywhere reads an answer to it;
+    // Step 3's `dependents` question is the real, functional replacement. If
+    // productCategory still never got extracted by this point, that text is permanently
+    // unanswerable — every reply loops back to it forever.
+    //
+    // Real live-test bug (2026-07-26): this guard originally also required
+    // `newContext.beneficiaries` to be truthy before attempting a best-effort quote —
+    // matching the OLD text's own trigger condition before the 2026-07-26 cleanup that
+    // replaced its copy but left this guard's condition untouched. Coverage getting set
+    // (e.g. from a vague "proteger a mi familia" message Groq turned into coverage
+    // keywords) WITHOUT beneficiaries also being set fell through this gap straight to
+    // the dead text — confirmed live: a user tapping "❤️ Mi familia" right after seeing
+    // it still got a real quote, but only because the button tap itself supplied
+    // productCategory that turn; the text itself was shown for nothing. Dropped the
+    // `beneficiaries` requirement — coverage alone is enough to attempt a real quote.
+    const stuckWithoutCategory = !hasEnoughInfo && !!newContext.coverage?.length;
 
     if (hasEnoughInfo || stuckWithoutCategory) {
       const quote = this.quoting.bestQuote(newContext as AffiliateSignals);
@@ -988,11 +1105,7 @@ export class AgentService {
     // working answer path at all. Checked first, before anything else in this method.
     if (context.awaitingContactConsent) {
       if (intent.isAffirmative) {
-        return {
-          text: 'Genial, ¿cuál es tu nombre?',
-          nextState: ConversationState.DATA_CAPTURE,
-          context: { ...context, awaitingContactConsent: undefined, awaitingContactName: true },
-        };
+        return this.beginLeadCapture(context);
       }
       if (intent.isNegative || intent.abandonIntent) {
         const terminalState = context.hasCompletedPurchase
@@ -1500,10 +1613,18 @@ export class AgentService {
   // Voice dictation of an email in Spanish spells out the symbols as words ("arroba" for
   // @, "punto" for .) instead of saying them literally — a message like "Juan arroba
   // gmail punto com" has neither symbol and fails any @/. shape check as-is.
+  //
+  // Real live-test bug (2026-07-26): the original `\s+arroba\s+`/`\s+punto\s+` patterns
+  // required LITERAL whitespace on both sides — Whisper's punctuation model routinely
+  // inserts a comma right after a spoken filler word ("arroba," instead of clean
+  // trailing whitespace), which broke the match entirely and left "arroba" un-converted.
+  // The user had to repeat the email 4 times in a row with the exact same failure.
+  // `[\s,]*` (zero or more spaces/commas, not `\s+` requiring at least one literal
+  // space) absorbs that stray comma the same way it absorbs plain whitespace.
   private normalizeSpokenEmail(text: string): string {
     return text
-      .replace(/\s+arroba\s+/gi, '@')
-      .replace(/\s+punto\s+/gi, '.')
+      .replace(/[\s,]*\barroba\b[\s,]*/gi, '@')
+      .replace(/[\s,]*\bpunto\b[\s,]*/gi, '.')
       .replace(/\s+/g, '');
   }
 
@@ -1639,20 +1760,7 @@ export class AgentService {
       if (phone.length < 7) {
         return { text: '¿Cuál es tu número de teléfono? Debe tener al menos 7 dígitos.', context };
       }
-      const terminalState = context.hasCompletedPurchase
-        ? ConversationState.COMPLETED
-        : ConversationState.ABANDONED;
-      const leadContext = { ...context, contactPhone: phone, awaitingContactPhone: undefined };
-      // Fire-and-forget, same pattern as notifyAdminEscalation — never blocks or breaks
-      // the real response if it fails or ADMIN_CHAT_ID isn't configured.
-      this.notifyAdminLead(leadContext).catch((err) =>
-        this.logger.warn(`Admin lead notification failed: ${err}`),
-      );
-      return {
-        text: 'Listo ✅ Te avisaremos cuando tengamos nuevas opciones. Si cambias de opinión mientras tanto, aquí estoy.',
-        nextState: terminalState,
-        context: leadContext,
-      };
+      return this.finalizeLead({ ...context, contactPhone: phone, awaitingContactPhone: undefined });
     }
 
     // Step -1 — identity verification (2026-07-24 KYC feedback). Set up by
