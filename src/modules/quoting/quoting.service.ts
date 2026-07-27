@@ -8,6 +8,36 @@ export class QuotingService {
   constructor(@Inject('IProductRepository') private readonly catalog: IProductRepository) {}
 
   score(signals: AffiliateSignals): InsuranceScore[] {
+    return this.scoreAll(signals).slice(0, 3);
+  }
+
+  bestQuote(signals: AffiliateSignals): { product: InsuranceProduct; score: InsuranceScore } | null {
+    const scores = this.scoreAll(signals);
+    if (scores.length === 0) return null;
+
+    // Product decision (2026-07-26, live-test screenshot + user confirmation): a
+    // related-but-different category (e.g. asistencia) could outscore an EXACT match
+    // (e.g. vida) when it has other bonuses (family, budget) the exact match lacks —
+    // silently substituting the category the user explicitly asked for (an F01 button
+    // tap, or a named category) with a different one for the FIRST quote shown. An
+    // explicit category choice must never be substituted here. Scans the FULL scored
+    // list (not just the top-3 `score()` slice) so an exact match still wins even if it
+    // didn't make the top 3 overall. A related-category product can still surface later
+    // via "otro" (wantsAlternative reads quoting.score()'s own top-3 — unaffected).
+    if (signals.productCategory) {
+      const exactMatch = scores.find((s) => this.catalog.getProduct(s.productId)?.category === signals.productCategory);
+      if (exactMatch) {
+        const product = this.catalog.getProduct(exactMatch.productId);
+        return product ? { product, score: exactMatch } : null;
+      }
+    }
+
+    const top = scores[0];
+    const product = this.catalog.getProduct(top.productId);
+    return product ? { product, score: top } : null;
+  }
+
+  private scoreAll(signals: AffiliateSignals): InsuranceScore[] {
     const scores: InsuranceScore[] = [];
 
     for (const product of this.catalog.getProducts()) {
@@ -18,15 +48,7 @@ export class QuotingService {
     }
 
     scores.sort((a, b) => b.matchScore - a.matchScore);
-    return scores.slice(0, 3);
-  }
-
-  bestQuote(signals: AffiliateSignals): { product: InsuranceProduct; score: InsuranceScore } | null {
-    const scores = this.score(signals);
-    if (scores.length === 0) return null;
-    const top = scores[0];
-    const product = this.catalog.getProduct(top.productId);
-    return product ? { product, score: top } : null;
+    return scores;
   }
 
   // 2026-07-26 fix: "why this product" reasons used to surface in PUSH order, not

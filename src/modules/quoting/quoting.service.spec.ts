@@ -270,6 +270,69 @@ describe('QuotingService — category cross-sell map (locked-in current behavior
   });
 });
 
+// Real live-test bug (2026-07-26, screenshot) + product decision (confirmed with the
+// user): tapping the F01 "❤️ Mi familia" button (productCategory='vida') with 2
+// dependents known returned "Asistencias médicas familiares" (GEA, category
+// 'asistencia') as the FIRST quote. Investigating with the REAL catalog and every
+// realistic dependents/budget/coverage combination never found a case where a
+// related-category product outscores an exact match under the CURRENT scoring
+// constants — an exact match's own tier/family/business-priority bonuses keep it ahead
+// (see quoting.service.spec.ts git history for the combos tried). The live transcript's
+// actual root cause is more likely that Groq classified the button tap's category
+// directly instead of leaving it null (see agent.service.ts's F01_CATEGORY_MAP fix).
+// This describe block hardens `bestQuote()` against the SCORING half of the failure
+// mode regardless — confirmed with the user as the desired invariant ("never substitute
+// the tapped category") — using a controlled fake catalog to force the exact scenario,
+// since the real catalog's current weights don't happen to reach it today. A related-
+// category product may still surface later via "otro" (score()'s own top-3, unaffected).
+describe('QuotingService.bestQuote — never substitutes an explicit category choice (2026-07-26)', () => {
+  const service = makeService();
+
+  it('regression — an exact-category match always wins bestQuote even when a related-category product scores strictly higher', () => {
+    // Controlled fake catalog: 'exacto' is the only 'vida' product (deliberately no
+    // extra bonuses), 'relacionado' is an 'asistencia' product engineered to outscore it
+    // via coverage matches — proving the mechanism, not relying on real catalog weights
+    // happening to reach this combination today.
+    const fake: InsuranceProduct[] = [
+      {
+        id: 'exacto', name: 'Exacto', category: 'vida', insurer: 'Test', basePremium: 10000,
+        url: 'https://example.com', coverages: ['cobertura básica'], eligibility: {},
+      },
+      {
+        id: 'relacionado', name: 'Relacionado', category: 'asistencia', insurer: 'Test', basePremium: 10000,
+        url: 'https://example.com',
+        coverages: ['medicina general', 'consultas virtuales', 'urgencias médicas', 'telemedicina', 'hospitalización'],
+        eligibility: {},
+      },
+    ];
+    const fakeService = new QuotingService(makeFakeCatalog(fake));
+    const signals = {
+      productCategory: 'vida' as const,
+      coverage: ['medicina', 'consultas', 'urgencias', 'telemedicina', 'hospitalización'],
+    };
+    // Confirms the premise: without the fix, score()'s own top pick is the RELATED
+    // product (4 coverage matches beat a bare exact-category match with no other signal).
+    const scores = fakeService.score(signals);
+    expect(scores[0].productId).toBe('relacionado');
+
+    const best = fakeService.bestQuote(signals);
+    expect(best?.product.id).toBe('exacto');
+  });
+
+  it('falls back to the top-scoring related-category product when NO exact-category match exists at all (e.g. hogar)', () => {
+    // 'hogar' has no dedicated product in the real catalog — asistencias-multiples is
+    // the only real cross-sell available, and must still be returned, not null.
+    const best = service.bestQuote({ productCategory: 'hogar' as const });
+    expect(best).not.toBeNull();
+    expect(best?.product.category).toBe('asistencia');
+  });
+
+  it('an exact category match with no competing related-category bonus is returned as before (unchanged behavior)', () => {
+    const best = service.bestQuote({ productCategory: 'mascotas' as const });
+    expect(best?.product.category).toBe('mascotas');
+  });
+});
+
 describe('QuotingService INVARIANT — every NLP-reachable category yields a recommendation', () => {
   const service = makeService();
 
