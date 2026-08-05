@@ -11,19 +11,24 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,600;0,800;1,600&display=swap" rel="stylesheet">
 <title>Asegura — Seguros automatizados</title>
 <style>
-  /* Pattern inspired by Dribbble's "Bubdle" (Halo Lab) — light/editorial
-     insurance site: white background, a pill eyebrow tag, a huge confident
-     headline with a small badge breaking the text (their version uses an
-     inline photo; we don't have one, so it's our shield icon instead), and
-     an asymmetric row of stat cards below. Built original: our own copy,
-     our own navy/gold/cream palette, our own honest figures — not a clone. */
+  /* Layout/motion pattern reconstructed from a user-supplied reference clip
+     ("petsArea.mp4" — a pet-shop hero: floating corner cards, a word-by-word
+     headline reveal, then every image/card blur-focuses into place). Not our
+     asset, not reused — see ASSET_CREDITS.md for the 3 photos actually used
+     (Unsplash, free license). Composition adapted to Asegura: the reference's
+     cutout-paws-over-a-banner trick needs pre-masked transparent PNGs we
+     don't have, so the hero uses plain rounded-corner photos instead — see
+     the limitations note this was shipped with. Palette/copy stay ours;
+     figures (11 productos, 3 min, 24/7) are the same real catalog facts used
+     throughout, nothing fabricated. */
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
   html,body{width:100%;overflow-x:hidden;background:#FDF8EE;color:#0A1B3D;
     font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased}
   a{color:inherit;text-decoration:none}
+  img{max-width:100%;display:block}
 
   /* ---- nav ---- */
-  nav{position:relative;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:20px}
+  nav{position:relative;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:20px}
   @media(min-width:768px){nav{padding:26px 44px}}
   .brand{display:flex;align-items:center;gap:9px}
   .brand img{height:26px;width:auto}
@@ -40,12 +45,12 @@
   .btn-gold:hover{background:#ffe14d}
 
   /* ---- hero ---- */
-  .hero{position:relative;padding:52px 20px 60px;text-align:center;overflow:hidden}
-  @media(min-width:768px){.hero{padding:64px 44px 80px}}
+  .hero{position:relative;padding:20px 20px 60px;text-align:center;overflow:hidden}
+  @media(min-width:768px){.hero{padding:20px 44px 90px}}
 
-  .ripples{position:absolute;top:8%;left:50%;transform:translateX(-50%);
+  .ripples{position:absolute;top:2%;left:50%;transform:translateX(-50%);
     width:900px;height:900px;pointer-events:none;z-index:0}
-  .ripple{position:absolute;top:50%;left:50%;border-radius:50%;border:1.5px solid rgba(10,27,61,.09);
+  .ripple{position:absolute;top:50%;left:50%;border-radius:50%;border:1.5px solid rgba(10,27,61,.08);
     transform:translate(-50%,-50%);animation:pulse 6s ease-in-out infinite}
   .r1{width:220px;height:220px;animation-delay:0s}
   .r2{width:380px;height:380px;animation-delay:.5s}
@@ -54,31 +59,52 @@
   .r5{width:860px;height:860px;animation-delay:2s}
   @keyframes pulse{0%,100%{opacity:.55;transform:translate(-50%,-50%) scale(1)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.025)}}
 
-  /* ---- entrance choreography ---- */
-  @keyframes fadeUp{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
+  /* ---- entrance choreography: fade+rise for text/UI, blur-focus for media ---- */
+  @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes blurFocus{from{opacity:0;filter:blur(16px);transform:translateY(18px) scale(1.04)}to{opacity:1;filter:blur(0);transform:translateY(0) scale(1)}}
   @keyframes popIn{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:scale(1)}}
   @keyframes badgePulse{0%,100%{box-shadow:0 0 0 6px #FDF8EE,0 0 0 6px rgba(255,215,0,0)}50%{box-shadow:0 0 0 6px #FDF8EE,0 0 0 12px rgba(255,215,0,.35)}}
-  .reveal{opacity:0;animation:fadeUp .8s cubic-bezier(.16,1,.3,1) forwards}
+  .reveal{opacity:0;animation:fadeUp .7s cubic-bezier(.16,1,.3,1) forwards}
+  .reveal-blur{opacity:0;animation:blurFocus .9s cubic-bezier(.16,1,.3,1) forwards}
+  .word{display:inline-block;opacity:0;animation:blurFocus .55s cubic-bezier(.16,1,.3,1) forwards}
 
   @media(prefers-reduced-motion:reduce){
     .ripple{animation:none}
-    .reveal{opacity:1!important;animation:none!important}
+    .reveal,.reveal-blur,.word{opacity:1!important;animation:none!important;filter:none!important}
     .badge{animation:none!important}
-    .covers-photos img{opacity:1!important;animation:none!important}
+  }
+
+  /* ---- floating corner cards (desktop only) ---- */
+  .corner-card{display:none}
+  @media(min-width:1350px){
+    .corner-card{position:absolute;z-index:5;background:#fff;border-radius:18px;
+      box-shadow:0 14px 34px -14px rgba(10,27,61,.28);padding:14px 16px;
+      display:flex;align-items:center;gap:11px;text-align:left;width:216px}
+    .corner-left{top:118px;left:44px;transform:rotate(-3deg)}
+    .corner-right{top:118px;right:44px;transform:rotate(3deg);width:196px}
+    .cc-icon{flex-shrink:0;width:38px;height:38px;border-radius:10px;background:#FDF8EE;
+      display:flex;align-items:center;justify-content:center;color:#0A1B3D}
+    .cc-name{font-size:12.5px;font-weight:700;line-height:1.3}
+    .cc-price{font-size:11.5px;color:rgba(10,27,61,.55);margin-top:2px}
+    .cc-arrow{margin-left:auto;flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#0A1B3D;
+      color:#fff;display:flex;align-items:center;justify-content:center}
+    .cc-play{flex-shrink:0;width:34px;height:34px;border-radius:50%;background:#0A1B3D;color:#fff;
+      display:flex;align-items:center;justify-content:center}
+    .cc-caption{font-size:12px;font-weight:600;line-height:1.35}
   }
 
   .eyebrow{position:relative;z-index:1;display:inline-flex;align-items:center;gap:8px;
     background:#fff;border:1px solid rgba(10,27,61,.12);border-radius:999px;padding:7px 16px;
-    font-size:12px;font-weight:700;letter-spacing:.02em;color:#0A1B3D;margin-bottom:26px;
-    box-shadow:0 1px 0 rgba(10,27,61,.03)}
+    font-size:12px;font-weight:700;letter-spacing:.02em;color:#0A1B3D;margin:88px 0 24px}
+  @media(min-width:768px){.eyebrow{margin-top:96px}}
   .eyebrow::before{content:'';width:7px;height:7px;border-radius:50%;background:#FFD700}
 
   h1{position:relative;z-index:1;font-family:'Playfair Display',Georgia,serif;font-weight:800;
-    letter-spacing:-.015em;line-height:1.08;font-size:clamp(2.2rem,6.6vw,5rem);max-width:920px;margin:0 auto}
+    letter-spacing:-.015em;line-height:1.1;font-size:clamp(2.1rem,6.2vw,4.4rem);max-width:820px;margin:0 auto}
   .badge{display:inline-flex;align-items:center;justify-content:center;vertical-align:-12%;
     width:.9em;height:.9em;border-radius:50%;background:#FFD700;margin:0 .08em;
     box-shadow:0 0 0 6px #FDF8EE;opacity:0;
-    animation:popIn .6s .9s cubic-bezier(.34,1.56,.64,1) forwards,badgePulse 2.6s 1.6s ease-in-out infinite}
+    animation:popIn .6s .82s cubic-bezier(.34,1.56,.64,1) forwards,badgePulse 2.6s 1.5s ease-in-out infinite}
   .badge svg{width:52%;height:52%;color:#0A1B3D}
 
   .lede{position:relative;z-index:1;max-width:520px;margin:22px auto 28px;
@@ -89,47 +115,29 @@
   .how span{width:26px;height:26px;border-radius:50%;background:#0A1B3D;color:#fff;
     display:inline-flex;align-items:center;justify-content:center}
 
-  /* ---- who we cover — real photos, no fabricated stats ---- */
-  .covers{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;
-    gap:14px;margin-top:38px}
-  .covers-photos{display:flex;align-items:center}
-  .covers-photos img{width:56px;height:56px;border-radius:50%;object-fit:cover;
-    border:3px solid #FDF8EE;box-shadow:0 2px 10px rgba(10,27,61,.15);margin-left:-14px;
-    opacity:0;animation:popIn .5s cubic-bezier(.34,1.56,.64,1) forwards}
-  .covers-photos img:first-child{margin-left:0}
-  .covers-photos img:nth-child(1){animation-delay:1.15s}
-  .covers-photos img:nth-child(2){animation-delay:1.28s}
-  .covers-photos img:nth-child(3){animation-delay:1.41s}
-  .covers-label{font-size:12.5px;color:rgba(10,27,61,.55);font-weight:600}
+  /* ---- showcase: center photo + overlapping banner, flanked by 2 stat photos ---- */
+  .showcase{position:relative;z-index:1;max-width:1080px;margin:52px auto 0;padding:0 20px;
+    display:grid;grid-template-columns:1fr;gap:44px;align-items:start}
+  @media(min-width:860px){.showcase{grid-template-columns:.72fr 1fr .72fr;gap:22px;align-items:end}}
 
-  /* ---- stat cards (Bubdle-style asymmetric row) ---- */
-  .cards{position:relative;z-index:1;max-width:1120px;margin:56px auto 0;padding:0 20px;
-    display:grid;grid-template-columns:1fr;gap:16px}
-  @media(min-width:768px){.cards{grid-template-columns:1.3fr 1fr 1fr;padding:0 44px}}
+  .sc-side{display:flex;flex-direction:column;align-items:center;gap:16px}
+  .sc-side img{width:150px;height:150px;border-radius:50%;object-fit:cover;
+    box-shadow:0 12px 28px -10px rgba(10,27,61,.28)}
+  @media(min-width:860px){.sc-side img{width:100%;max-width:190px;height:190px}}
+  .sc-stat-num{font-size:clamp(22px,2.6vw,28px);font-weight:800;letter-spacing:-.02em}
+  .sc-stat-label{font-size:13px;line-height:1.55;color:rgba(10,27,61,.62);max-width:220px;margin-top:4px}
+  .sc-link{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;margin-top:10px}
+  .sc-link svg{transition:transform .2s ease}
+  .sc-link:hover svg{transform:translateX(3px)}
 
-  .card{border-radius:24px;padding:28px 26px;position:relative;overflow:hidden;min-height:168px;
-    display:flex;flex-direction:column;justify-content:space-between;
-    transition:transform .25s cubic-bezier(.16,1,.3,1),box-shadow .25s ease}
-  .card:hover{transform:translateY(-6px);box-shadow:0 16px 32px -12px rgba(10,27,61,.22)}
-  @media(prefers-reduced-motion:reduce){.card:hover{transform:none}}
-  .card-gold{background:#FFD700;color:#0A1B3D}
-  .card-dark{background:#0A1B3D;color:#fff}
-  .card-outline{background:#fff;color:#0A1B3D;border:1.5px solid rgba(10,27,61,.12)}
-
-  .card-icon{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center}
-  .card-gold .card-icon{background:rgba(10,27,61,.1)}
-  .card-dark .card-icon{background:rgba(255,255,255,.12)}
-  .card-outline .card-icon{background:#FDF8EE}
-
-  .card-num{font-size:clamp(26px,3vw,34px);font-weight:800;letter-spacing:-.02em;margin-top:18px}
-  .card-label{font-size:13px;line-height:1.5;margin-top:6px}
-  .card-gold .card-label{color:rgba(10,27,61,.72)}
-  .card-dark .card-label{color:rgba(255,255,255,.7)}
-  .card-outline .card-label{color:rgba(10,27,61,.6)}
-
-  .card-link{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;margin-top:14px}
-  .card-link svg{transition:transform .2s ease}
-  .card-outline:hover .card-link svg{transform:translateX(3px)}
+  .sc-center{position:relative}
+  .sc-center img{width:100%;max-width:360px;margin:0 auto;aspect-ratio:.82;border-radius:32px;
+    object-fit:cover;box-shadow:0 24px 55px -18px rgba(10,27,61,.32)}
+  .sc-banner{position:relative;z-index:2;max-width:320px;margin:-46px auto 0;background:#0A1B3D;color:#fff;
+    border-radius:22px;padding:22px 24px 24px;text-align:center;
+    box-shadow:0 16px 34px -14px rgba(10,27,61,.4)}
+  .sc-banner-num{font-size:clamp(22px,2.6vw,28px);font-weight:800}
+  .sc-banner-label{font-size:12.5px;color:rgba(255,255,255,.72);margin:4px 0 16px}
 
   .credit{position:relative;z-index:1;text-align:center;font-size:11.5px;color:rgba(10,27,61,.4);padding:44px 20px 30px}
 </style>
@@ -141,7 +149,7 @@
       <img src="/logo-mark.png" alt="Asegura" width="26" height="26">
       <span class="brand-txt">segura</span>
     </a>
-    <div class="nav-actions reveal" style="animation-delay:.1s">
+    <div class="nav-actions reveal" style="animation-delay:.08s">
       <a class="btn btn-ghost" href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer">Probar</a>
       <a class="btn btn-dark" href="pitch.html">Ver la presentación</a>
     </div>
@@ -156,59 +164,72 @@
       <div class="ripple r5"></div>
     </div>
 
-    <span class="eyebrow reveal" style="animation-delay:.25s">Seguros sin papeleo, 2026</span>
+    <a class="corner-card corner-left reveal-blur" style="animation-delay:.18s" href="pitch.html">
+      <span class="cc-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5.2C10 3 8.5 2 7 2S4 3 4 5.2c0 1.6 1.3 3 3 4.8 1.7-1.8 3-3.2 3-4.8Z"/><path d="M20 5.2C20 3 18.5 2 17 2s-3 1-3 3.2c0 1.6 1.3 3 3 4.8 1.7-1.8 3-3.2 3-4.8Z"/><path d="M4 15c0-2 1.5-3 3-3s3 1.4 3 3.4C10 17.8 8 20 7 21c-1-1-3-3.2-3-6Z"/><path d="M20 15c0-2-1.5-3-3-3s-3 1.4-3 3.4c0 2.4 2 4.6 3 5.6 1-1 3-3.2 3-6Z"/></svg>
+      </span>
+      <span>
+        <span class="cc-name">Asistencia veterinaria</span>
+        <span class="cc-price">Desde $14.500/mes</span>
+      </span>
+      <span class="cc-arrow" aria-hidden="true">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
+      </span>
+    </a>
 
-    <h1 class="reveal" style="animation-delay:.4s">De &ldquo;no sé qué seguro&rdquo; a
+    <a class="corner-card corner-right reveal-blur" style="animation-delay:.28s" href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer">
+      <span class="cc-play" aria-hidden="true">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+      </span>
+      <span class="cc-caption">Prueba el agente<br>en Telegram</span>
+    </a>
+
+    <span class="eyebrow reveal" style="animation-delay:.3s">Seguros sin papeleo, 2026</span>
+
+    <h1>
+      <span class="word" style="animation-delay:.42s">De</span>
+      <span class="word" style="animation-delay:.48s">&ldquo;no</span>
+      <span class="word" style="animation-delay:.54s">sé</span>
+      <span class="word" style="animation-delay:.6s">qué</span>
+      <span class="word" style="animation-delay:.66s">seguro&rdquo;</span>
+      <span class="word" style="animation-delay:.72s">a</span>
       <span class="badge" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 6v6c0 5.25 3.75 9.75 9 11 5.25-1.25 9-5.75 9-11V6z"/><path d="m9 12 2 2 4-4"/></svg>
       </span>
-      asegurado.</h1>
+      <span class="word" style="animation-delay:.78s">asegurado.</span>
+    </h1>
 
-    <p class="lede reveal" style="animation-delay:.55s">Asegura entiende tu perfil real —edad, familia, ingresos, hábitos— y te recomienda el seguro correcto, con razones específicas. Sin formularios, sin asesores, sin letra pequeña.</p>
+    <p class="lede reveal" style="animation-delay:.95s">Asegura entiende tu perfil real —edad, familia, ingresos, hábitos— y te recomienda el seguro correcto, con razones específicas. Sin formularios, sin asesores, sin letra pequeña.</p>
 
-    <a class="how reveal" style="animation-delay:.68s" href="pitch.html">
+    <a class="how reveal" style="animation-delay:1.06s" href="pitch.html">
       <span><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg></span>
       Ver cómo funciona
     </a>
 
-    <div class="covers reveal" style="animation-delay:.8s">
-      <div class="covers-photos">
-        <img src="https://images.unsplash.com/photo-1598887048474-3e0be05bd11f?w=112&h=112&fit=crop&auto=format&q=80" alt="" width="56" height="56" loading="lazy">
-        <img src="https://images.unsplash.com/photo-1598875706250-21faaf804361?w=112&h=112&fit=crop&auto=format&q=80" alt="" width="56" height="56" loading="lazy">
-        <img src="https://images.unsplash.com/photo-1566616213894-2d4e1baee5d8?w=112&h=112&fit=crop&auto=format&q=80" alt="" width="56" height="56" loading="lazy">
-      </div>
-      <span class="covers-label">Para tu familia, tu mascota, tu salud.</span>
-    </div>
-
-    <div class="cards">
-      <div class="card card-gold reveal" style="animation-delay:1s">
-        <div class="card-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0A1B3D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 6v6c0 5.25 3.75 9.75 9 11 5.25-1.25 9-5.75 9-11V6z"/><path d="m9 12 2 2 4-4"/></svg>
-        </div>
+    <div class="showcase">
+      <div class="sc-side reveal-blur" style="animation-delay:1.2s">
+        <img src="https://images.unsplash.com/photo-1598875706250-21faaf804361?w=380&h=380&fit=crop&auto=format&q=80" alt="" width="190" height="190" loading="lazy">
         <div>
-          <div class="card-num">11 productos</div>
-          <div class="card-label">De 5 aseguradoras reales —MetLife, Chubb, GEA y más—, para tu familia, tu salud o tu mascota.</div>
+          <div class="sc-stat-num">11 productos</div>
+          <div class="sc-stat-label">De 5 aseguradoras reales —MetLife, Chubb, GEA y más.</div>
         </div>
       </div>
 
-      <div class="card card-dark reveal" style="animation-delay:1.12s">
-        <div class="card-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
-        </div>
-        <div>
-          <div class="card-num">3 min</div>
-          <div class="card-label">De cotización a póliza emitida.</div>
+      <div class="sc-center">
+        <img class="reveal-blur" style="animation-delay:1.3s" src="https://images.unsplash.com/photo-1598887048474-3e0be05bd11f?w=640&h=780&fit=crop&auto=format&q=80" alt="" width="360" height="439" loading="lazy">
+        <div class="sc-banner reveal-blur" style="animation-delay:1.42s">
+          <div class="sc-banner-num">3 min</div>
+          <div class="sc-banner-label">De cotización a póliza emitida</div>
+          <a class="btn btn-gold" href="pitch.html">Ver la presentación</a>
         </div>
       </div>
 
-      <div class="card card-outline reveal" style="animation-delay:1.24s">
-        <div class="card-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0A1B3D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-        </div>
+      <div class="sc-side reveal-blur" style="animation-delay:1.24s">
+        <img src="https://images.unsplash.com/photo-1566616213894-2d4e1baee5d8?w=380&h=380&fit=crop&auto=format&q=80" alt="" width="190" height="190" loading="lazy">
         <div>
-          <div class="card-num">24/7</div>
-          <div class="card-label">Sin horarios, sin filas, sin asesores.</div>
-          <a class="card-link" href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer">
+          <div class="sc-stat-num">24/7</div>
+          <div class="sc-stat-label">Sin horarios, sin filas, sin asesores.</div>
+          <a class="sc-link" href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer">
             Probar ahora
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </a>
@@ -217,7 +238,7 @@
     </div>
   </header>
 
-  <div class="credit reveal" style="animation-delay:1.5s">Hackathon Colsubsidio × 30X — Julio 2026</div>
+  <div class="credit reveal" style="animation-delay:1.7s">Hackathon Colsubsidio × 30X — Julio 2026</div>
 
 </body>
 </html>
