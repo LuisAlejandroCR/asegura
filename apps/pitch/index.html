@@ -165,6 +165,8 @@
   .obj-svg{position:absolute;inset:0;display:grid;place-items:center;transition:opacity .55s ease,transform .7s var(--ease-spring)}
   .obj-svg svg{width:64%;height:auto;color:var(--cat-ink,var(--navy))}
   .obj-svg.out{opacity:0;transform:scale(.82) translateY(18px)}
+  .obj-photo img{width:58%;aspect-ratio:1;border-radius:50%;object-fit:cover;
+    border:4px solid #fff;box-shadow:0 18px 40px -14px rgba(12,31,61,.35)}
   .obj-tag{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);white-space:nowrap;
     background:rgba(255,255,255,.82);backdrop-filter:blur(6px);border:1px solid var(--line);
     border-radius:999px;padding:9px 18px;font-size:12px;font-weight:700;color:var(--ink);
@@ -297,7 +299,7 @@
 
   /* ============ cómo funciona: una sola secuencia ============ */
   .story{display:grid;grid-template-columns:1fr;gap:36px;margin-top:56px;align-items:start}
-  @media(min-width:1000px){.story{grid-template-columns:460px 1fr;gap:72px}}
+  @media(min-width:1000px){.story{grid-template-columns:460px 1fr;gap:72px;min-height:260vh}}
   .story-visual{display:none}
   @media(min-width:1000px){.story-visual{display:block;position:sticky;top:110px}}
   .sv-card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
@@ -345,6 +347,7 @@
   .sv-dot{width:8px;height:8px;border-radius:50%;background:var(--line2);transition:all .3s ease}
   .sv-dot.on{background:var(--gold);width:22px;border-radius:99px}
   .story-steps{display:grid;gap:14px}
+  @media(min-width:1000px){.story-steps{position:sticky;top:50%;transform:translateY(-50%)}}
   .story-step{position:relative;display:flex;gap:18px;padding:22px;background:var(--surface);
     border:1px solid var(--line);border-radius:var(--r-md);transition:transform .3s var(--ease-out),box-shadow .3s ease}
   .story-step:hover{transform:translateY(-3px);box-shadow:var(--shadow-soft)}
@@ -480,7 +483,12 @@
 
   /* ============ seguridad ============ */
   .trust-sec{background:var(--bg2)}
-  .qa-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:44px;max-width:860px}
+  .trust-strip{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+  .trust-pill{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);
+    border-radius:999px;padding:10px 16px;font-size:12.5px;font-weight:700;color:var(--ink)}
+  .trust-pill svg{color:var(--teal);flex-shrink:0}
+  .qa-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:28px;max-width:860px}
+  @media(min-width:900px){.qa-grid{grid-template-columns:repeat(2,1fr);max-width:none;align-items:start}}
   .qa{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
   .qa summary{display:flex;align-items:center;gap:14px;padding:19px 22px;font-size:14px;font-weight:800;
     cursor:pointer;list-style:none;transition:background-color .2s}
@@ -601,9 +609,11 @@
       </div>
 
       <div class="hero-trust rv" style="transition-delay:.35s">
-        <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Precios publicados</span>
-        <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Sin formularios</span>
-        <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Póliza en el chat</span>
+        <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Precio visible</span>
+        <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Recomendación explicada</span>
+        <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Pago seguro</span>
+        <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Póliza en PDF</span>
+        <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Humano disponible</span>
       </div>
     </div>
 
@@ -968,6 +978,14 @@
       <h2 class="sec-title rv">Transparencia de póliza, no de folleto</h2>
       <p class="sec-sub rv">Asegura compara tu perfil con la oferta disponible y explica cada recomendación. Lo demás, sin rodeos.</p>
 
+      <div class="trust-strip rv" style="transition-delay:.08s">
+        <span class="trust-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Precio visible</span>
+        <span class="trust-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Recomendación explicada</span>
+        <span class="trust-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Pago seguro</span>
+        <span class="trust-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Póliza en PDF</span>
+        <span class="trust-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Humano disponible</span>
+      </div>
+
       <div class="qa-grid">
         <details class="qa rv">
           <summary><span class="q-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>¿Cómo se usa mi información?<svg class="q-arr" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></summary>
@@ -1158,10 +1176,15 @@
   function buildHero(){
     CATS.forEach(function(c, i){
       var d = document.createElement('div');
-      d.className = 'obj-svg' + (i === 0 ? '' : ' out');
-      d.style.color = CAT_COLORS[c.id].ink;
       d.setAttribute('data-cat', c.id);
-      d.innerHTML = CAT_ICONS[c.id];
+      if(c.id === 'mascotas'){
+        d.className = 'obj-svg obj-photo' + (i === 0 ? '' : ' out');
+        d.innerHTML = '<img src="/pet-luna.jpg" alt="Luna, la perra del ejemplo de mascotas" width="200" height="200" loading="lazy">';
+      } else {
+        d.className = 'obj-svg' + (i === 0 ? '' : ' out');
+        d.style.color = CAT_COLORS[c.id].ink;
+        d.innerHTML = CAT_ICONS[c.id];
+      }
       objSvgs.appendChild(d);
     });
     CATS.forEach(function(c, i){
@@ -1355,15 +1378,16 @@
   var jFill = document.getElementById('jFill');
   var jCols = Array.prototype.slice.call(journey.querySelectorAll('.j-col'));
   var jOn = false;
+  var journeyCard = journey.closest('.b-wide');
   var journeyIO = new IntersectionObserver(function(entries){
     entries.forEach(function(e){ if(e.isIntersecting) jOn = true; });
   }, {threshold:.25});
   journeyIO.observe(journey);
   var jTick = function(){
     if(!jOn) return;
-    var r = journey.getBoundingClientRect();
+    var r = journeyCard.getBoundingClientRect();
     var vh = window.innerHeight;
-    var p = Math.min(Math.max((vh - r.top) / (vh * 1.35), 0), 1);
+    var p = Math.min(Math.max((vh - r.top) / (r.height + vh * 0.15), 0), 1);
     jFill.style.width = (p * 100) + '%';
     var active = Math.min(Math.floor(p * 7), 6);
     jCols.forEach(function(c, j){ c.classList.toggle('on', j <= active); });
@@ -1385,7 +1409,8 @@
     if(!sOn) return;
     var r = story.getBoundingClientRect();
     var vh = window.innerHeight;
-    var p = Math.min(Math.max((vh - r.top) / (vh * 1.35), 0), 1);
+    var range = Math.max(r.height - vh, vh * 0.4);
+    var p = Math.min(Math.max(-r.top / range, 0), 1);
     var active = Math.min(Math.floor(p * 4), 3);
     svStates.forEach(function(s, j){ s.classList.toggle('on', j === active); });
     svDots.forEach(function(d, j){ d.classList.toggle('on', j === active); });
