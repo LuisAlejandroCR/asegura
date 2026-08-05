@@ -215,6 +215,21 @@
   .chip .c-dot{width:8px;height:8px;border-radius:50%;background:var(--cat-soft,var(--gold));transition:background-color .3s}
   .chip.on .c-dot{background:var(--gold)}
 
+  /* ============ marquee: ticker del catálogo real ============ */
+  .marquee-sec{position:relative;overflow:hidden;padding:22px 0}
+  .marquee-sec::before,.marquee-sec::after{content:'';position:absolute;top:0;bottom:0;width:90px;z-index:2;pointer-events:none}
+  .marquee-sec::before{left:0;background:linear-gradient(90deg,var(--bg),rgba(250,245,234,0))}
+  .marquee-sec::after{right:0;background:linear-gradient(270deg,var(--bg),rgba(250,245,234,0))}
+  .marquee-track{display:flex;gap:12px;width:max-content;animation:marqueeScroll 36s linear infinite}
+  .marquee-sec:hover .marquee-track{animation-play-state:paused}
+  @keyframes marqueeScroll{to{transform:translateX(-50%)}}
+  .m-pill{display:inline-flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);
+    border-radius:999px;padding:10px 18px 10px 14px;white-space:nowrap;box-shadow:var(--shadow-soft)}
+  .m-pill .m-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .m-pill b{font-size:12.5px;font-weight:800}
+  .m-pill span{font-size:11px;color:var(--ink3);font-weight:600}
+  .m-pill em{font-style:normal;font-weight:800;color:var(--navy);font-size:12px}
+
   /* ============ proof strip ============ */
   .trustband{background:var(--navy);color:#fff;padding:52px 0;position:relative;overflow:hidden}
   .trustband::before{content:'';position:absolute;width:420px;height:420px;border-radius:50%;
@@ -666,6 +681,11 @@
       <div class="cat-chips" id="catChips" role="tablist" aria-label="Categorías de seguro"></div>
     </div>
   </header>
+
+  <!-- ============ MARQUEE ============ -->
+  <div class="marquee-sec" aria-hidden="true">
+    <div class="marquee-track" id="marqueeTrack"></div>
+  </div>
 
   <!-- ============ PROOF ============ -->
   <section class="trustband" aria-label="Cifras de Asegura">
@@ -1123,6 +1143,29 @@
     salud:{soft:'#E5ECFA',ink:'#2C4A8C'},   vida:{soft:'#FBF0DC',ink:'#8A4D0B'},
     accidentes:{soft:'#F5E3E3',ink:'#8C2F2F'}, ahorro:{soft:'#EBE4F6',ink:'#5B3E8C'}
   };
+
+  /* ---------- marquee: ticker del catálogo real (11 productos) ---------- */
+  var CATALOG_STRIP = [
+    {n:'Accidentes personales', i:'MetLife', p:'$18.000', c:'#8C2F2F'},
+    {n:'Accidentes personales (premium)', i:'Chubb', p:'$28.100', c:'#8C2F2F'},
+    {n:'Seguro de vida', i:'Pan American Life', p:'$12.000', c:'#8A4D0B'},
+    {n:'Asistencias múltiples', i:'GEA', p:'$20.000', c:'#B45309'},
+    {n:'Exequial', i:'Grupo Recordar', p:'$26.000', c:'#5B3E8C'},
+    {n:'Accidentes + Exequial', i:'Pan American Life', p:'$14.000', c:'#8C2F2F'},
+    {n:'Vida + Ahorro', i:'BMI', p:'$20.000', c:'#5B3E8C'},
+    {n:'Asistencias médicas familiares', i:'GEA', p:'$16.800', c:'#2C4A8C'},
+    {n:'Asistencia veterinaria', i:'GEA', p:'$14.500', c:'#0F7B78'},
+    {n:'Medicina prepagada (gatos)', i:'VetPlus', p:'$81.800', c:'#0F7B78'},
+    {n:'Medicina prepagada (perros)', i:'VetPlus', p:'$96.600', c:'#0F7B78'}
+  ];
+  var marqueeTrack = document.getElementById('marqueeTrack');
+  if(marqueeTrack){
+    var pillsHtml = CATALOG_STRIP.map(function(p){
+      return '<span class="m-pill"><span class="m-dot" style="background:' + p.c + '"></span><b>' + p.n +
+        '</b><span>· ' + p.i + '</span><em>' + p.p + '</em></span>';
+    }).join('');
+    marqueeTrack.innerHTML = pillsHtml + pillsHtml;
+  }
 
   /* ---------- nav compacta + sticky mobile CTA ---------- */
   var nav = document.getElementById('nav');
