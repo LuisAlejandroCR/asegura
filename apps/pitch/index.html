@@ -288,18 +288,64 @@
   .ph-actions .btn{flex:1;padding:12px 14px;font-size:12.5px}
   .ph-actions .btn-out{flex-shrink:0;width:42px;height:42px;padding:0;border:1.5px solid var(--line2)}
 
-  /* ============ cómo funciona ============ */
-  .steps{display:grid;grid-template-columns:1fr;gap:0;margin-top:56px;position:relative}
-  @media(min-width:900px){.steps{grid-template-columns:repeat(4,1fr);gap:24px}}
-  .step{position:relative;padding:28px 24px;border-radius:var(--r-lg);background:var(--surface);
-    border:1px solid var(--line);transition:transform .35s var(--ease-out),box-shadow .35s ease}
-  .step:hover{transform:translateY(-6px);box-shadow:var(--shadow-soft)}
-  .step-num{font-family:'Playfair Display',Georgia,serif;font-style:italic;font-size:40px;font-weight:700;
-    color:var(--gold);line-height:1}
-  .step-ico{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;
-    background:var(--teal-soft);color:var(--teal);margin:16px 0 12px}
-  .step h3{font-size:16px;font-weight:800;letter-spacing:-.01em;margin-bottom:6px}
-  .step p{font-size:13px;line-height:1.6;color:var(--ink2)}
+  /* ============ cómo funciona: una sola secuencia ============ */
+  .story{display:grid;grid-template-columns:1fr;gap:36px;margin-top:56px;align-items:start}
+  @media(min-width:1000px){.story{grid-template-columns:460px 1fr;gap:72px}}
+  .story-visual{display:none}
+  @media(min-width:1000px){.story-visual{display:block;position:sticky;top:110px}}
+  .sv-card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+    box-shadow:var(--shadow-card);padding:34px 30px;min-height:520px;overflow:hidden}
+  .sv-state{position:absolute;inset:0;padding:34px 30px;opacity:0;transform:translateY(16px) scale(.98);
+    transition:opacity .55s var(--ease-out),transform .55s var(--ease-out);pointer-events:none}
+  .sv-state.on{opacity:1;transform:none}
+  .sv-label{font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);margin-bottom:18px}
+  .sv-bubble{max-width:88%;border-radius:16px;padding:12px 15px;font-size:13px;line-height:1.55;font-weight:600}
+  .sv-bubble.bot{background:var(--bg);border:1px solid var(--line);border-bottom-left-radius:5px}
+  .sv-bubble.user{background:var(--navy);color:#fff;margin-left:auto;border-bottom-right-radius:5px;margin-top:12px}
+  .sv-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+  .sv-chip{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:9px 15px;font-size:12.5px;font-weight:700}
+  .sv-chip.hl{background:var(--gold-soft);border-color:var(--gold);color:#8A4D0B}
+  .sv-profile{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  .sv-ava{width:44px;height:44px;border-radius:50%;background:linear-gradient(140deg,var(--navy),var(--navy2));
+    color:#fff;display:grid;place-items:center;font-weight:800}
+  .sv-profile b{font-size:14px}
+  .sv-profile span{font-size:11.5px;color:var(--ink3);font-weight:600}
+  .sv-analyze{display:flex;align-items:center;gap:12px;font-size:14px;font-weight:800;margin-bottom:20px}
+  .sv-analyze .dots{display:inline-flex;gap:5px}
+  .sv-analyze .dots i{width:7px;height:7px;border-radius:50%;background:var(--gold);animation:ty 1.2s ease-in-out infinite}
+  .sv-analyze .dots i:nth-child(2){animation-delay:.15s}.sv-analyze .dots i:nth-child(3){animation-delay:.3s}
+  .sv-analyze .dots i:nth-child(4){animation-delay:.45s}.sv-analyze .dots i:nth-child(5){animation-delay:.6s}
+  .sv-prog{height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin-bottom:20px}
+  .sv-prog i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),#D97706);
+    transform-origin:left;animation:progFill 1.4s var(--ease-out) both}
+  @keyframes progFill{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  .sv-match{display:flex;align-items:center;gap:18px;margin-top:8px}
+  .sv-match .ring{width:96px;height:96px}
+  .sv-match .ring .rfg{stroke:var(--gold)}
+  .sv-match .ring-num{font-size:22px}
+  .sv-match h4{font-family:'Playfair Display',Georgia,serif;font-weight:800;font-size:20px;line-height:1.2}
+  .sv-match p{font-size:12px;color:var(--ink3);font-weight:600;margin-top:4px}
+  .sv-match .sv-price{font-size:16px;font-weight:800;margin-top:8px}
+  .sv-ticks{display:grid;gap:10px;margin-top:6px}
+  .sv-tick{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:700;background:var(--bg);
+    border:1px solid var(--line);border-radius:13px;padding:12px 14px}
+  .sv-tick .wr-ico{flex-shrink:0;width:24px;height:24px;border-radius:50%;background:var(--teal);color:#fff;display:grid;place-items:center}
+  .sv-policy{background:var(--navy);color:#fff;border-radius:18px;padding:26px 22px;margin-top:10px}
+  .sv-policy b{font-family:'Playfair Display',Georgia,serif;font-size:24px;display:flex;align-items:center;gap:10px}
+  .sv-policy .tick-line{display:flex;align-items:center;gap:9px;font-size:12px;color:rgba(255,255,255,.75);font-weight:600;margin-top:12px}
+  .sv-policy .tick-line svg{color:var(--gold)}
+  .sv-dots{position:absolute;bottom:22px;left:0;right:0;display:flex;justify-content:center;gap:7px}
+  .sv-dot{width:8px;height:8px;border-radius:50%;background:var(--line2);transition:all .3s ease}
+  .sv-dot.on{background:var(--gold);width:22px;border-radius:99px}
+  .story-steps{display:grid;gap:14px}
+  .story-step{position:relative;display:flex;gap:18px;padding:22px;background:var(--surface);
+    border:1px solid var(--line);border-radius:var(--r-md);transition:transform .3s var(--ease-out),box-shadow .3s ease}
+  .story-step:hover{transform:translateY(-3px);box-shadow:var(--shadow-soft)}
+  .story-step.on{border-color:var(--gold)}
+  .ss-num{font-family:'Playfair Display',Georgia,serif;font-style:italic;font-size:34px;font-weight:700;
+    color:var(--gold);line-height:1;flex-shrink:0;min-width:44px}
+  .story-step h3{font-size:16px;font-weight:800;margin-bottom:5px}
+  .story-step p{font-size:13px;line-height:1.6;color:var(--ink2)}
 
   /* ============ coberturas (descubrimiento) ============ */
   .disc{display:grid;grid-template-columns:1fr;gap:24px;margin-top:52px;align-items:start}
@@ -328,7 +374,13 @@
   .dp-row:hover{transform:translateY(-3px);box-shadow:var(--shadow-soft)}
   .dp-row .dp-prod{font-weight:800;font-size:14px}
   .dp-row .dp-ins{font-size:11.5px;color:var(--ink3);font-weight:600;margin-top:2px}
-  .dp-row .dp-price{margin-left:auto;font-weight:800;font-size:14.5px;white-space:nowrap}
+  .dp-best-tag{display:inline-block;margin-top:5px;font-size:10px;font-weight:800;color:#8A4D0B;
+    background:var(--gold-soft);border-radius:999px;padding:3px 9px}
+  .dp-right{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+  .dp-price{font-weight:800;font-size:14.5px;white-space:nowrap}
+  .dp-score{width:96px;height:5px;border-radius:4px;background:var(--line);overflow:hidden}
+  .dp-score i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--teal),#14A39F)}
+  .dp-row.dp-best{border-color:var(--gold)}
   .dp-foot{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:24px;flex-wrap:wrap}
   .dp-from{font-size:12px;color:var(--ink3);font-weight:600}
   .dp-from b{color:var(--ink);font-size:14px}
@@ -355,6 +407,15 @@
     border-radius:999px;padding:9px 15px;font-size:12px;font-weight:700;color:var(--ink2)}
   .flow-step.on{background:var(--gold-soft);border-color:var(--gold);color:#8A4D0B}
   .flow-arr{color:var(--ink3);flex-shrink:0}
+  .p-morph{display:grid;gap:10px;margin-top:20px}
+  .pm-row{display:flex;align-items:center;gap:9px;background:var(--bg);border:1px solid var(--line);
+    border-radius:14px;padding:12px 14px;font-size:12px;font-weight:700;color:var(--ink2);
+    opacity:.4;transition:all .5s ease}
+  .pm-row.on{opacity:1;color:var(--ink);border-color:var(--gold);background:var(--gold-soft);transform:translateX(4px)}
+  .pm-arr{color:var(--ink3);flex-shrink:0}
+  .pm-r{font-weight:800;white-space:nowrap}
+  .pm-tag{margin-left:auto;font-size:10.5px;font-weight:800;color:#8A4D0B;background:#fff;
+    border:1px solid var(--gold);border-radius:999px;padding:4px 10px;white-space:nowrap}
   .bento-ring{position:absolute;top:28px;right:28px;width:112px;height:112px}
   @media(max-width:560px){.bento-ring{position:static;margin:4px 0 0 auto}}
   .bento-ring svg{transform:rotate(-90deg)}
@@ -667,39 +728,88 @@
       <span class="sec-eyebrow rv">Así funciona</span>
       <h2 class="sec-title rv">Hablas. Analizamos. Comparas. Te aseguramos.</h2>
 
-      <div class="steps">
-        <article class="step rv">
-          <span class="step-num">01</span>
-          <span class="step-ico">
-            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          </span>
-          <h3>Hablas</h3>
-          <p>Asegura entiende tu situación, por chat o por voz.</p>
-        </article>
-        <article class="step rv" style="transition-delay:.1s">
-          <span class="step-num">02</span>
-          <span class="step-ico">
-            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 6v6c0 5.25 3.75 9.75 9 11 5.25-1.25 9-5.75 9-11V6z"/></svg>
-          </span>
-          <h3>Analizamos</h3>
-          <p>Comparamos tu perfil con el catálogo real y elegimos la mejor opción.</p>
-        </article>
-        <article class="step rv" style="transition-delay:.2s">
-          <span class="step-num">03</span>
-          <span class="step-ico">
-            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
-          </span>
-          <h3>Comparas</h3>
-          <p>Coberturas, precios y razones lado a lado. Tú decides.</p>
-        </article>
-        <article class="step rv" style="transition-delay:.3s">
-          <span class="step-num">04</span>
-          <span class="step-ico">
-            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/><path d="m3 18 9 5 9-5"/></svg>
-          </span>
-          <h3>Te aseguramos</h3>
-          <p>Pagas en el chat y recibes tu póliza en PDF. Listo.</p>
-        </article>
+      <div class="story" id="story">
+        <div class="story-visual" aria-hidden="true">
+          <div class="sv-card">
+            <div class="sv-state on">
+              <div class="sv-label">Paso 01 · Hablas</div>
+              <div class="sv-bubble bot">Cuéntame: &iquest;para qui&eacute;n buscas protecci&oacute;n?</div>
+              <div class="sv-bubble user">Para m&iacute; y mi familia.</div>
+              <div class="sv-chips">
+                <span class="sv-chip">Para m&iacute;</span>
+                <span class="sv-chip hl">Mi familia</span>
+                <span class="sv-chip">Mi mascota</span>
+                <span class="sv-chip">Mi salud</span>
+              </div>
+            </div>
+            <div class="sv-state">
+              <div class="sv-label">Paso 02 · Analizamos</div>
+              <div class="sv-profile">
+                <span class="sv-ava">C</span>
+                <span><b>Camila, 34</b><br><span>Vive sola &middot; ingreso estable</span></span>
+              </div>
+              <div class="sv-analyze">Analizando tu perfil<span class="dots"><i></i><i></i><i></i><i></i><i></i></span></div>
+              <div class="sv-prog"><i></i></div>
+              <div class="sv-chips">
+                <span class="sv-chip">Sin hijos</span>
+                <span class="sv-chip">Dos personas</span>
+                <span class="sv-chip hl">Presupuesto flexible</span>
+              </div>
+            </div>
+            <div class="sv-state">
+              <div class="sv-label">Paso 03 · Comparas</div>
+              <div class="sv-match">
+                <div class="ring">
+                  <svg viewBox="0 0 100 100" width="96" height="96">
+                    <circle class="rbg" cx="50" cy="50" r="42"></circle>
+                    <circle class="rfg" cx="50" cy="50" r="42" style="stroke-dashoffset:243"></circle>
+                  </svg>
+                  <div class="ring-num"><b>92%</b></div>
+                </div>
+                <div>
+                  <h4>Asistencias m&uacute;ltiples</h4>
+                  <p>GEA &middot; Cat&aacute;logo Colsubsidio</p>
+                  <div class="sv-price">Desde $20.000/mes</div>
+                </div>
+              </div>
+              <div class="sv-ticks">
+                <div class="sv-tick"><span class="wr-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg></span>Asistencia en el hogar</div>
+                <div class="sv-tick"><span class="wr-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg></span>Orientaci&oacute;n familiar</div>
+                <div class="sv-tick"><span class="wr-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg></span>Asistencia jur&iacute;dica telef&oacute;nica</div>
+              </div>
+            </div>
+            <div class="sv-state">
+              <div class="sv-label">Paso 04 · Te aseguramos</div>
+              <div class="sv-policy">
+                <b><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--gold)"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>P&oacute;liza activa</b>
+                <div class="tick-line"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Pago confirmado &middot; Wompi</div>
+                <div class="tick-line"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>PDF con QR de verificaci&oacute;n</div>
+                <div class="tick-line"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>Vigente desde hoy</div>
+              </div>
+            </div>
+            <div class="sv-dots">
+              <span class="sv-dot on"></span><span class="sv-dot"></span><span class="sv-dot"></span><span class="sv-dot"></span>
+            </div>
+          </div>
+        </div>
+        <div class="story-steps">
+          <article class="story-step on rv">
+            <span class="ss-num">01</span>
+            <div><h3>Hablas</h3><p>Asegura entiende tu situaci&oacute;n, por chat o por voz.</p></div>
+          </article>
+          <article class="story-step rv">
+            <span class="ss-num">02</span>
+            <div><h3>Analizamos</h3><p>Comparamos tu perfil con el cat&aacute;logo real y elegimos la mejor opci&oacute;n.</p></div>
+          </article>
+          <article class="story-step rv">
+            <span class="ss-num">03</span>
+            <div><h3>Comparas</h3><p>Coberturas, precios y razones lado a lado. T&uacute; decides.</p></div>
+          </article>
+          <article class="story-step rv">
+            <span class="ss-num">04</span>
+            <div><h3>Te aseguramos</h3><p>Pagas en el chat y recibes tu p&oacute;liza en PDF. Listo.</p></div>
+          </article>
+        </div>
       </div>
     </div>
   </section>
@@ -751,6 +861,11 @@
             <span class="flow-step on" style="transition-delay:.3s">Análisis</span>
             <svg class="flow-arr" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
             <span class="flow-step on" style="transition-delay:.6s">Mejor opción</span>
+          </div>
+          <div class="p-morph" aria-hidden="true">
+            <div class="pm-row"><span class="pm-r">Soltero, sin hijos</span><svg class="pm-arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>Accidentes personales</span><span class="pm-tag">MetLife</span></div>
+            <div class="pm-row"><span class="pm-r">Pareja, 2 hijos</span><svg class="pm-arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>Asistencias m&uacute;ltiples</span><span class="pm-tag">GEA</span></div>
+            <div class="pm-row"><span class="pm-r">Con mascota</span><svg class="pm-arr" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>Asistencia veterinaria</span><span class="pm-tag">GEA</span></div>
           </div>
           <div class="bento-ring">
             <svg viewBox="0 0 100 100" width="112" height="112">
@@ -1111,31 +1226,31 @@
   var DISCOVER = [
     {id:'familia', label:'Familia', note:'Para parejas e hijos: hogar, salud y protección diaria.',
      items:[
-       {n:'Asistencias múltiples', i:'GEA', p:'$20.000'},
-       {n:'Asistencias médicas familiares', i:'GEA', p:'$16.800'},
-       {n:'Accidentes + Exequial', i:'Pan American Life', p:'$14.000'}]},
+       {n:'Asistencias múltiples', i:'GEA', p:'$20.000', s:92},
+       {n:'Asistencias médicas familiares', i:'GEA', p:'$16.800', s:88},
+       {n:'Accidentes + Exequial', i:'Pan American Life', p:'$14.000', s:84}]},
     {id:'mascotas', label:'Mascotas', note:'Consultas, vacunas, urgencias y medicina prepagada.',
      items:[
-       {n:'Asistencia veterinaria', i:'GEA', p:'$14.500'},
-       {n:'Medicina prepagada (gatos)', i:'VetPlus', p:'$81.800'},
-       {n:'Medicina prepagada (perros)', i:'VetPlus', p:'$96.600'}]},
+       {n:'Asistencia veterinaria', i:'GEA', p:'$14.500', s:95},
+       {n:'Medicina prepagada (gatos)', i:'VetPlus', p:'$81.800', s:81},
+       {n:'Medicina prepagada (perros)', i:'VetPlus', p:'$96.600', s:79}]},
     {id:'salud', label:'Salud', note:'Acompañamiento médico y cobertura ante accidentes.',
      items:[
-       {n:'Asistencias médicas familiares', i:'GEA', p:'$16.800'},
-       {n:'Accidentes personales', i:'MetLife', p:'$18.000'}]},
+       {n:'Asistencias médicas familiares', i:'GEA', p:'$16.800', s:88},
+       {n:'Accidentes personales', i:'MetLife', p:'$18.000', s:86}]},
     {id:'vida', label:'Vida', note:'Protección para los tuyos y para tu futuro.',
      items:[
-       {n:'Seguro de vida', i:'Pan American Life', p:'$12.000'},
-       {n:'Vida + Ahorro', i:'BMI', p:'$20.000'}]},
+       {n:'Seguro de vida', i:'Pan American Life', p:'$12.000', s:90},
+       {n:'Vida + Ahorro', i:'BMI', p:'$20.000', s:84}]},
     {id:'accidentes', label:'Accidentes', note:'Cobertura amplia ante imprevistos y gastos médicos.',
      items:[
-       {n:'Accidentes personales', i:'MetLife', p:'$18.000'},
-       {n:'Accidentes personales (premium)', i:'Chubb', p:'$28.100'},
-       {n:'Accidentes + Exequial', i:'Pan American Life', p:'$14.000'}]},
+       {n:'Accidentes personales', i:'MetLife', p:'$18.000', s:86},
+       {n:'Accidentes personales (premium)', i:'Chubb', p:'$28.100', s:84},
+       {n:'Accidentes + Exequial', i:'Pan American Life', p:'$14.000', s:78}]},
     {id:'ahorro', label:'Ahorro', note:'Protección que además construye tu futuro.',
      items:[
-       {n:'Vida + Ahorro', i:'BMI', p:'$20.000'},
-       {n:'Seguro de vida', i:'Pan American Life', p:'$12.000'}]}
+       {n:'Vida + Ahorro', i:'BMI', p:'$20.000', s:84},
+       {n:'Seguro de vida', i:'Pan American Life', p:'$12.000', s:80}]}
   ];
   var discChips = document.getElementById('discChips');
   var discPanel = document.getElementById('discPanel');
@@ -1155,11 +1270,15 @@
       dpTitle.textContent = cat.label;
       dpCount.textContent = cat.items.length + ' opciones';
       dpNote.textContent = cat.note;
+      var maxS = Math.max.apply(null, cat.items.map(function(it){ return it.s; }));
       dpRows.innerHTML = cat.items.map(function(it){
-        return '<div class="dp-row"><span class="d-ico" style="color:' + CAT_COLORS[cat.id].ink + ';background:' + CAT_COLORS[cat.id].soft + '">' +
+        var best = it.s === maxS;
+        return '<div class="dp-row' + (best ? ' dp-best' : '') + '"><span class="d-ico" style="color:' + CAT_COLORS[cat.id].ink + ';background:' + CAT_COLORS[cat.id].soft + '">' +
           '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/><path d="m3 18 9 5 9-5"/></svg></span>' +
-          '<span><span class="dp-prod">' + it.n + '</span><br><span class="dp-ins">' + it.i + '</span></span>' +
-          '<span class="dp-price">' + it.p + '</span></div>';
+          '<span><span class="dp-prod">' + it.n + '</span><br><span class="dp-ins">' + it.i + '</span>' +
+          (best ? '<br><span class="dp-best-tag">Mejor compatibilidad</span>' : '') + '</span>' +
+          '<span class="dp-right"><span class="dp-price">' + it.p + '</span>' +
+          '<span class="dp-score" title="' + it.s + '% de compatibilidad"><i style="width:' + it.s + '%"></i></span></span></div>';
       }).join('');
       var fromV = Math.min.apply(null, cat.items.map(function(it){
         return parseInt(it.p.replace(/[^0-9]/g, ''), 10);
@@ -1204,6 +1323,43 @@
   };
   window.addEventListener('scroll', jTick, {passive:true});
   jTick();
+
+  /* ---------- cómo funciona: secuencia al scroll (sticky visual + pasos) ---------- */
+  var story = document.getElementById('story');
+  var svStates = Array.prototype.slice.call(story.querySelectorAll('.sv-state'));
+  var svDots = Array.prototype.slice.call(story.querySelectorAll('.sv-dot'));
+  var sSteps = Array.prototype.slice.call(story.querySelectorAll('.story-step'));
+  var sOn = false;
+  var sIO = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){ if(e.isIntersecting) sOn = true; });
+  }, {threshold:.2});
+  sIO.observe(story);
+  var sTick = function(){
+    if(!sOn) return;
+    var r = story.getBoundingClientRect();
+    var vh = window.innerHeight;
+    var p = Math.min(Math.max((vh - r.top) / (vh * 1.35), 0), 1);
+    var active = Math.min(Math.floor(p * 4), 3);
+    svStates.forEach(function(s, j){ s.classList.toggle('on', j === active); });
+    svDots.forEach(function(d, j){ d.classList.toggle('on', j === active); });
+    sSteps.forEach(function(s, j){ s.classList.toggle('on', j === active); });
+  };
+  window.addEventListener('scroll', sTick, {passive:true});
+  sTick();
+
+  /* ---------- personalizado: morfos perfil → producto (secuencia al entrar) ---------- */
+  var pmRows = Array.prototype.slice.call(document.querySelectorAll('.pm-row'));
+  if(pmRows.length){
+    var pmIO = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(!e.isIntersecting) return;
+        pmIO.disconnect();
+        if(reduce){ pmRows.forEach(function(r){ r.classList.add('on'); }); return; }
+        pmRows.forEach(function(r, j){ setTimeout(function(){ r.classList.add('on'); }, 500 + j * 450); });
+      });
+    }, {threshold:.4});
+    pmIO.observe(pmRows[0].closest('.b-card'));
+  }
 
   /* ---------- tarjeta velocidad: cuenta regresiva (semántica, sin estados 0) ---------- */
   var timerRing = document.getElementById('timerRing');
