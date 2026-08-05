@@ -4,105 +4,117 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="Asegura — agente conversacional que identifica qué seguro necesitas y por qué, cotiza con razones explícitas y cierra la venta en menos de 3 minutos. Sin formularios, sin asesores.">
-<meta name="theme-color" content="#001A4D">
+<meta name="theme-color" content="#FDF8EE">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,600;0,800;1,600&display=swap" rel="stylesheet">
 <title>Asegura — Seguros automatizados</title>
 <style>
-  /* Two references merged: a fintech card-product hero clip ("Infinite" — not
-     our asset; translated to a floating "policy card", now a REAL Three.js/WebGL
-     render, not a CSS transform trick) and Dribbble's "Bubdle" insurance site
-     (Halo Lab) for the stat-card row pattern below the headline. Kept the
-     starlit-sky atmosphere from the prior round; navy/gold/white only. Card
-     stats (11 productos, 5 aseguradoras, 3 min) are real figures from the
-     product catalog — nothing fabricated. */
+  /* Pattern inspired by Dribbble's "Bubdle" (Halo Lab) — light/editorial
+     insurance site: white background, a pill eyebrow tag, a huge confident
+     headline with a small badge breaking the text (their version uses an
+     inline photo; we don't have one, so it's our shield icon instead), and
+     an asymmetric row of stat cards below. Built original: our own copy,
+     our own navy/gold/cream palette, our own honest figures — not a clone. */
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  html,body{width:100%;overflow-x:hidden;background:#001233;color:#fff;
+  html,body{width:100%;overflow-x:hidden;background:#FDF8EE;color:#0A1B3D;
     font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased}
   a{color:inherit;text-decoration:none}
-
-  /* ---- sky ---- */
-  .sky{position:fixed;inset:0;z-index:0;overflow:hidden;
-    background:radial-gradient(ellipse 1300px 900px at 50% -12%,#0c3576 0%,#041a44 42%,#00081f 100%)}
-  .stars{position:absolute;inset:0;width:100%;height:100%}
-  .stars circle:nth-child(4n){animation:twinkle 4s ease-in-out infinite}
-  .stars circle:nth-child(4n+1){animation:twinkle 5.5s ease-in-out .8s infinite}
-  @keyframes twinkle{0%,100%{opacity:1}50%{opacity:.25}}
-  .glow-warm{position:absolute;top:9%;right:13%;width:64px;height:64px;border-radius:50%;
-    background:radial-gradient(circle,#fff7d6 0%,rgba(255,215,0,.5) 55%,transparent 78%);
-    box-shadow:0 0 50px 14px rgba(255,215,0,.22)}
-  .cloud{position:absolute;border-radius:50%;filter:blur(55px);animation:drift ease-in-out infinite alternate}
-  .cloud-1{width:520px;height:220px;background:rgba(255,255,255,.05);top:18%;left:-8%;animation-duration:38s}
-  .cloud-2{width:420px;height:180px;background:rgba(255,255,255,.045);top:38%;right:-10%;animation-duration:46s}
-  .cloud-3{width:380px;height:150px;background:rgba(120,160,255,.06);bottom:14%;left:15%;animation-duration:52s}
-  @keyframes drift{from{transform:translateX(0)}to{transform:translateX(46px)}}
-  .horizon{position:absolute;left:0;right:0;bottom:0;height:38%;
-    background:linear-gradient(to top,rgba(255,190,70,.07),transparent)}
-
-  @media(prefers-reduced-motion:reduce){.stars circle,.cloud{animation:none!important}}
 
   /* ---- nav ---- */
   nav{position:relative;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:20px}
   @media(min-width:768px){nav{padding:26px 44px}}
   .brand{display:flex;align-items:center;gap:9px}
   .brand img{height:26px;width:auto}
-  .brand-txt{font-size:15px;font-weight:700;letter-spacing:-.2px}
+  .brand-txt{font-size:15px;font-weight:800;letter-spacing:-.2px;color:#0A1B3D}
   .nav-actions{display:flex;align-items:center;gap:10px}
 
-  .btn{border-radius:999px;padding:11px 22px;font-size:13px;font-weight:600;
+  .btn{border-radius:999px;padding:11px 22px;font-size:13px;font-weight:700;
     display:inline-flex;align-items:center;gap:8px;white-space:nowrap;transition:background-color .2s ease,border-color .2s ease}
-  .btn-solid{background:#fff;color:#00123a}
-  .btn-solid:hover{background:#e9e9e9}
-  .btn-gold{background:#FFD700;color:#001A4D}
+  .btn-ghost{color:#0A1B3D;border:1.5px solid rgba(10,27,61,.18)}
+  .btn-ghost:hover{border-color:rgba(10,27,61,.4);background:rgba(10,27,61,.04)}
+  .btn-dark{background:#0A1B3D;color:#fff}
+  .btn-dark:hover{background:#132a5c}
+  .btn-gold{background:#FFD700;color:#0A1B3D}
   .btn-gold:hover{background:#ffe14d}
-  .btn-glass{color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18)}
-  .btn-glass:hover{background:rgba(255,255,255,.15)}
 
-  /* ---- stage: real WebGL policy card ---- */
-  main{position:relative;z-index:10;min-height:100svh;display:flex;flex-direction:column}
-  .stage{flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:24px 20px;min-height:260px}
-  .card-glow{position:absolute;width:340px;height:340px;border-radius:50%;
-    background:radial-gradient(circle,rgba(255,215,0,.22),transparent 70%);filter:blur(30px)}
-  .stage-3d{position:relative;width:min(84vw,420px);height:min(60vw,300px)}
-  .stage-3d canvas{display:block;width:100%!important;height:100%!important}
+  /* ---- hero ---- */
+  .hero{position:relative;padding:52px 20px 60px;text-align:center;overflow:hidden}
+  @media(min-width:768px){.hero{padding:64px 44px 80px}}
 
-  /* ---- copy ---- */
-  .copy{position:relative;z-index:10;padding:0 20px 32px}
-  @media(min-width:768px){.copy{padding:0 44px 52px}}
-  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,.78);margin-bottom:16px}
-  .eyebrow::before{content:'';width:6px;height:6px;border-radius:50%;background:#FFD700}
-  h1{font-weight:400;letter-spacing:-.03em;line-height:1.05;max-width:640px;
-    font-size:clamp(1.9rem,5.4vw,3.4rem);margin-bottom:16px;text-shadow:0 3px 20px rgba(0,0,0,.35)}
-  h1 .accent{color:#FFD700}
-  .how{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:rgba(255,255,255,.85);
-    margin-bottom:30px;padding-bottom:2px;border-bottom:1px solid rgba(255,255,255,.3)}
-  .how svg{background:#FFD700;color:#001A4D;border-radius:50%;padding:5px;flex-shrink:0}
+  .ripples{position:absolute;top:8%;left:50%;transform:translateX(-50%);
+    width:900px;height:900px;pointer-events:none;z-index:0}
+  .ripple{position:absolute;top:50%;left:50%;border-radius:50%;border:1.5px solid rgba(10,27,61,.09);
+    transform:translate(-50%,-50%);animation:pulse 6s ease-in-out infinite}
+  .r1{width:220px;height:220px;animation-delay:0s}
+  .r2{width:380px;height:380px;animation-delay:.5s}
+  .r3{width:540px;height:540px;animation-delay:1s}
+  .r4{width:700px;height:700px;animation-delay:1.5s}
+  .r5{width:860px;height:860px;animation-delay:2s}
+  @keyframes pulse{0%,100%{opacity:.55;transform:translate(-50%,-50%) scale(1)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.025)}}
+  @media(prefers-reduced-motion:reduce){.ripple{animation:none}}
 
-  /* ---- Bubdle-style stat row ---- */
-  .stats{display:grid;grid-template-columns:1fr;gap:14px}
-  @media(min-width:700px){.stats{grid-template-columns:1.3fr 1fr 1fr}}
-  .stat{border-radius:18px;padding:20px 22px;display:flex;flex-direction:column;justify-content:center;min-height:104px}
-  .stat-gold{background:#FFD700;color:#001A4D}
-  .stat-glass{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
-  .stat-num{font-size:clamp(24px,3.2vw,32px);font-weight:800;letter-spacing:-.02em;line-height:1}
-  .stat-glass .stat-num{color:#FFD700}
-  .stat-label{font-size:12.5px;margin-top:6px;line-height:1.4}
-  .stat-gold .stat-label{color:rgba(0,18,58,.75)}
-  .stat-glass .stat-label{color:rgba(255,255,255,.68)}
+  .eyebrow{position:relative;z-index:1;display:inline-flex;align-items:center;gap:8px;
+    background:#fff;border:1px solid rgba(10,27,61,.12);border-radius:999px;padding:7px 16px;
+    font-size:12px;font-weight:700;letter-spacing:.02em;color:#0A1B3D;margin-bottom:26px;
+    box-shadow:0 1px 0 rgba(10,27,61,.03)}
+  .eyebrow::before{content:'';width:7px;height:7px;border-radius:50%;background:#FFD700}
+
+  h1{position:relative;z-index:1;font-family:'Playfair Display',Georgia,serif;font-weight:800;
+    letter-spacing:-.015em;line-height:1.08;font-size:clamp(2.2rem,6.6vw,5rem);max-width:920px;margin:0 auto}
+  .badge{display:inline-flex;align-items:center;justify-content:center;vertical-align:-12%;
+    width:.9em;height:.9em;border-radius:50%;background:#FFD700;margin:0 .08em;
+    box-shadow:0 0 0 6px #FDF8EE}
+  .badge svg{width:52%;height:52%;color:#0A1B3D}
+
+  .lede{position:relative;z-index:1;max-width:520px;margin:22px auto 28px;
+    font-size:clamp(15px,1.6vw,17.5px);line-height:1.65;color:rgba(10,27,61,.65)}
+
+  .how{position:relative;z-index:1;display:inline-flex;align-items:center;gap:8px;
+    font-size:13.5px;font-weight:700;color:#0A1B3D}
+  .how span{width:26px;height:26px;border-radius:50%;background:#0A1B3D;color:#fff;
+    display:inline-flex;align-items:center;justify-content:center}
+
+  /* ---- who we cover — real photos, no fabricated stats ---- */
+  .covers{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;
+    gap:14px;margin-top:38px}
+  .covers-photos{display:flex;align-items:center}
+  .covers-photos img{width:56px;height:56px;border-radius:50%;object-fit:cover;
+    border:3px solid #FDF8EE;box-shadow:0 2px 10px rgba(10,27,61,.15);margin-left:-14px}
+  .covers-photos img:first-child{margin-left:0}
+  .covers-label{font-size:12.5px;color:rgba(10,27,61,.55);font-weight:600}
+
+  /* ---- stat cards (Bubdle-style asymmetric row) ---- */
+  .cards{position:relative;z-index:1;max-width:1120px;margin:56px auto 0;padding:0 20px;
+    display:grid;grid-template-columns:1fr;gap:16px}
+  @media(min-width:768px){.cards{grid-template-columns:1.3fr 1fr 1fr;padding:0 44px}}
+
+  .card{border-radius:24px;padding:28px 26px;position:relative;overflow:hidden;min-height:168px;
+    display:flex;flex-direction:column;justify-content:space-between}
+  .card-gold{background:#FFD700;color:#0A1B3D}
+  .card-dark{background:#0A1B3D;color:#fff}
+  .card-outline{background:#fff;color:#0A1B3D;border:1.5px solid rgba(10,27,61,.12)}
+
+  .card-icon{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center}
+  .card-gold .card-icon{background:rgba(10,27,61,.1)}
+  .card-dark .card-icon{background:rgba(255,255,255,.12)}
+  .card-outline .card-icon{background:#FDF8EE}
+
+  .card-num{font-size:clamp(26px,3vw,34px);font-weight:800;letter-spacing:-.02em;margin-top:18px}
+  .card-label{font-size:13px;line-height:1.5;margin-top:6px}
+  .card-gold .card-label{color:rgba(10,27,61,.72)}
+  .card-dark .card-label{color:rgba(255,255,255,.7)}
+  .card-outline .card-label{color:rgba(10,27,61,.6)}
+
+  .card-link{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;margin-top:14px}
+  .card-link svg{transition:transform .2s ease}
+  .card-outline:hover .card-link svg{transform:translateX(3px)}
+
+  .credit{position:relative;z-index:1;text-align:center;font-size:11.5px;color:rgba(10,27,61,.4);padding:44px 20px 30px}
 </style>
 </head>
 <body>
-
-  <div class="sky" aria-hidden="true">
-    <svg class="stars" aria-hidden="true"><circle cx="88.59%" cy="81.76%" r="1.16" fill="#fff" opacity="0.75"/><circle cx="56.19%" cy="72.10%" r="0.84" fill="#fff" opacity="0.29"/><circle cx="70.30%" cy="78.08%" r="0.94" fill="#fff" opacity="0.46"/><circle cx="74.12%" cy="94.76%" r="1.19" fill="#fff" opacity="0.83"/><circle cx="18.27%" cy="13.50%" r="0.89" fill="#fff" opacity="0.79"/><circle cx="16.32%" cy="44.17%" r="0.58" fill="#fff" opacity="0.57"/><circle cx="67.06%" cy="4.06%" r="0.79" fill="#fff" opacity="0.74"/><circle cx="43.30%" cy="73.41%" r="0.41" fill="#fff" opacity="0.84"/><circle cx="47.53%" cy="17.66%" r="1.09" fill="#fff" opacity="0.37"/><circle cx="34.07%" cy="76.32%" r="0.56" fill="#fff" opacity="0.27"/><circle cx="97.97%" cy="18.51%" r="0.90" fill="#fff" opacity="0.86"/><circle cx="30.59%" cy="65.23%" r="0.37" fill="#fff" opacity="0.29"/><circle cx="41.82%" cy="78.20%" r="1.09" fill="#fff" opacity="0.49"/><circle cx="48.93%" cy="15.46%" r="1.15" fill="#fff" opacity="0.65"/><circle cx="32.17%" cy="53.54%" r="0.81" fill="#fff" opacity="0.76"/><circle cx="56.98%" cy="76.39%" r="1.18" fill="#fff" opacity="0.55"/><circle cx="62.85%" cy="30.93%" r="0.87" fill="#fff" opacity="0.62"/><circle cx="18.94%" cy="49.25%" r="0.32" fill="#fff" opacity="0.28"/><circle cx="46.21%" cy="37.53%" r="0.55" fill="#fff" opacity="0.87"/><circle cx="6.41%" cy="31.58%" r="0.65" fill="#fff" opacity="0.58"/><circle cx="57.55%" cy="19.04%" r="0.39" fill="#fff" opacity="0.56"/><circle cx="76.19%" cy="28.31%" r="0.68" fill="#fff" opacity="0.59"/><circle cx="46.26%" cy="84.08%" r="1.11" fill="#fff" opacity="0.29"/><circle cx="14.69%" cy="29.57%" r="0.73" fill="#fff" opacity="0.74"/><circle cx="13.57%" cy="15.38%" r="0.38" fill="#fff" opacity="0.79"/><circle cx="49.07%" cy="55.11%" r="1.03" fill="#fff" opacity="0.84"/><circle cx="57.01%" cy="47.51%" r="1.04" fill="#fff" opacity="0.61"/><circle cx="25.02%" cy="65.42%" r="1.14" fill="#fff" opacity="0.61"/><circle cx="81.52%" cy="11.32%" r="1.01" fill="#fff" opacity="0.72"/><circle cx="51.18%" cy="39.52%" r="1.02" fill="#fff" opacity="0.61"/><circle cx="77.22%" cy="45.09%" r="0.87" fill="#fff" opacity="0.47"/><circle cx="10.26%" cy="19.38%" r="0.77" fill="#fff" opacity="0.36"/><circle cx="63.87%" cy="72.27%" r="0.36" fill="#fff" opacity="0.50"/><circle cx="36.82%" cy="21.05%" r="1.07" fill="#fff" opacity="0.82"/><circle cx="1.96%" cy="45.96%" r="0.89" fill="#fff" opacity="0.84"/><circle cx="61.75%" cy="12.43%" r="0.57" fill="#fff" opacity="0.73"/><circle cx="70.50%" cy="59.97%" r="0.53" fill="#fff" opacity="0.78"/><circle cx="23.29%" cy="57.72%" r="1.07" fill="#fff" opacity="0.65"/><circle cx="11.47%" cy="26.66%" r="0.44" fill="#fff" opacity="0.44"/><circle cx="44.92%" cy="28.53%" r="0.76" fill="#fff" opacity="0.79"/><circle cx="40.92%" cy="21.34%" r="1.03" fill="#fff" opacity="0.87"/><circle cx="79.72%" cy="81.64%" r="0.59" fill="#fff" opacity="0.69"/><circle cx="26.75%" cy="93.38%" r="0.56" fill="#fff" opacity="0.63"/><circle cx="21.51%" cy="3.47%" r="0.45" fill="#fff" opacity="0.63"/><circle cx="33.15%" cy="44.02%" r="0.69" fill="#fff" opacity="0.64"/><circle cx="82.65%" cy="21.19%" r="0.53" fill="#fff" opacity="0.73"/><circle cx="31.73%" cy="70.79%" r="0.83" fill="#fff" opacity="0.36"/><circle cx="38.43%" cy="80.47%" r="0.47" fill="#fff" opacity="0.70"/><circle cx="79.29%" cy="78.64%" r="0.36" fill="#fff" opacity="0.88"/><circle cx="38.25%" cy="89.96%" r="0.99" fill="#fff" opacity="0.51"/><circle cx="62.23%" cy="57.67%" r="0.51" fill="#fff" opacity="0.67"/><circle cx="83.34%" cy="32.37%" r="0.65" fill="#fff" opacity="0.87"/><circle cx="7.73%" cy="27.65%" r="0.61" fill="#fff" opacity="0.84"/><circle cx="71.22%" cy="42.28%" r="0.52" fill="#fff" opacity="0.33"/><circle cx="61.46%" cy="49.08%" r="1.12" fill="#fff" opacity="0.47"/><circle cx="6.84%" cy="50.53%" r="1.19" fill="#fff" opacity="0.51"/><circle cx="32.06%" cy="0.95%" r="1.10" fill="#fff" opacity="0.75"/><circle cx="80.32%" cy="95.41%" r="0.55" fill="#fff" opacity="0.76"/><circle cx="2.25%" cy="25.26%" r="0.65" fill="#fff" opacity="0.58"/><circle cx="11.42%" cy="0.37%" r="1.04" fill="#fff" opacity="0.43"/><circle cx="6.59%" cy="38.04%" r="0.45" fill="#fff" opacity="0.89"/><circle cx="60.62%" cy="18.50%" r="0.47" fill="#fff" opacity="0.84"/><circle cx="75.96%" cy="7.20%" r="0.95" fill="#fff" opacity="0.45"/><circle cx="6.94%" cy="43.63%" r="0.51" fill="#fff" opacity="0.63"/><circle cx="48.62%" cy="96.93%" r="0.35" fill="#fff" opacity="0.43"/><circle cx="92.35%" cy="88.10%" r="0.52" fill="#fff" opacity="0.58"/><circle cx="48.02%" cy="78.85%" r="0.44" fill="#fff" opacity="0.43"/><circle cx="32.91%" cy="27.22%" r="0.90" fill="#fff" opacity="0.43"/><circle cx="27.26%" cy="9.74%" r="0.36" fill="#fff" opacity="0.62"/><circle cx="96.52%" cy="10.37%" r="0.84" fill="#fff" opacity="0.70"/><circle cx="80.17%" cy="76.02%" r="0.92" fill="#fff" opacity="0.63"/><circle cx="47.36%" cy="38.79%" r="1.07" fill="#fff" opacity="0.35"/><circle cx="19.08%" cy="4.85%" r="0.50" fill="#fff" opacity="0.59"/><circle cx="57.06%" cy="10.01%" r="1.01" fill="#fff" opacity="0.80"/><circle cx="19.31%" cy="41.91%" r="0.55" fill="#fff" opacity="0.85"/><circle cx="82.39%" cy="28.96%" r="0.94" fill="#fff" opacity="0.52"/><circle cx="30.24%" cy="95.84%" r="0.86" fill="#fff" opacity="0.72"/><circle cx="9.78%" cy="85.77%" r="1.19" fill="#fff" opacity="0.60"/><circle cx="53.10%" cy="49.37%" r="0.93" fill="#fff" opacity="0.29"/><circle cx="66.39%" cy="0.20%" r="1.08" fill="#fff" opacity="0.84"/><circle cx="85.43%" cy="37.04%" r="0.90" fill="#fff" opacity="0.69"/><circle cx="97.89%" cy="32.73%" r="1.10" fill="#fff" opacity="0.32"/><circle cx="32.17%" cy="89.74%" r="0.47" fill="#fff" opacity="0.29"/><circle cx="12.94%" cy="62.39%" r="1.17" fill="#fff" opacity="0.90"/><circle cx="83.42%" cy="45.73%" r="1.13" fill="#fff" opacity="0.40"/><circle cx="94.24%" cy="31.14%" r="0.52" fill="#fff" opacity="0.80"/><circle cx="58.96%" cy="28.47%" r="0.81" fill="#fff" opacity="0.36"/><circle cx="76.36%" cy="55.03%" r="0.73" fill="#fff" opacity="0.32"/><circle cx="19.27%" cy="91.05%" r="0.94" fill="#fff" opacity="0.85"/><circle cx="90.17%" cy="1.97%" r="0.42" fill="#fff" opacity="0.81"/></svg>
-    <div class="glow-warm"></div>
-    <div class="cloud cloud-1"></div>
-    <div class="cloud cloud-2"></div>
-    <div class="cloud cloud-3"></div>
-    <div class="horizon"></div>
-  </div>
 
   <nav>
     <a class="brand" href="/">
@@ -110,183 +122,82 @@
       <span class="brand-txt">segura</span>
     </a>
     <div class="nav-actions">
-      <a class="btn btn-glass" href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer">Probar</a>
-      <a class="btn btn-solid" href="pitch.html">Ver la presentación</a>
+      <a class="btn btn-ghost" href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer">Probar</a>
+      <a class="btn btn-dark" href="pitch.html">Ver la presentación</a>
     </div>
   </nav>
 
-  <main>
-    <div class="stage">
-      <div class="card-glow" aria-hidden="true"></div>
-      <div id="card3d" class="stage-3d" role="img" aria-label="Tarjeta de póliza digital de Asegura, en 3D"></div>
+  <header class="hero">
+    <div class="ripples" aria-hidden="true">
+      <div class="ripple r1"></div>
+      <div class="ripple r2"></div>
+      <div class="ripple r3"></div>
+      <div class="ripple r4"></div>
+      <div class="ripple r5"></div>
     </div>
 
-    <div class="copy">
-      <span class="eyebrow">Seguros sin papeleo, 2026</span>
-      <h1>Un chat, cero<br>formularios. <span class="accent">Asegurado.</span></h1>
-      <a class="how" href="pitch.html">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
-        Ver cómo funciona
-      </a>
+    <span class="eyebrow">Seguros sin papeleo, 2026</span>
 
-      <div class="stats">
-        <div class="stat stat-gold">
-          <div class="stat-num">11 productos</div>
-          <div class="stat-label">De 5 aseguradoras reales —MetLife, Chubb, GEA y más</div>
+    <h1>De &ldquo;no sé qué seguro&rdquo; a
+      <span class="badge" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 6v6c0 5.25 3.75 9.75 9 11 5.25-1.25 9-5.75 9-11V6z"/><path d="m9 12 2 2 4-4"/></svg>
+      </span>
+      asegurado.</h1>
+
+    <p class="lede">Asegura entiende tu perfil real —edad, familia, ingresos, hábitos— y te recomienda el seguro correcto, con razones específicas. Sin formularios, sin asesores, sin letra pequeña.</p>
+
+    <a class="how" href="pitch.html">
+      <span><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg></span>
+      Ver cómo funciona
+    </a>
+
+    <div class="covers">
+      <div class="covers-photos">
+        <img src="https://images.unsplash.com/photo-1598887048474-3e0be05bd11f?w=112&h=112&fit=crop&auto=format&q=80" alt="" width="56" height="56" loading="lazy">
+        <img src="https://images.unsplash.com/photo-1598875706250-21faaf804361?w=112&h=112&fit=crop&auto=format&q=80" alt="" width="56" height="56" loading="lazy">
+        <img src="https://images.unsplash.com/photo-1566616213894-2d4e1baee5d8?w=112&h=112&fit=crop&auto=format&q=80" alt="" width="56" height="56" loading="lazy">
+      </div>
+      <span class="covers-label">Para tu familia, tu mascota, tu salud.</span>
+    </div>
+
+    <div class="cards">
+      <div class="card card-gold">
+        <div class="card-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0A1B3D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 6v6c0 5.25 3.75 9.75 9 11 5.25-1.25 9-5.75 9-11V6z"/><path d="m9 12 2 2 4-4"/></svg>
         </div>
-        <div class="stat stat-glass">
-          <div class="stat-num">3 min</div>
-          <div class="stat-label">De cotización a póliza emitida</div>
+        <div>
+          <div class="card-num">11 productos</div>
+          <div class="card-label">De 5 aseguradoras reales —MetLife, Chubb, GEA y más—, para tu familia, tu salud o tu mascota.</div>
         </div>
-        <div class="stat stat-glass">
-          <div class="stat-num">24/7</div>
-          <div class="stat-label">Sin horarios, sin filas, sin asesores</div>
+      </div>
+
+      <div class="card card-dark">
+        <div class="card-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
+        </div>
+        <div>
+          <div class="card-num">3 min</div>
+          <div class="card-label">De cotización a póliza emitida.</div>
+        </div>
+      </div>
+
+      <div class="card card-outline">
+        <div class="card-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0A1B3D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </div>
+        <div>
+          <div class="card-num">24/7</div>
+          <div class="card-label">Sin horarios, sin filas, sin asesores.</div>
+          <a class="card-link" href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer">
+            Probar ahora
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
         </div>
       </div>
     </div>
-  </main>
+  </header>
 
-  <script type="module">
-    import * as THREE from 'three';
-
-    const container = document.getElementById('card3d');
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(32, container.clientWidth / container.clientHeight, 0.1, 100);
-    camera.position.set(0, 0.25, 4.4);
-    camera.lookAt(0, 0, 0);
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    container.appendChild(renderer.domElement);
-
-    scene.add(new THREE.AmbientLight(0x9db6ff, 0.85));
-    const fill = new THREE.DirectionalLight(0xffffff, 0.9);
-    fill.position.set(0, 0.5, 6);
-    scene.add(fill);
-    const key = new THREE.DirectionalLight(0xfff2cc, 1.1);
-    key.position.set(3, 4, 5);
-    scene.add(key);
-    const rim = new THREE.DirectionalLight(0x6fa8ff, 0.7);
-    rim.position.set(-4, 1.5, -3);
-    scene.add(rim);
-    const goldLight = new THREE.PointLight(0xffd700, 2.4, 12, 2);
-    goldLight.position.set(-1.6, 1.4, 2.4);
-    scene.add(goldLight);
-
-    // rounded-rect extrusion for the card body
-    function roundedRectShape(w, h, r) {
-      const s = new THREE.Shape();
-      s.moveTo(-w / 2 + r, -h / 2);
-      s.lineTo(w / 2 - r, -h / 2);
-      s.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
-      s.lineTo(w / 2, h / 2 - r);
-      s.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
-      s.lineTo(-w / 2 + r, h / 2);
-      s.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
-      s.lineTo(-w / 2, -h / 2 + r);
-      s.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
-      return s;
-    }
-    const geo = new THREE.ExtrudeGeometry(roundedRectShape(2.7, 1.7, 0.16), {
-      depth: 0.1, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 4, curveSegments: 16,
-    });
-    geo.center();
-
-    // canvas texture drawn for the card face — real product copy, no external asset
-    function makeFaceTexture() {
-      const c = document.createElement('canvas');
-      c.width = 1024; c.height = 645;
-      const ctx = c.getContext('2d');
-      const g = ctx.createLinearGradient(0, 0, 1024, 645);
-      g.addColorStop(0, '#1c3f82'); g.addColorStop(1, '#050f2e');
-      ctx.fillStyle = g; ctx.fillRect(0, 0, 1024, 645);
-
-      const sheen = ctx.createLinearGradient(0, 0, 1024, 645);
-      sheen.addColorStop(0.28, 'rgba(255,255,255,0)');
-      sheen.addColorStop(0.42, 'rgba(255,255,255,.14)');
-      sheen.addColorStop(0.56, 'rgba(255,255,255,0)');
-      ctx.fillStyle = sheen; ctx.fillRect(0, 0, 1024, 645);
-
-      ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 7; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(88, 70); ctx.lineTo(48, 88); ctx.lineTo(48, 128);
-      ctx.bezierCurveTo(48, 168, 66, 198, 88, 208);
-      ctx.bezierCurveTo(110, 198, 128, 168, 128, 128);
-      ctx.lineTo(128, 88); ctx.closePath(); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(70, 138); ctx.lineTo(83, 152); ctx.lineTo(108, 118); ctx.stroke();
-
-      ctx.textAlign = 'right';
-      ctx.fillStyle = 'rgba(255,255,255,.65)';
-      ctx.font = '600 24px Inter, sans-serif';
-      ctx.fillText('PÓLIZA DIGITAL', 968, 78);
-
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#fff';
-      ctx.font = '800 84px Inter, sans-serif';
-      ctx.fillText('ASEGURA', 56, 540);
-      ctx.fillStyle = 'rgba(255,215,0,.85)';
-      ctx.font = '600 26px Inter, sans-serif';
-      ctx.fillText('COBERTURA ACTIVA', 58, 580);
-
-      const tex = new THREE.CanvasTexture(c);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.needsUpdate = true;
-      return tex;
-    }
-
-    const sideMat = new THREE.MeshStandardMaterial({ color: 0x0a1f4d, metalness: 0.35, roughness: 0.45 });
-    const capMat = new THREE.MeshStandardMaterial({ color: 0x0c2050, metalness: 0.35, roughness: 0.45 });
-    const body = new THREE.Mesh(geo, [sideMat, capMat]);
-
-    // ExtrudeGeometry's auto-UVs on the cap face are unreliable for texture
-    // placement, so the branded face is a separate flat ShapeGeometry
-    // (correct, predictable 0-1 UVs) overlaid just in front of the cap.
-    const faceW = 2.68, faceH = 1.68;
-    const faceGeo = new THREE.ShapeGeometry(roundedRectShape(faceW, faceH, 0.155), 24);
-    // ShapeGeometry's default UV generator uses raw shape-space vertex
-    // coordinates (here roughly -1.34..1.34 / -0.84..0.84) directly as UVs,
-    // not normalized 0-1 — almost the whole texture was clamping to one edge
-    // pixel. Recompute UVs from actual vertex position instead.
-    {
-      const posAttr = faceGeo.attributes.position;
-      const uv = faceGeo.attributes.uv;
-      for (let i = 0; i < uv.count; i++) {
-        uv.setXY(i, posAttr.getX(i) / faceW + 0.5, posAttr.getY(i) / faceH + 0.5);
-      }
-      uv.needsUpdate = true;
-    }
-    const faceMat = new THREE.MeshStandardMaterial({ map: makeFaceTexture(), metalness: 0.08, roughness: 0.55, side: THREE.DoubleSide });
-    const face = new THREE.Mesh(faceGeo, faceMat);
-    face.position.z = 0.095;
-
-    const card = new THREE.Group();
-    card.add(body, face);
-    card.rotation.set(0.1, -0.35, 0);
-    scene.add(card);
-
-    function resize() {
-      const w = container.clientWidth, h = container.clientHeight;
-      camera.aspect = w / h; camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
-    }
-    new ResizeObserver(resize).observe(container);
-
-    const t0 = performance.now();
-    function frame(now) {
-      const t = (now - t0) / 1000;
-      card.rotation.y = -0.35 + Math.sin(t * 0.5) * 0.12;
-      card.rotation.x = 0.1 + Math.sin(t * 0.35) * 0.03;
-      card.position.y = Math.sin(t * 0.7) * 0.12;
-      renderer.render(scene, camera);
-      if (!reduceMotion) requestAnimationFrame(frame);
-    }
-    if (!reduceMotion) requestAnimationFrame(frame);
-    else { renderer.render(scene, camera); }
-  </script>
+  <div class="credit">Hackathon Colsubsidio × 30X — Julio 2026</div>
 
 </body>
 </html>
