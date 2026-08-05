@@ -472,6 +472,7 @@ canvas{display:block}
 
 <div id="prog"></div>
 <div id="timer">0:00</div>
+<audio id="pitch-audio" src="/asegura_audio.mp3" preload="auto"></audio>
 
 <script>
 // ══════════════════════════════════════════════════════════
@@ -1085,6 +1086,7 @@ function startFlowAnim(){
 // ══════════════════════════════════════════════════════════
 const TG1=1630000,TG2=41421973;
 let t0=null;
+let loopRunning=true;
 
 function frame(ts){
   if(!t0) t0=ts;
@@ -1153,8 +1155,11 @@ function frame(ts){
     tcards.forEach((c,i)=>setTimeout(()=>c.classList.add('in'),i*140+80));
   }
 
-  if(ms<TOTAL && !paused) requestAnimationFrame(frame);
-  else if(ms>=TOTAL) progEl.style.width='100%';
+  if(ms<TOTAL && !paused){ requestAnimationFrame(frame); }
+  else{
+    loopRunning=false;
+    if(ms>=TOTAL) progEl.style.width='100%';
+  }
 }
 
 requestAnimationFrame(frame);
@@ -1165,15 +1170,22 @@ const JUMP_POINTS = [0, 13000, 26000, 40000, 52000, 60000, 73000, 86000, 110000,
 let jumpIdx = 0;
 
 document.addEventListener('keydown', e => {
-  if(e.key === 'ArrowRight' || e.key === ' ') {
+  if(e.key === ' ') {
+    e.preventDefault();
+    audioPlaying ? stopAutoplay() : startAutoplay();
+  }
+  if(e.key === 'ArrowRight') {
+    stopAutoplay();
     jumpIdx = Math.min(jumpIdx+1, JUMP_POINTS.length-1);
     t0 = performance.now() - JUMP_POINTS[jumpIdx];
   }
   if(e.key === 'ArrowLeft') {
+    stopAutoplay();
     jumpIdx = Math.max(jumpIdx-1, 0);
     t0 = performance.now() - JUMP_POINTS[jumpIdx];
   }
   if(e.key === 'r' || e.key === 'R') {
+    stopAutoplay();
     jumpIdx = 0; t0 = performance.now();
   }
   if(e.key === 'p' || e.key === 'P') togglePause();
@@ -1184,6 +1196,7 @@ const nav = document.createElement('div');
 nav.style.cssText = `position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
   display:flex;gap:8px;z-index:999;align-items:center`;
 nav.innerHTML = `
+  <button id="btn-play" title="Reproducir con el audio sincronizado" style="${btnStyle()}">▶</button>
   <button onclick="jump(-1)" title="Anterior (←)" style="${btnStyle()}">‹</button>
   <button onclick="restart()" title="Reiniciar (R)" style="${btnStyle()}">↺</button>
   <button id="btn-pause" onclick="togglePause()" title="Pausar (P)" style="${btnStyle()}">⏸</button>
@@ -1197,6 +1210,7 @@ let paused = false;
 let pausedAt = 0;
 
 function togglePause(){
+  if(audioPlaying){ stopAutoplay(); return; }
   paused = !paused;
   const btn = document.getElementById('btn-pause');
   if(paused){
@@ -1225,17 +1239,67 @@ const LABELS = ['Hook','Problema','Solución','Flujo','Verificación','Resultado
   'Demo·Portafolio','Demo·Agente','Demo·Impacto','Equipo','Cierre'];
 
 function jump(dir){
+  stopAutoplay();
   jumpIdx = Math.max(0, Math.min(jumpIdx+dir, JUMP_POINTS.length-1));
   t0 = performance.now() - JUMP_POINTS[jumpIdx];
   document.getElementById('jump-label').textContent = LABELS[jumpIdx] || '';
 }
-function restart(){ jumpIdx=0; t0=performance.now(); }
+function restart(){ stopAutoplay(); jumpIdx=0; t0=performance.now(); }
 
 // Actualizar label cada frame
 setInterval(()=>{
   const lbl = document.getElementById('jump-label');
   if(lbl) lbl.textContent = LABELS[jumpIdx] || '';
 }, 500);
+
+// ══════════════════════════════════════════════════════════
+// NARRACIÓN SINCRONIZADA (asegura_audio.mp3)
+// Mismo patrón que el pitch de somos_internet: el botón ▶ reproduce
+// el audio y éste marca el reloj del deck 1:1 (LEAD=0) — cada segundo
+// narrado = 1000 ms del deck, así pausar/reanudar nunca deriva.
+// El timer inferior es el reloj de calibración: si una línea hablada
+// aterriza fuera de ritmo, anota el segundo que marca y ajusta la
+// entrada correspondiente del objeto T (arriba) a ese valor.
+// Fallback: si el audio no puede reproducirse, el cronómetro del deck
+// (120 s) sigue siendo el plan de presentación — no hay que tocar nada.
+// ══════════════════════════════════════════════════════════
+const pitchAudio = document.getElementById('pitch-audio');
+const playBtn = document.getElementById('btn-play');
+const LEAD = 0; // segundos de intro antes de la narración
+const narrated = () => Math.max(0, pitchAudio.currentTime - LEAD);
+let audioPlaying = false;
+
+function stopAutoplay(){
+  audioPlaying = false;
+  if(!pitchAudio.paused) pitchAudio.pause();
+  playBtn.textContent = '▶';
+  playBtn.setAttribute('aria-label','Reproducir con el audio sincronizado');
+}
+function startAutoplay(){
+  audioPlaying = true;
+  playBtn.textContent = '❚❚';
+  playBtn.setAttribute('aria-label','Pausar reproducción sincronizada');
+  paused = false; // el audio manda sobre el cronómetro
+  if(!loopRunning){ loopRunning = true; requestAnimationFrame(frame); }
+  try {
+    const p = pitchAudio.play();
+    if(p && typeof p.catch === 'function') p.catch(()=>fallbackAutoplay());
+  } catch { fallbackAutoplay(); }
+}
+function fallbackAutoplay(){ stopAutoplay(); }
+
+playBtn.addEventListener('click', () => (audioPlaying ? stopAutoplay() : startAutoplay()));
+pitchAudio.addEventListener('timeupdate', () => {
+  if(!audioPlaying || playBtn.textContent !== '❚❚') return;
+  t0 = performance.now() - narrated()*1000;
+  if(pitchAudio.ended) stopAutoplay();
+});
+pitchAudio.addEventListener('ended', stopAutoplay);
+pitchAudio.addEventListener('error', () => {
+  playBtn.disabled = true;
+  playBtn.style.opacity = '.35';
+  playBtn.title = 'Audio no disponible — cronómetro';
+});
 </script>
 </body>
 </html>
