@@ -11,19 +11,15 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;0,800;1,600;1,700&display=swap" rel="stylesheet">
 <title>Asegura — El seguro correcto empieza entendiendo tu vida</title>
 <style>
-  /* Asegura landing — cinematic rebuild.
-     Architecture: the page demonstrates the product instead of describing it.
-     A photographic hero band, then one pinned four-scene sequence
-     (hablas -> analizamos -> comparas -> te aseguramos) that transforms a
-     profile into a recommendation, then an oversized match-score engine the
-     visitor can drive. Motion language studied from two reference clips and an
-     editorial insurance shot; every graphic here is original CSS/SVG built for
-     Asegura. Photography is licensed (see ASSET_CREDITS.md). All figures are
-     real catalog facts: 11 productos, 5 aseguradoras, precios publicados de
-     colsubsidio.com/seguros. No zero-state or placeholder values. */
+  /* Asegura landing — cinematic rebuild. */
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
-  html,body{width:100%;overflow-x:hidden;background:#FAF5EA;color:#16181D;
+  /* overflow-x:hidden here would force overflow-y to compute as auto, turning
+     <body> into a scroll container and silently breaking position:sticky for
+     every descendant (confirmed live: the pinned journey's sticky block was
+     scrolling away instead of staying fixed). overflow-x:clip prevents the
+     same horizontal bleed without creating that scroll container. */
+  html,body{width:100%;overflow-x:clip;background:#FAF5EA;color:#16181D;
     font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
   a{color:inherit;text-decoration:none}
   img{max-width:100%;display:block}
@@ -49,7 +45,6 @@
   .qa summary:focus-visible{outline-offset:-3px;border-radius:var(--r-md)}
   .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
-  /* ============ shared ============ */
   .wrap{width:100%;max-width:1180px;margin:0 auto;padding:0 24px}
   .wide{max-width:1340px}
   .serif{font-family:'Playfair Display',Georgia,serif}
@@ -77,7 +72,6 @@
   .rv{opacity:0;transform:translateY(30px);transition:opacity .9s var(--ease-out),transform .9s var(--ease-out)}
   .rv.in{opacity:1;transform:none}
 
-  /* ============ nav ============ */
   .nav{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:80;
     width:calc(100% - 28px);max-width:1080px;display:flex;align-items:center;justify-content:space-between;
     gap:16px;padding:10px 12px 10px 20px;border-radius:999px;
@@ -97,7 +91,6 @@
   .nav-links a.active{color:var(--navy);background:var(--gold-soft);font-weight:800}
   .nav .btn{padding:12px 22px;font-size:13.5px}
 
-  /* ============ HERO — cinematic photographic band ============ */
   .hero{position:relative;padding:132px 0 0;overflow:hidden}
   @media(min-width:768px){.hero{padding-top:158px}}
   .hero-atmos{position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden}
@@ -124,7 +117,6 @@
   h1 em{font-style:italic;font-weight:700;
     background:linear-gradient(118deg,var(--gold) 0%,#D97706 58%,#B45309 100%);
     -webkit-background-clip:text;background-clip:text;color:transparent}
-  /* word-by-word blur-to-focus reveal (reference: petsArea headline entrance) */
   .word{display:inline-block;opacity:0;filter:blur(11px);transform:translateY(26px) scale(.97);
     animation:wordIn .95s var(--ease-out) forwards}
   @keyframes wordIn{to{opacity:1;filter:blur(0);transform:none}}
@@ -135,7 +127,6 @@
     animation:fadeUp .9s var(--ease-out) 1.08s both}
   @media(min-width:640px){.hero-ctas{flex-direction:row;justify-content:center;gap:16px}}
 
-  /* stage: navy band + photo breaking through it + flanking live cards */
   .hero-stage{position:relative;z-index:2;max-width:1240px;margin:clamp(46px,7vw,74px) auto 0;padding:0 24px}
   .hs-inner{position:relative;display:flex;justify-content:center;align-items:flex-end;
     min-height:clamp(400px,52vw,600px)}
@@ -209,7 +200,6 @@
   .hsc-price{font-size:18px;font-weight:800;letter-spacing:-.02em}
   .hsc-price small{display:block;font-size:10.5px;font-weight:600;color:var(--ink3)}
 
-  /* band stats, anchored to the band corners (reference: petsArea corner figures) */
   .hs-stat{position:absolute;z-index:4;bottom:clamp(22px,2.6vw,34px);color:#fff;max-width:31%}
   .hs-stat-l{left:clamp(20px,3vw,38px)}
   .hs-stat-r{right:clamp(20px,3vw,38px);text-align:right}
@@ -251,7 +241,6 @@
   .chip.on{background:var(--navy);border-color:var(--navy);color:#fff;
     box-shadow:0 10px 24px -10px rgba(12,31,61,.5)}
 
-  /* ============ marquee: real catalog ticker ============ */
   .marquee-sec{position:relative;overflow:hidden;padding:clamp(30px,4vw,46px) 0 0}
   .marquee-sec::before,.marquee-sec::after{content:'';position:absolute;top:0;bottom:0;width:100px;z-index:2;pointer-events:none}
   .marquee-sec::before{left:0;background:linear-gradient(90deg,var(--bg),rgba(250,245,234,0))}
@@ -266,7 +255,6 @@
   .m-pill span{font-size:11px;color:var(--ink3);font-weight:600}
   .m-pill em{font-style:normal;font-weight:800;color:var(--navy);font-size:12px}
 
-  /* ============ JOURNEY — pinned four-scene cinematic sequence ============ */
   .jrn{position:relative;height:460vh}
   @media(max-width:767px){.jrn{height:400vh}}
   .jrn-pin{position:sticky;top:0;height:100vh;overflow:hidden;
@@ -289,7 +277,6 @@
     background:rgba(12,31,61,.06);color:var(--navy);border:1px solid var(--line)}
   .jrn-tag i{width:7px;height:7px;border-radius:50%;background:var(--gold);font-style:normal}
 
-  /* progress rail */
   .jrn-rail{position:absolute;z-index:7;left:50%;transform:translateX(-50%);bottom:clamp(26px,5vh,46px);
     display:flex;gap:9px;align-items:center}
   .jr-seg{width:34px;height:4px;border-radius:3px;overflow:hidden;transition:background-color .6s ease}
@@ -298,7 +285,6 @@
   .jr-seg i{display:block;height:100%;width:0;background:var(--gold);border-radius:3px}
   @media(min-width:768px){.jr-seg{width:52px}}
 
-  /* --- scene 1: hablas --- */
   .js1-photo{position:absolute;inset:0;z-index:1}
   .js1-photo img{width:100%;height:100%;object-fit:cover;object-position:center 30%;
     transform:scale(1.14);will-change:transform}
@@ -315,7 +301,6 @@
     background:linear-gradient(140deg,var(--gold),#D97706);color:#fff;display:grid;place-items:center;
     font-weight:800;font-size:13px}
 
-  /* --- scene 2: analizamos --- */
   .js2{width:100%;max-width:1080px}
   .js2-grid{display:grid;grid-template-columns:1fr;gap:clamp(24px,4vw,52px);align-items:center}
   @media(min-width:900px){.js2-grid{grid-template-columns:auto 1fr}}
@@ -343,7 +328,6 @@
     background:linear-gradient(90deg,var(--gold),#D97706)}
   .js2-count{margin-top:12px;font-size:12px;font-weight:700;color:var(--ink3);letter-spacing:.04em}
 
-  /* --- scene 3: comparas --- */
   .js3{width:100%;max-width:1140px;display:grid;grid-template-columns:1fr;gap:clamp(20px,3.4vw,48px);
     align-items:center}
   @media(min-width:940px){.js3{grid-template-columns:.86fr 1.14fr}}
@@ -375,8 +359,8 @@
   .js3-name{font-weight:800;font-size:clamp(13px,1.4vw,14.5px);line-height:1.25}
   .js3-ins{font-size:11px;color:var(--ink3);font-weight:600;margin-top:2px}
   .js3-right{margin-left:auto;text-align:right;flex-shrink:0}
-  .js3-price{font-weight:800;font-size:clamp(13px,1.4vw,15px);white-space:nowrap}
-  .js3-pct{font-size:11px;font-weight:800;color:var(--teal);margin-top:3px}
+  .js3-price{display:block;font-weight:800;font-size:clamp(13px,1.4vw,15px);white-space:nowrap}
+  .js3-pct{display:block;font-size:11px;font-weight:800;color:var(--teal);margin-top:3px}
   .js3-card.win .js3-pct{color:#B45309}
   .js3-badge{display:inline-block;margin-top:5px;font-size:9.5px;font-weight:800;color:#8A4D0B;
     background:var(--gold-soft);border-radius:999px;padding:3px 9px;letter-spacing:.04em}
@@ -387,7 +371,6 @@
   .js3-wrow svg{color:var(--teal);flex-shrink:0}
   .js3-wrow b{color:var(--ink);font-weight:800}
 
-  /* --- scene 4: te aseguramos --- */
   .js4{text-align:center;color:#fff;max-width:760px}
   .js4-seal{width:clamp(76px,10vw,104px);height:clamp(76px,10vw,104px);border-radius:50%;margin:0 auto;
     display:grid;place-items:center;background:rgba(233,162,59,.14);border:1.5px solid rgba(233,162,59,.4);
@@ -408,7 +391,6 @@
   .js4-row .tick{width:19px;height:19px;border-radius:50%;background:var(--teal);color:#fff;flex-shrink:0;
     display:grid;place-items:center}
 
-  /* ============ MOTOR — oversized interactive match engine ============ */
   .motor{background:linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%);overflow:hidden}
   .motor-grid{display:grid;grid-template-columns:1fr;gap:clamp(28px,4vw,56px);margin-top:clamp(36px,5vw,56px);
     align-items:center}
@@ -453,7 +435,6 @@
     border:1px solid var(--gold);border-radius:999px;padding:4px 10px;white-space:nowrap}
   @media(max-width:600px){.md-wrow .frm{display:none}}
 
-  /* ============ COBERTURAS — photo scenes ============ */
   .cv-tabs{display:flex;flex-wrap:wrap;gap:9px;margin-top:clamp(26px,3.4vw,38px)}
   .cv-tab{display:inline-flex;align-items:center;gap:9px;padding:12px 20px;border-radius:999px;
     border:1.5px solid var(--line);background:#fff;font-size:13px;font-weight:800;
@@ -494,15 +475,14 @@
   .cv-best-tag{display:inline-block;margin-top:5px;font-size:9.5px;font-weight:800;color:var(--navy);
     background:var(--gold);border-radius:999px;padding:3px 9px}
   .cv-right{margin-left:auto;text-align:right;flex-shrink:0}
-  .cv-price{font-weight:800;font-size:14px;white-space:nowrap}
-  .cv-score{width:82px;height:4px;border-radius:3px;background:rgba(255,255,255,.22);overflow:hidden;margin-top:6px}
+  .cv-price{display:block;font-weight:800;font-size:14px;white-space:nowrap}
+  .cv-score{display:block;width:82px;height:4px;border-radius:3px;background:rgba(255,255,255,.22);overflow:hidden;margin-top:6px}
   .cv-score i{display:block;height:100%;border-radius:3px;background:var(--gold)}
   .cv-foot{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
     margin-top:clamp(16px,2.2vw,22px);padding-top:clamp(14px,2vw,18px);border-top:1px solid rgba(255,255,255,.16)}
   .cv-from{font-size:12px;color:rgba(255,255,255,.68);font-weight:600}
   .cv-from b{color:#fff;font-size:14.5px}
 
-  /* ============ EXPERIENCIA — live chat demo ============ */
   .exp{background:var(--navy);color:#fff;position:relative;overflow:hidden}
   .exp::before{content:'';position:absolute;width:520px;height:520px;border-radius:50%;
     background:rgba(233,162,59,.16);filter:blur(90px);top:-200px;left:-140px}
@@ -575,7 +555,6 @@
   .ph-actions .btn-out{flex-shrink:0;width:42px;height:42px;padding:0;border:1.5px solid var(--line2);
     color:var(--ink)}
 
-  /* ============ PROOF — oversized figures ============ */
   .proof-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:clamp(26px,4vw,44px) 20px;
     margin-top:clamp(34px,4.6vw,52px)}
   @media(min-width:900px){.proof-grid{grid-template-columns:repeat(4,1fr)}}
@@ -587,7 +566,6 @@
     padding-top:clamp(22px,3vw,30px);border-top:1px solid var(--line);
     font-size:12.5px;font-weight:700;color:var(--ink3);letter-spacing:.03em}
 
-  /* ============ SEGURIDAD ============ */
   .trust-sec{background:var(--bg2)}
   .trust-strip{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
   .trust-pill{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);
@@ -607,7 +585,6 @@
   .qa-body{padding:0 22px 20px 68px;font-size:13.5px;line-height:1.75;color:var(--ink2)}
   .qa-body b{color:var(--ink)}
 
-  /* ============ FINAL ============ */
   .final{position:relative;background:var(--navy);color:#fff;border-radius:var(--r-xl);
     padding:clamp(56px,8vw,104px) clamp(24px,6vw,80px);text-align:center;overflow:hidden}
   .final::before,.final::after{content:'';position:absolute;border-radius:50%;filter:blur(90px)}
@@ -633,7 +610,6 @@
   .fv-step.active .fv-check{background:var(--navy);color:var(--gold);animation:fvPulse 2.2s ease-out infinite}
   @keyframes fvPulse{0%{box-shadow:0 0 0 0 rgba(233,162,59,.5)}100%{box-shadow:0 0 0 16px rgba(233,162,59,0)}}
 
-  /* ============ footer ============ */
   footer{padding:clamp(56px,7vw,72px) 0 100px}
   @media(min-width:768px){footer{padding-bottom:44px}}
   .foot-grid{display:grid;grid-template-columns:1fr;gap:40px}
@@ -647,7 +623,6 @@
   .foot-bottom{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;margin-top:48px;
     padding-top:26px;border-top:1px solid var(--line);font-size:12px;color:var(--ink3)}
 
-  /* ============ sticky mobile cta ============ */
   .m-cta{position:fixed;left:50%;bottom:16px;transform:translateX(-50%) translateY(90px);z-index:75;
     display:flex;align-items:center;gap:9px;background:var(--gold);color:var(--navy);font-weight:800;font-size:14px;
     padding:15px 26px;border-radius:999px;box-shadow:0 18px 40px -12px rgba(233,162,59,.65);
@@ -655,7 +630,6 @@
   .m-cta.show{transform:translateX(-50%) translateY(0);opacity:1;pointer-events:auto}
   @media(min-width:768px){.m-cta{display:none}}
 
-  /* ============ reduced motion — every scene resolves to its final state ============ */
   @media(prefers-reduced-motion:reduce){
     *,*::before,*::after{animation-duration:.001s!important;animation-iteration-count:1!important;
       transition-duration:.001s!important;scroll-behavior:auto!important}
@@ -1121,15 +1095,11 @@
   </a>
 
 <script>
-/* Asegura landing script — original, dependency-free.
-   One rAF-throttled scroll engine drives every scroll-linked scene, so the
-   pinned journey, the hero parallax and the nav state all read the layout once
-   per frame instead of each installing its own listener. */
+/* Asegura landing script — original, dependency-free. */
 (function(){
   'use strict';
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  /* ---------- catálogo real (src/modules/quoting/products.data.ts) ---------- */
   var CATS = [
     {id:'familia',   word:'tu familia',   label:'Familia',    product:'Asistencias múltiples',          insurer:'GEA',                price:'$20.000', score:92,
      traits:['Vive con su pareja','Dos hijos pequeños','Ingreso estable'], hl:0},
@@ -1192,7 +1162,6 @@
   window.addEventListener('scroll', requestScenes, {passive:true});
   window.addEventListener('resize', requestScenes, {passive:true});
 
-  /* ---------- nav state + sticky mobile CTA ---------- */
   var nav = document.getElementById('nav');
   var mCta = document.getElementById('mCta');
   window.addEventListener('scroll', function(){
@@ -1201,7 +1170,6 @@
     mCta.classList.toggle('show', y > 680);
   }, {passive:true});
 
-  /* ---------- nav scrollspy ---------- */
   var navLinks = Array.prototype.slice.call(document.querySelectorAll('.nav-links a'));
   var spySections = navLinks.map(function(a){ return document.querySelector(a.getAttribute('href')); }).filter(Boolean);
   if(spySections.length){
@@ -1215,13 +1183,11 @@
     spySections.forEach(function(s){ spyIO.observe(s); });
   }
 
-  /* ---------- reveal on scroll ---------- */
   var io = new IntersectionObserver(function(entries){
     entries.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
   }, {threshold:.12, rootMargin:'0px 0px -6% 0px'});
   document.querySelectorAll('.rv').forEach(function(el){ io.observe(el); });
 
-  /* ---------- marquee ---------- */
   var marqueeTrack = document.getElementById('marqueeTrack');
   if(marqueeTrack){
     var pills = CATALOG_STRIP.map(function(p){
@@ -1231,7 +1197,6 @@
     marqueeTrack.innerHTML = pills + pills;
   }
 
-  /* ---------- hero: live profile + recommendation, driven by the chips ---------- */
   var idx = 0, heroTimer = null, heroPaused = false, analyzeTO = null, hrSettle = null;
   var hpTraits = document.getElementById('hpTraits');
   var hrLabel = document.getElementById('hrLabel');
@@ -1317,7 +1282,6 @@
   }
   startHeroCycle();
 
-  /* ---------- hero parallax: photo and cards drift at different rates ---------- */
   var heroEl = document.querySelector('.hero');
   var heroPhoto = document.getElementById('heroPhoto');
   var heroProfile = document.getElementById('heroProfile');
@@ -1331,11 +1295,8 @@
     });
   }
 
-  /* ---------- JOURNEY: four pinned scenes -------------------------------------
-     Scroll progress across the tall section is split into four equal segments.
-     `active` picks the visible scene; `ip` is progress *within* that scene and
-     drives the internal choreography (photo push-in, signals landing one by
-     one, cards competing, the winner resolving, the closing ticks).           */
+  /* Scroll progress is split into 4 equal segments: `active` picks the scene,
+     `ip` is progress within it and drives that scene's own choreography. */
   var jrn = document.getElementById('como-funciona');
   var jrnPin = document.getElementById('jrnPin');
   var jrnTagText = document.getElementById('jrnTagText');
@@ -1357,7 +1318,6 @@
   }).join('');
   var js2Sigs = Array.prototype.slice.call(js2Signals.querySelectorAll('.js2-sig'));
 
-  /* the three genuine top matches for this profile, from the real catalog */
   var J_CANDIDATES = [
     {n:'Asistencias múltiples', i:'GEA', p:'$20.000', s:92, win:true},
     {n:'Asistencias médicas familiares', i:'GEA', p:'$16.800', s:88},
@@ -1374,8 +1334,6 @@
   }).join('');
   var js3Cards = Array.prototype.slice.call(js3Stack.querySelectorAll('.js3-card'));
 
-  /* each reason names the profile signal it came from — the review asked that
-     the explanation map visibly back to the user's own inputs */
   var J_WHY = [
     {r:'Asistencia en el hogar', from:'2 adultos · 2 hijos'},
     {r:'Orientación familiar', from:'Familia'},
@@ -1410,16 +1368,13 @@
       seg.style.width = (i < active ? 100 : i === active ? ip * 100 : 0) + '%';
     });
 
-    /* scene 1 — slow push-in on the photograph */
     js1Img.style.transform = 'scale(' + (1.14 + (active === 0 ? ip : 0) * 0.1) + ')';
 
-    /* scene 2 — signals land one by one, then the compare bar fills */
     js2Sigs.forEach(function(el, i){
       el.classList.toggle('on', active > 1 || (active === 1 && ip > 0.08 + i * 0.1));
     });
     js2Bar.style.width = (active > 1 ? 100 : active === 1 ? clamp01((ip - 0.5) / 0.42) * 100 : 0) + '%';
 
-    /* scene 3 — candidates enter, the winner pulls ahead, score counts up */
     js3Cards.forEach(function(el, i){
       var shown = active > 2 || (active === 2 && ip > 0.05 + i * 0.11);
       el.classList.toggle('on', shown);
@@ -1433,7 +1388,6 @@
       el.classList.toggle('on', active > 2 || (active === 2 && ip > 0.62 + i * 0.08));
     });
 
-    /* scene 4 — the close, one confirmation at a time */
     js4RowEls.forEach(function(el, i){
       el.classList.toggle('on', active === 3 && ip > 0.12 + i * 0.13);
     });
@@ -1447,7 +1401,6 @@
     js3Num.innerHTML = '92<sup>%</sup>';
   }
 
-  /* ---------- MOTOR: profile switcher drives the whole display ---------- */
   var PROFILES = [
     {k:'A', name:'Soltero, 28', sub:'Sin hijos · se moviliza en moto',
      prod:'Accidentes personales', ins:'MetLife', price:'$18.000', score:86,
@@ -1516,7 +1469,6 @@
     mpList.appendChild(b);
   });
   paintMotor(1, false);
-  /* count the score up the first time the engine scrolls into view */
   var motorIO = new IntersectionObserver(function(entries){
     entries.forEach(function(e){
       if(!e.isIntersecting) return;
@@ -1526,7 +1478,6 @@
   }, {threshold:.35});
   motorIO.observe(motorDisplay);
 
-  /* ---------- COBERTURAS: photo scene per category ---------- */
   var COVER = [
     {id:'familia', label:'Familia', img:'/ph-familia.jpg', note:'Para parejas e hijos: hogar, salud y protección diaria.',
      items:[{n:'Asistencias múltiples', i:'GEA', p:'$20.000', s:92},
@@ -1607,7 +1558,6 @@
   });
   paintCover(0);
 
-  /* ---------- demo conversacional ---------- */
   var chatBody = document.getElementById('chatBody');
   var chatCta = document.getElementById('chatCta');
   var RECOS = {
@@ -1773,7 +1723,6 @@
   document.getElementById('chatReset').addEventListener('click', resetChat);
   askInitial();
 
-  /* ---------- acordeón: solo uno abierto a la vez ---------- */
   document.querySelectorAll('.qa').forEach(function(q){
     q.addEventListener('toggle', function(){
       if(!q.open) return;
@@ -1781,7 +1730,6 @@
     });
   });
 
-  /* ---------- cta final: pasos en cascada ---------- */
   var fvSteps = Array.prototype.slice.call(document.querySelectorAll('.fv-step'));
   if(fvSteps.length){
     var fvIO = new IntersectionObserver(function(entries){
@@ -1797,7 +1745,6 @@
     fvIO.observe(fvSteps[0].closest('.final'));
   }
 
-  /* ---------- scroll suave para anclas ---------- */
   document.querySelectorAll('a[href^="#"]').forEach(function(a){
     a.addEventListener('click', function(e){
       var t = document.querySelector(a.getAttribute('href'));
