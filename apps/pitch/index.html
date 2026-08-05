@@ -53,7 +53,19 @@
   .r4{width:700px;height:700px;animation-delay:1.5s}
   .r5{width:860px;height:860px;animation-delay:2s}
   @keyframes pulse{0%,100%{opacity:.55;transform:translate(-50%,-50%) scale(1)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.025)}}
-  @media(prefers-reduced-motion:reduce){.ripple{animation:none}}
+
+  /* ---- entrance choreography ---- */
+  @keyframes fadeUp{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes popIn{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:scale(1)}}
+  @keyframes badgePulse{0%,100%{box-shadow:0 0 0 6px #FDF8EE,0 0 0 6px rgba(255,215,0,0)}50%{box-shadow:0 0 0 6px #FDF8EE,0 0 0 12px rgba(255,215,0,.35)}}
+  .reveal{opacity:0;animation:fadeUp .8s cubic-bezier(.16,1,.3,1) forwards}
+
+  @media(prefers-reduced-motion:reduce){
+    .ripple{animation:none}
+    .reveal{opacity:1!important;animation:none!important}
+    .badge{animation:none!important}
+    .covers-photos img{opacity:1!important;animation:none!important}
+  }
 
   .eyebrow{position:relative;z-index:1;display:inline-flex;align-items:center;gap:8px;
     background:#fff;border:1px solid rgba(10,27,61,.12);border-radius:999px;padding:7px 16px;
@@ -65,7 +77,8 @@
     letter-spacing:-.015em;line-height:1.08;font-size:clamp(2.2rem,6.6vw,5rem);max-width:920px;margin:0 auto}
   .badge{display:inline-flex;align-items:center;justify-content:center;vertical-align:-12%;
     width:.9em;height:.9em;border-radius:50%;background:#FFD700;margin:0 .08em;
-    box-shadow:0 0 0 6px #FDF8EE}
+    box-shadow:0 0 0 6px #FDF8EE;opacity:0;
+    animation:popIn .6s .9s cubic-bezier(.34,1.56,.64,1) forwards,badgePulse 2.6s 1.6s ease-in-out infinite}
   .badge svg{width:52%;height:52%;color:#0A1B3D}
 
   .lede{position:relative;z-index:1;max-width:520px;margin:22px auto 28px;
@@ -81,8 +94,12 @@
     gap:14px;margin-top:38px}
   .covers-photos{display:flex;align-items:center}
   .covers-photos img{width:56px;height:56px;border-radius:50%;object-fit:cover;
-    border:3px solid #FDF8EE;box-shadow:0 2px 10px rgba(10,27,61,.15);margin-left:-14px}
+    border:3px solid #FDF8EE;box-shadow:0 2px 10px rgba(10,27,61,.15);margin-left:-14px;
+    opacity:0;animation:popIn .5s cubic-bezier(.34,1.56,.64,1) forwards}
   .covers-photos img:first-child{margin-left:0}
+  .covers-photos img:nth-child(1){animation-delay:1.15s}
+  .covers-photos img:nth-child(2){animation-delay:1.28s}
+  .covers-photos img:nth-child(3){animation-delay:1.41s}
   .covers-label{font-size:12.5px;color:rgba(10,27,61,.55);font-weight:600}
 
   /* ---- stat cards (Bubdle-style asymmetric row) ---- */
@@ -91,7 +108,10 @@
   @media(min-width:768px){.cards{grid-template-columns:1.3fr 1fr 1fr;padding:0 44px}}
 
   .card{border-radius:24px;padding:28px 26px;position:relative;overflow:hidden;min-height:168px;
-    display:flex;flex-direction:column;justify-content:space-between}
+    display:flex;flex-direction:column;justify-content:space-between;
+    transition:transform .25s cubic-bezier(.16,1,.3,1),box-shadow .25s ease}
+  .card:hover{transform:translateY(-6px);box-shadow:0 16px 32px -12px rgba(10,27,61,.22)}
+  @media(prefers-reduced-motion:reduce){.card:hover{transform:none}}
   .card-gold{background:#FFD700;color:#0A1B3D}
   .card-dark{background:#0A1B3D;color:#fff}
   .card-outline{background:#fff;color:#0A1B3D;border:1.5px solid rgba(10,27,61,.12)}
@@ -117,11 +137,11 @@
 <body>
 
   <nav>
-    <a class="brand" href="/">
+    <a class="brand reveal" style="animation-delay:0s" href="/">
       <img src="/logo-mark.png" alt="Asegura" width="26" height="26">
       <span class="brand-txt">segura</span>
     </a>
-    <div class="nav-actions">
+    <div class="nav-actions reveal" style="animation-delay:.1s">
       <a class="btn btn-ghost" href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer">Probar</a>
       <a class="btn btn-dark" href="pitch.html">Ver la presentación</a>
     </div>
@@ -136,22 +156,22 @@
       <div class="ripple r5"></div>
     </div>
 
-    <span class="eyebrow">Seguros sin papeleo, 2026</span>
+    <span class="eyebrow reveal" style="animation-delay:.25s">Seguros sin papeleo, 2026</span>
 
-    <h1>De &ldquo;no sé qué seguro&rdquo; a
+    <h1 class="reveal" style="animation-delay:.4s">De &ldquo;no sé qué seguro&rdquo; a
       <span class="badge" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 6v6c0 5.25 3.75 9.75 9 11 5.25-1.25 9-5.75 9-11V6z"/><path d="m9 12 2 2 4-4"/></svg>
       </span>
       asegurado.</h1>
 
-    <p class="lede">Asegura entiende tu perfil real —edad, familia, ingresos, hábitos— y te recomienda el seguro correcto, con razones específicas. Sin formularios, sin asesores, sin letra pequeña.</p>
+    <p class="lede reveal" style="animation-delay:.55s">Asegura entiende tu perfil real —edad, familia, ingresos, hábitos— y te recomienda el seguro correcto, con razones específicas. Sin formularios, sin asesores, sin letra pequeña.</p>
 
-    <a class="how" href="pitch.html">
+    <a class="how reveal" style="animation-delay:.68s" href="pitch.html">
       <span><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg></span>
       Ver cómo funciona
     </a>
 
-    <div class="covers">
+    <div class="covers reveal" style="animation-delay:.8s">
       <div class="covers-photos">
         <img src="https://images.unsplash.com/photo-1598887048474-3e0be05bd11f?w=112&h=112&fit=crop&auto=format&q=80" alt="" width="56" height="56" loading="lazy">
         <img src="https://images.unsplash.com/photo-1598875706250-21faaf804361?w=112&h=112&fit=crop&auto=format&q=80" alt="" width="56" height="56" loading="lazy">
@@ -161,7 +181,7 @@
     </div>
 
     <div class="cards">
-      <div class="card card-gold">
+      <div class="card card-gold reveal" style="animation-delay:1s">
         <div class="card-icon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0A1B3D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 6v6c0 5.25 3.75 9.75 9 11 5.25-1.25 9-5.75 9-11V6z"/><path d="m9 12 2 2 4-4"/></svg>
         </div>
@@ -171,7 +191,7 @@
         </div>
       </div>
 
-      <div class="card card-dark">
+      <div class="card card-dark reveal" style="animation-delay:1.12s">
         <div class="card-icon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
         </div>
@@ -181,7 +201,7 @@
         </div>
       </div>
 
-      <div class="card card-outline">
+      <div class="card card-outline reveal" style="animation-delay:1.24s">
         <div class="card-icon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0A1B3D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         </div>
@@ -197,7 +217,7 @@
     </div>
   </header>
 
-  <div class="credit">Hackathon Colsubsidio × 30X — Julio 2026</div>
+  <div class="credit reveal" style="animation-delay:1.5s">Hackathon Colsubsidio × 30X — Julio 2026</div>
 
 </body>
 </html>
