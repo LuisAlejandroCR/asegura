@@ -55,6 +55,9 @@
   .sec-title{font-family:'Playfair Display',Georgia,serif;font-weight:800;letter-spacing:-.025em;
     line-height:1.04;font-size:clamp(2.1rem,5.4vw,4rem);margin:18px 0 16px;max-width:15ch}
   .sec-sub{font-size:clamp(15px,1.5vw,17px);line-height:1.7;color:var(--ink2);max-width:52ch}
+  .cf-intro{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap}
+  .cf-continue{text-align:center;font-size:14px;font-weight:600;color:var(--ink2);max-width:52ch;
+    margin:0 auto 8px}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;
     border-radius:999px;padding:17px 32px;font-size:15px;font-weight:700;white-space:nowrap;
     transition:transform .25s var(--ease-out),box-shadow .25s ease,background-color .25s ease}
@@ -199,6 +202,19 @@
   .ring-num small{font-size:8.5px;font-weight:700;color:var(--ink3);display:block;text-align:center}
   .hsc-price{font-size:18px;font-weight:800;letter-spacing:-.02em}
   .hsc-price small{display:block;font-size:10.5px;font-weight:600;color:var(--ink3)}
+  .hsc-why{margin-top:13px;border-top:1px solid var(--line);padding-top:11px;display:grid;gap:7px}
+  .hsc-why[hidden]{display:none}
+  .hsc-why-row{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:600;color:var(--ink2)}
+  .hsc-why-row svg{color:var(--teal);flex-shrink:0}
+  .hsc-ctas{display:flex;gap:8px;margin-top:14px}
+  .hsc-btn{flex:1;text-align:center;border-radius:999px;padding:10px 12px;font-size:12px;font-weight:800;
+    white-space:nowrap;transition:transform .2s ease,background-color .2s ease}
+  .hsc-btn:active{transform:scale(.96)}
+  .hsc-btn-gold{background:var(--gold);color:var(--navy)}
+  .hsc-btn-gold:hover{background:var(--gold2)}
+  .hsc-btn-ghost{border:1.5px solid var(--line2);color:var(--ink)}
+  .hsc-btn-ghost:hover{background:rgba(22,24,29,.04)}
+  .hsc-btn-ghost[aria-expanded="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
 
   .hs-stat{position:absolute;z-index:4;bottom:clamp(22px,2.6vw,34px);color:#fff;max-width:31%}
   .hs-stat-l{left:clamp(20px,3vw,38px)}
@@ -655,9 +671,7 @@
     </a>
     <div class="nav-links">
       <a href="#como-funciona">Cómo funciona</a>
-      <a href="#motor">La recomendación</a>
       <a href="#coberturas">Coberturas</a>
-      <a href="#experiencia">La experiencia</a>
       <a href="#seguridad">Seguridad</a>
     </div>
     <a class="btn btn-navy" href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer">Cotizar ahora</a>
@@ -690,13 +704,9 @@
       <p class="lede">Cuéntanos qué quieres proteger. Asegura analiza tu situación, compara opciones y te explica cuál tiene más sentido para ti.</p>
 
       <div class="hero-ctas">
-        <a class="btn btn-gold" href="#experiencia">
+        <a class="btn btn-gold" href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer">
           Encontrar mi seguro
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-        </a>
-        <a class="btn btn-ghost" href="#como-funciona">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
-          Ver cómo funciona
         </a>
       </div>
     </div>
@@ -722,7 +732,7 @@
           <div id="hpTraits"></div>
         </aside>
 
-        <aside class="hs-card hs-right" id="heroReco" aria-hidden="true">
+        <aside class="hs-card hs-right" id="heroReco">
           <span class="hsc-label" id="hrLabel">Asegura recomienda</span>
           <div class="hsc-prod" id="hrProd">Asistencias múltiples</div>
           <div class="hsc-ins" id="hrIns">GEA · Catálogo Colsubsidio</div>
@@ -735,6 +745,11 @@
               <div class="ring-num"><span id="hrScore">92<small>compat.</small></span></div>
             </div>
             <div class="hsc-price" id="hrPrice">$20.000<small>desde · al mes</small></div>
+          </div>
+          <div class="hsc-why" id="hrWhy" hidden></div>
+          <div class="hsc-ctas">
+            <a class="hsc-btn hsc-btn-gold" href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer">Elegir este seguro</a>
+            <button class="hsc-btn hsc-btn-ghost" id="hrWhyBtn" type="button" aria-expanded="false" aria-controls="hrWhy">Ver por qué</button>
           </div>
         </aside>
 
@@ -760,8 +775,55 @@
     <div class="marquee-track" id="marqueeTrack"></div>
   </div>
 
+  <!-- ============ PROOF ============ -->
+  <section class="section" aria-label="Cifras de Asegura" style="padding-bottom:0">
+    <div class="wrap">
+      <span class="sec-eyebrow rv">En números</span>
+      <h2 class="sec-title rv">Catálogo real. Precios publicados.</h2>
+      <div class="proof-grid">
+        <div class="rv">
+          <div class="proof-num">11<span class="u"> productos</span></div>
+          <div class="proof-label">Todo el catálogo de seguros de Colsubsidio.</div>
+        </div>
+        <div class="rv" style="transition-delay:.08s">
+          <div class="proof-num">5<span class="u"> aseguradoras</span></div>
+          <div class="proof-label">Toda la oferta en una sola experiencia.</div>
+        </div>
+        <div class="rv" style="transition-delay:.16s">
+          <div class="proof-num">&lt;3<span class="u"> min</span></div>
+          <div class="proof-label">De cotización a póliza emitida.</div>
+        </div>
+        <div class="rv" style="transition-delay:.24s">
+          <div class="proof-num">24<span class="u">/7</span></div>
+          <div class="proof-label"><span class="live-dot"></span>Siempre disponible, sin filas.</div>
+        </div>
+      </div>
+      <div class="proof-names rv">
+        <span>MetLife</span><span>Chubb</span><span>Pan American Life</span><span>GEA</span>
+        <span>Grupo Recordar</span><span>BMI</span><span>VetPlus</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CÓMO FUNCIONA ============ -->
+  <section class="section" id="como-funciona" style="padding-bottom:0">
+    <div class="wrap">
+      <div class="cf-intro">
+        <div>
+          <span class="sec-eyebrow rv">Cómo funciona</span>
+          <h2 class="sec-title rv">No es un formulario. Es una conversación.</h2>
+          <p class="sec-sub rv">Cuéntanos qué quieres proteger. Asegura transforma tu situación en una recomendación explicada.</p>
+        </div>
+        <a class="btn btn-ghost rv" href="pitch.html">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+          Ver la presentación
+        </a>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ JOURNEY (pinned cinematic) ============ -->
-  <section class="jrn" id="como-funciona" aria-label="Cómo funciona Asegura">
+  <section class="jrn" aria-label="Secuencia: hablas, analizamos, comparas, te aseguramos">
     <div class="jrn-pin" id="jrnPin" data-scene="0">
 
       <span class="jrn-tag" id="jrnTag"><i></i><span id="jrnTagText">01 · Hablas</span></span>
@@ -832,12 +894,10 @@
     </div>
   </section>
 
-  <!-- ============ MOTOR ============ -->
-  <section class="section motor" id="motor">
+  <!-- ============ MOTOR (continuación de Cómo funciona) ============ -->
+  <section class="section motor" id="motor" style="padding-top:0">
     <div class="wrap">
-      <span class="sec-eyebrow rv">El motor</span>
-      <h2 class="sec-title rv">Cambia el perfil. Cambia todo.</h2>
-      <p class="sec-sub rv">Nadie ve la misma oferta. Toca un perfil y observa cómo se mueven la compatibilidad, el producto, el precio y las razones.</p>
+      <p class="cf-continue rv">Pruébalo tú mismo — cambia el perfil y mira cómo se mueven la compatibilidad, el producto y las razones.</p>
 
       <div class="motor-grid">
         <div class="mp-list rv" id="mpList" role="tablist" aria-label="Perfiles de ejemplo"></div>
@@ -894,14 +954,14 @@
     </div>
   </section>
 
-  <!-- ============ EXPERIENCIA ============ -->
+  <!-- ============ EXPERIENCIA (continuación de Cómo funciona) ============ -->
   <section class="section exp" id="experiencia">
     <div class="wrap">
       <div class="exp-grid">
         <div>
-          <span class="sec-eyebrow rv">La experiencia</span>
-          <h2 class="sec-title rv">No es un formulario. Es una conversación.</h2>
-          <p class="sec-sub rv">Pruébala aquí mismo: toca las opciones y mira cómo la recomendación se construye frente a ti.</p>
+          <span class="sec-eyebrow rv">Pruébalo en vivo</span>
+          <h2 class="sec-title rv">La misma conversación, aquí mismo.</h2>
+          <p class="sec-sub rv">Toca las opciones y mira cómo la recomendación se construye frente a ti — es el mismo agente que te espera en Telegram.</p>
           <div class="exp-points">
             <div class="exp-point rv">
               <span class="ep-ico">
@@ -950,36 +1010,6 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ PROOF ============ -->
-  <section class="section" aria-label="Cifras de Asegura" style="padding-bottom:0">
-    <div class="wrap">
-      <span class="sec-eyebrow rv">En números</span>
-      <h2 class="sec-title rv">Catálogo real. Precios publicados.</h2>
-      <div class="proof-grid">
-        <div class="rv">
-          <div class="proof-num">11<span class="u"> productos</span></div>
-          <div class="proof-label">Todo el catálogo de seguros de Colsubsidio.</div>
-        </div>
-        <div class="rv" style="transition-delay:.08s">
-          <div class="proof-num">5<span class="u"> aseguradoras</span></div>
-          <div class="proof-label">Toda la oferta en una sola experiencia.</div>
-        </div>
-        <div class="rv" style="transition-delay:.16s">
-          <div class="proof-num">&lt;3<span class="u"> min</span></div>
-          <div class="proof-label">De cotización a póliza emitida.</div>
-        </div>
-        <div class="rv" style="transition-delay:.24s">
-          <div class="proof-num">24<span class="u">/7</span></div>
-          <div class="proof-label"><span class="live-dot"></span>Siempre disponible, sin filas.</div>
-        </div>
-      </div>
-      <div class="proof-names rv">
-        <span>MetLife</span><span>Chubb</span><span>Pan American Life</span><span>GEA</span>
-        <span>Grupo Recordar</span><span>BMI</span><span>VetPlus</span>
       </div>
     </div>
   </section>
@@ -1048,10 +1078,6 @@
             Encontrar mi seguro
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </a>
-          <a class="btn btn-glass" href="#experiencia">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
-            Ver la experiencia
-          </a>
         </div>
       </div>
     </div>
@@ -1071,7 +1097,6 @@
         <div class="foot-col">
           <h5>Producto</h5>
           <a href="#como-funciona">Cómo funciona</a>
-          <a href="#motor">La recomendación</a>
           <a href="#coberturas">Coberturas</a>
           <a href="#seguridad">Seguridad</a>
         </div>
@@ -1089,7 +1114,7 @@
     </div>
   </footer>
 
-  <a class="m-cta" id="mCta" href="#experiencia">
+  <a class="m-cta" id="mCta" href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer">
     Encontrar mi seguro
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
   </a>
@@ -1102,17 +1127,23 @@
 
   var CATS = [
     {id:'familia',   word:'tu familia',   label:'Familia',    product:'Asistencias múltiples',          insurer:'GEA',                price:'$20.000', score:92,
-     traits:['Vive con su pareja','Dos hijos pequeños','Ingreso estable'], hl:0},
+     traits:['Vive con su pareja','Dos hijos pequeños','Ingreso estable'], hl:0,
+     reasons:['Asistencia en el hogar','Orientación familiar','Asistencia jurídica telefónica']},
     {id:'mascotas',  word:'tu mascota',   label:'Mascotas',   product:'Asistencia veterinaria',          insurer:'GEA',                price:'$14.500', score:95,
-     traits:['Tiene una perra, Luna','Vive en apartamento','Ingreso estable'], hl:0},
+     traits:['Tiene una perra, Luna','Vive en apartamento','Ingreso estable'], hl:0,
+     reasons:['Consulta veterinaria','Refuerzo de vacunación','Urgencias por accidente']},
     {id:'salud',     word:'tu salud',     label:'Salud',      product:'Asistencias médicas familiares',  insurer:'GEA',                price:'$16.800', score:88,
-     traits:['Visita al médico cada año','Vive con su pareja','Cuida su alimentación'], hl:1},
+     traits:['Visita al médico cada año','Vive con su pareja','Cuida su alimentación'], hl:1,
+     reasons:['Consultas virtuales','Descuentos en medicamentos','Orientación nutricional']},
     {id:'vida',      word:'tu vida',      label:'Vida',       product:'Seguro de vida',                  insurer:'Pan American Life',  price:'$12.000', score:90,
-     traits:['Es el soporte del hogar','Tiene 32 años','Proyecta a largo plazo'], hl:0},
+     traits:['Es el soporte del hogar','Tiene 32 años','Proyecta a largo plazo'], hl:0,
+     reasons:['Protección por fallecimiento','Cobertura familiar','Indemnización por incapacidad']},
     {id:'accidentes',word:'tus imprevistos',label:'Accidentes',product:'Accidentes personales',          insurer:'MetLife',            price:'$18.000', score:86,
-     traits:['Hace deporte los fines de semana','Se moviliza en moto','Ingreso estable'], hl:1},
+     traits:['Hace deporte los fines de semana','Se moviliza en moto','Ingreso estable'], hl:1,
+     reasons:['Gastos médicos por accidente','Indemnización diaria por hospitalización','Reembolso de gastos médicos']},
     {id:'ahorro',    word:'tu ahorro',    label:'Ahorro',     product:'Vida + Ahorro',                   insurer:'BMI',                price:'$20.000', score:84,
-     traits:['Piensa en su jubilación','Ahorra cada mes','Busca estabilidad'], hl:2}
+     traits:['Piensa en su jubilación','Ahorra cada mes','Busca estabilidad'], hl:2,
+     reasons:['Componente de ahorro','Protección por fallecimiento','Cobertura por incapacidad']}
   ];
 
   var CAT_COLORS = {
@@ -1205,13 +1236,29 @@
   var hrPrice = document.getElementById('hrPrice');
   var hrScore = document.getElementById('hrScore');
   var hrRing = document.getElementById('hrRing');
+  var hrWhy = document.getElementById('hrWhy');
+  var hrWhyBtn = document.getElementById('hrWhyBtn');
   var chipsWrap = document.getElementById('catChips');
+  var TICK_SM = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>';
+
+  hrWhyBtn.addEventListener('click', function(){
+    var open = hrWhyBtn.getAttribute('aria-expanded') === 'true';
+    hrWhyBtn.setAttribute('aria-expanded', String(!open));
+    hrWhy.hidden = open;
+    hrWhyBtn.textContent = open ? 'Ver por qué' : 'Ocultar';
+  });
 
   function heroShow(c, count){
     hrLabel.textContent = 'Asegura recomienda';
     hrLabel.classList.remove('pulse');
     hrProd.textContent = c.product;
     hrIns.textContent = c.insurer + ' · Catálogo Colsubsidio';
+    hrWhy.innerHTML = c.reasons.map(function(r){
+      return '<div class="hsc-why-row">' + TICK_SM + '<span>' + r + '</span></div>';
+    }).join('');
+    hrWhy.hidden = true;
+    hrWhyBtn.setAttribute('aria-expanded', 'false');
+    hrWhyBtn.textContent = 'Ver por qué';
     hrPrice.innerHTML = c.price + '<small>desde · al mes</small>';
     hrRing.style.transition = 'none';
     hrRing.classList.remove('on');
@@ -1297,7 +1344,7 @@
 
   /* Scroll progress is split into 4 equal segments: `active` picks the scene,
      `ip` is progress within it and drives that scene's own choreography. */
-  var jrn = document.getElementById('como-funciona');
+  var jrn = document.querySelector('.jrn');
   var jrnPin = document.getElementById('jrnPin');
   var jrnTagText = document.getElementById('jrnTagText');
   var jScenes = Array.prototype.slice.call(jrn.querySelectorAll('.jscene'));
