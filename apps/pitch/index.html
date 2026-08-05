@@ -164,6 +164,7 @@
     display:flex;align-items:center;gap:8px;transition:opacity .4s ease}
   .obj-tag b{color:var(--navy)}
   .obj-tag .dot{width:6px;height:6px;border-radius:50%;background:var(--gold)}
+  .obj-tag.pulse{animation:labelPulse .8s ease infinite}
 
   .rec-card{width:min(330px,88vw)}
   @media(min-width:1024px){.rec-card{position:absolute;right:0;bottom:30px;transform:rotate(2deg)}}
@@ -215,6 +216,11 @@
   .trust-num{font-family:'Playfair Display',Georgia,serif;font-weight:800;font-size:clamp(2rem,3.8vw,2.8rem);
     letter-spacing:-.02em;line-height:1}
   .trust-num .u{color:var(--gold);font-size:.55em}
+  .trust-item.in .trust-num{animation:numPop .8s var(--ease-spring)}
+  @keyframes numPop{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+  .live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--gold);
+    margin-right:8px;vertical-align:1px;animation:pulseDot 2.2s ease-in-out infinite}
+  @keyframes pulseDot{0%{box-shadow:0 0 0 0 rgba(233,162,59,.45)}70%{box-shadow:0 0 0 8px rgba(233,162,59,0)}100%{box-shadow:0 0 0 0 rgba(233,162,59,0)}}
   .trust-label{font-size:12px;color:rgba(255,255,255,.6);margin-top:8px;line-height:1.5;font-weight:500}
   .trust-names{position:relative;display:flex;flex-wrap:wrap;justify-content:center;gap:8px 26px;
     margin-top:36px;padding-top:30px;border-top:1px solid rgba(255,255,255,.12);
@@ -500,7 +506,7 @@
         </span>
       </h1>
 
-      <p class="lede rv" style="transition-delay:.15s">Cuéntale a Asegura tu situación y recibe una recomendación con precio y razones.</p>
+      <p class="lede rv" style="transition-delay:.15s">Cuéntale tu situación a Asegura y recibe una opción con precio, cobertura y razones claras.</p>
 
       <div class="hero-ctas rv" style="transition-delay:.25s">
         <a class="btn btn-gold" href="#demo">
@@ -588,7 +594,7 @@
         </div>
         <div class="trust-item rv" style="transition-delay:.24s">
           <div class="trust-num">24<span class="u">/7</span></div>
-          <div class="trust-label">Siempre disponible, sin filas.</div>
+          <div class="trust-label"><span class="live-dot"></span>Siempre disponible, sin filas.</div>
         </div>
       </div>
       <div class="trust-names rv">MetLife &nbsp;·&nbsp; Chubb &nbsp;·&nbsp; Pan American Life &nbsp;·&nbsp; GEA &nbsp;·&nbsp; Grupo Recordar &nbsp;·&nbsp; BMI &nbsp;·&nbsp; VetPlus</div>
@@ -647,7 +653,7 @@
               <span class="dp-ico">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>
               </span>
-              <p><b>Precios reales y razones claras.</b> Sin letra pequeña.</p>
+              <p><b>Cobertura, precio y razones claras</b> antes de elegir.</p>
             </div>
           </div>
         </div>
@@ -764,9 +770,9 @@
           <div class="timer-wrap">
             <svg viewBox="0 0 100 100" width="112" height="112">
               <circle class="rbg" cx="50" cy="50" r="42" style="stroke:rgba(12,31,61,.15)"></circle>
-              <circle class="rfg" cx="50" cy="50" r="42" style="stroke-dashoffset:0"></circle>
+              <circle class="rfg" id="timerRing" cx="50" cy="50" r="42" style="stroke-dashoffset:0"></circle>
             </svg>
-            <div class="timer-num">&lt;3<small>minutos</small></div>
+            <div class="timer-num" id="timerNum">&lt;3<small>minutos</small></div>
           </div>
         </article>
 
@@ -864,7 +870,7 @@
   <section class="section" style="padding-top:20px">
     <div class="wrap">
       <div class="final rv">
-        <h2>&iquest;Listo para encontrar<br><em>tu seguro?</em></h2>
+        <h2>Deja de buscar seguros.<br><em>Empieza a encontrar el adecuado.</em></h2>
         <p>En menos de 3 minutos tienes una recomendación con precio, cobertura y razones.</p>
         <div class="hero-ctas">
           <a class="btn btn-gold" href="https://t.me/asegura_bot" target="_blank" rel="noopener noreferrer">
@@ -1021,7 +1027,6 @@
       el.classList.toggle('out', el.getAttribute('data-cat') !== c.id);
     });
     objHalo.style.backgroundColor = CAT_COLORS[c.id].soft;
-    objTag.innerHTML = '<span class="dot"></span>' + c.product + ' <b>· desde ' + c.price + '</b>';
     pcTraits.innerHTML = c.traits.map(function(t, j){
       return '<div class="pc-trait' + (j === c.hl ? ' live' : '') + '"><span class="t-dot"></span>' + t + '</div>';
     }).join('');
@@ -1030,6 +1035,8 @@
   function showRecommendation(c, countScore){
     rcLabel.textContent = 'Asegura recomienda';
     rcLabel.classList.remove('pulse');
+    objTag.classList.remove('pulse');
+    objTag.innerHTML = '<span class="dot"></span>' + c.product + ' <b>· desde ' + c.price + '</b>';
     rcProd.textContent = c.product;
     rcIns.textContent = c.insurer + ' · Catálogo Colsubsidio';
     rcPrice.innerHTML = c.price + '<small>desde · al mes</small>';
@@ -1078,6 +1085,8 @@
     }
     rcLabel.textContent = 'Analizando tu perfil…';
     rcLabel.classList.add('pulse');
+    objTag.classList.add('pulse');
+    objTag.innerHTML = '<span class="dot"></span>ANALIZANDO TU PERFIL&hellip;';
     analyzeTO = setTimeout(function(){ showRecommendation(c, true); }, 750);
   }
 
@@ -1196,6 +1205,32 @@
   window.addEventListener('scroll', jTick, {passive:true});
   jTick();
 
+  /* ---------- tarjeta velocidad: cuenta regresiva (semántica, sin estados 0) ---------- */
+  var timerRing = document.getElementById('timerRing');
+  var timerNum = document.getElementById('timerNum');
+  var timerIO = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(!e.isIntersecting) return;
+      timerIO.disconnect();
+      if(reduce) return;
+      timerRing.style.transition = 'stroke-dashoffset 2.8s linear';
+      timerRing.style.strokeDashoffset = '0';
+      var t0 = null;
+      var step = function(ts){
+        if(!t0) t0 = ts;
+        var p = Math.min((ts - t0) / 2800, 1);
+        var s = Math.ceil(179 * (1 - p));
+        var m = Math.floor(s / 60);
+        var ss = (s % 60) < 10 ? '0' + (s % 60) : String(s % 60);
+        timerNum.innerHTML = m + ':' + ss + '<small>para tu recomendación</small>';
+        if(p < 1){ requestAnimationFrame(step); return; }
+        timerNum.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg><small>recomendación lista</small>';
+      };
+      requestAnimationFrame(step);
+    });
+  }, {threshold:.4});
+  timerIO.observe(timerRing.closest('.b-card'));
+
   /* ---------- demo conversacional ---------- */
   var chatBody = document.getElementById('chatBody');
   var chatCta = document.getElementById('chatCta');
@@ -1223,7 +1258,13 @@
       compare:[
         {n:'Medicina prepagada (perros)', i:'VetPlus', p:'$96.600'},
         {n:'Asistencia veterinaria', i:'GEA', p:'$14.500'},
-        {n:'Medicina prepagada (gatos)', i:'VetPlus', p:'$81.800'}]}
+        {n:'Medicina prepagada (gatos)', i:'VetPlus', p:'$81.800'}]},
+    salud: {title:'Asistencias médicas familiares', insurer:'GEA', price:'$16.800',
+      reasons:['Consultas virtuales','Descuentos en medicamentos','Orientación nutricional'],
+      compare:[
+        {n:'Asistencias médicas familiares', i:'GEA', p:'$16.800'},
+        {n:'Accidentes personales', i:'MetLife', p:'$18.000'},
+        {n:'Asistencias múltiples', i:'GEA', p:'$20.000'}]}
   };
   var ICON_TELEGRAM = '<svg class="w-ico" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M2 11.5 21 3l-5.2 18-5.6-4.6L15 10l-6.3 5.5z"/></svg>';
 
@@ -1315,15 +1356,16 @@
       addOptions([
         {id:'para-mi', label:'Para mí'},
         {id:'familia', label:'Mi familia'},
-        {id:'mascota', label:'Mi mascota'}
+        {id:'mascota', label:'Mi mascota'},
+        {id:'salud', label:'Mi salud'}
       ], function(id){
         typing(function(){ startPath(id); }, 900);
       });
     }, 700);
   }
   function startPath(id){
-    if(id === 'para-mi'){
-      showReco('para-mi', 'Analizo tu perfil contra el catálogo real de Colsubsidio…');
+    if(id === 'para-mi' || id === 'salud'){
+      showReco(id, 'Analizo tu perfil contra el catálogo real de Colsubsidio…');
       return;
     }
     if(id === 'familia'){
@@ -1354,6 +1396,16 @@
   }
   document.getElementById('chatReset').addEventListener('click', resetChat);
   askInitial();
+
+  /* ---------- acordeón de seguridad: solo uno abierto a la vez ---------- */
+  document.querySelectorAll('.qa').forEach(function(q){
+    q.addEventListener('toggle', function(){
+      if(!q.open) return;
+      document.querySelectorAll('.qa[open]').forEach(function(o){
+        if(o !== q) o.open = false;
+      });
+    });
+  });
 
   /* ---------- scroll suave para anclas ---------- */
   document.querySelectorAll('a[href^="#"]').forEach(function(a){
