@@ -131,8 +131,9 @@
   @media(min-width:640px){.hero-ctas{flex-direction:row;justify-content:center;gap:16px}}
 
   .hero-stage{position:relative;z-index:2;max-width:1240px;margin:clamp(46px,7vw,74px) auto 0;padding:0 24px}
-  .hs-inner{position:relative;display:flex;justify-content:center;align-items:flex-end;
-    min-height:clamp(400px,52vw,600px)}
+  .hs-inner{position:relative;display:flex;flex-direction:column;align-items:center;gap:16px}
+  @media(min-width:1080px){.hs-inner{flex-direction:row;justify-content:center;align-items:flex-end}}
+  .hs-photoband{position:relative;width:100%;min-height:clamp(400px,52vw,600px)}
   .hs-band{position:absolute;left:0;right:0;bottom:0;z-index:1;border-radius:clamp(26px,3.4vw,42px);
     background:linear-gradient(158deg,var(--navy) 0%,#12294F 100%);overflow:hidden;
     height:clamp(190px,25vw,268px)}
@@ -157,17 +158,19 @@
     width:clamp(240px,32vw,390px);height:60px;border-radius:50%;filter:blur(28px);
     background:rgba(233,162,59,.5)}
 
-  .hs-card{position:absolute;z-index:3;background:rgba(255,255,255,.9);
+  .hs-card{position:static;z-index:3;background:rgba(255,255,255,.9);
     backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
     border:1px solid rgba(255,255,255,.85);border-radius:var(--r-md);box-shadow:var(--shadow-card);
-    padding:16px;text-align:left;width:270px;display:none}
-  @media(min-width:1080px){.hs-card{display:block}}
-  .hs-left{left:0;bottom:262px;transform:rotate(-2.2deg);
-    animation:cardInL 1.2s var(--ease-out) 1.15s both,bobA 8s ease-in-out 2.4s infinite}
-  /* bottom must clear the band's corner figures; measured at 1280px those are
-     ~109px tall sitting ~33px off the band floor, so keep the card above ~155px */
-  .hs-right{right:0;bottom:172px;transform:rotate(2deg);
-    animation:cardInR 1.2s var(--ease-out) 1.35s both,bobB 9s ease-in-out 2.7s infinite}
+    padding:16px;text-align:left;width:100%;max-width:360px;margin:0 auto}
+  @media(min-width:1080px){
+    .hs-card{position:absolute;width:270px;max-width:none;margin:0}
+    /* bottom must clear the band's corner figures; measured at 1280px those are
+       ~109px tall sitting ~33px off the band floor, so keep the card above ~155px */
+    .hs-left{left:0;bottom:262px;transform:rotate(-2.2deg);
+      animation:cardInL 1.2s var(--ease-out) 1.15s both,bobA 8s ease-in-out 2.4s infinite}
+    .hs-right{right:0;bottom:172px;transform:rotate(2deg);
+      animation:cardInR 1.2s var(--ease-out) 1.35s both,bobB 9s ease-in-out 2.7s infinite}
+  }
   @keyframes cardInL{from{opacity:0;transform:translate(-40px,26px) rotate(-7deg) scale(.92)}
     to{opacity:1;transform:rotate(-2.2deg)}}
   @keyframes cardInR{from{opacity:0;transform:translate(40px,26px) rotate(7deg) scale(.92)}
@@ -648,14 +651,25 @@
     <!-- photographic band: photo breaks through the navy band, live cards flank it -->
     <div class="hero-stage">
       <div class="hs-inner" id="heroStage">
-        <div class="hs-band" aria-hidden="true"></div>
-        <div class="hs-glow" aria-hidden="true"></div>
+        <div class="hs-photoband">
+          <div class="hs-band" aria-hidden="true"></div>
+          <div class="hs-glow" aria-hidden="true"></div>
 
-        <figure class="hs-photo" id="heroPhoto">
-          <img src="/ph-familia.jpg" alt="Un padre carga a sus dos hijos pequeños en un patio soleado" width="1500" height="1900">
-        </figure>
+          <figure class="hs-photo" id="heroPhoto">
+            <img src="/ph-familia.jpg" alt="Un padre carga a sus dos hijos pequeños en un patio soleado" width="1500" height="1900">
+          </figure>
 
-        <aside class="hs-card hs-left" id="heroProfile" aria-hidden="true">
+          <div class="hs-stat hs-stat-l" aria-hidden="true">
+            <b>11<span class="u"> productos</span></b>
+            <span>Catálogo real de Colsubsidio, precios publicados</span>
+          </div>
+          <div class="hs-stat hs-stat-r" aria-hidden="true">
+            <b>&lt;3<span class="u"> min</span></b>
+            <span><span class="live-dot"></span>De cotización a póliza emitida</span>
+          </div>
+        </div>
+
+        <aside class="hs-card hs-left" id="heroProfile">
           <div class="hsc-head">
             <span class="hsc-ava">L</span>
             <span>
@@ -686,15 +700,6 @@
             <button class="hsc-btn hsc-btn-ghost" id="hrWhyBtn" type="button" aria-expanded="false" aria-controls="hrWhy">Ver por qué</button>
           </div>
         </aside>
-
-        <div class="hs-stat hs-stat-l" aria-hidden="true">
-          <b>11<span class="u"> productos</span></b>
-          <span>Catálogo real de Colsubsidio, precios publicados</span>
-        </div>
-        <div class="hs-stat hs-stat-r" aria-hidden="true">
-          <b>&lt;3<span class="u"> min</span></b>
-          <span><span class="live-dot"></span>De cotización a póliza emitida</span>
-        </div>
       </div>
     </div>
 
@@ -1027,10 +1032,12 @@
 
   var nav = document.getElementById('nav');
   var mCta = document.getElementById('mCta');
+  var finalSec = document.querySelector('.final');
   window.addEventListener('scroll', function(){
     var y = window.scrollY;
     nav.classList.toggle('scrolled', y > 30);
-    mCta.classList.toggle('show', y > 680);
+    var nearEnd = finalSec && finalSec.getBoundingClientRect().top < window.innerHeight;
+    mCta.classList.toggle('show', y > 680 && !nearEnd);
   }, {passive:true});
 
   var navLinks = Array.prototype.slice.call(document.querySelectorAll('.nav-links a'));
@@ -1169,8 +1176,10 @@
     onScrollScene(heroEl, function(p){
       var t = p * 100;
       heroPhoto.style.transform = 'translateY(' + (t * 0.42) + 'px)';
-      heroProfile.style.marginTop = (-t * 0.3) + 'px';
-      heroReco.style.marginTop = (t * 0.22) + 'px';
+      if(window.innerWidth >= 1080){
+        heroProfile.style.marginTop = (-t * 0.3) + 'px';
+        heroReco.style.marginTop = (t * 0.22) + 'px';
+      }
     });
   }
 
