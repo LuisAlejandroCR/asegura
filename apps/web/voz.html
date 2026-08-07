@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Asegura — Habla con tu asesor</title>
+<style>
+  /* Paleta oficial (misma que usa pdf.service.ts para la póliza real) */
+  :root{
+    --amarillo:#ffd000;
+    --azul:#0067b1;
+    --gris:#575756;
+    --gris-claro:#f2f2f2;
+    --negro:#000;
+    --blanco:#fff;
+    --fondo:#fafafa;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+
+  html,body{height:100%}
+
+  body{
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    background:var(--fondo);
+    color:var(--gris);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    /* safe-area: esto abre dentro del navegador in-app de WhatsApp en un teléfono */
+    padding:max(20px,env(safe-area-inset-top)) 20px max(20px,env(safe-area-inset-bottom));
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ── Encabezado ───────────────────────────────────────── */
+  header{text-align:center;padding-top:8px}
+
+  h1{
+    font-size:clamp(24px,6vw,32px);
+    font-weight:700;
+    color:var(--azul);
+    letter-spacing:-.02em;
+    display:flex;
+    align-items:baseline;
+    justify-content:center;
+    gap:12px;
+  }
+
+  #timer{
+    font-variant-numeric:tabular-nums;
+    font-weight:600;
+    color:var(--gris);
+    font-size:.8em;
+  }
+
+  .sub{font-size:14px;color:var(--gris);opacity:.75;margin-top:4px}
+
+  /* ── Orbe ─────────────────────────────────────────────── */
+  main{
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:100%;
+  }
+
+  #orb{
+    width:min(58vw,240px);
+    aspect-ratio:1;
+    border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #ffe561 0%, var(--amarillo) 55%, #e6bb00 100%);
+    box-shadow:0 12px 40px rgba(255,208,0,.35);
+    border:none;
+    cursor:pointer;
+    transition:transform .35s ease, box-shadow .35s ease;
+    animation:respirar 4s ease-in-out infinite;
+  }
+
+  /* Escuchando: el orbe se aquieta y aparece un anillo azul */
+  body[data-estado="escuchando"] #orb{
+    animation:none;
+    transform:scale(.94);
+    box-shadow:0 0 0 10px rgba(0,103,177,.12), 0 12px 40px rgba(255,208,0,.3);
+  }
+
+  /* Hablando: pulso activo */
+  body[data-estado="hablando"] #orb{
+    animation:hablar 1.1s ease-in-out infinite;
+  }
+
+  /* Terminado: el orbe se apaga. Si sigue latiendo, parece que la sesión
+     continúa — justo lo contrario de lo que dice el mensaje de cierre. */
+  body[data-estado="terminado"] #orb{
+    animation:none;
+    transform:scale(.88);
+    filter:grayscale(1);
+    opacity:.4;
+    box-shadow:none;
+    cursor:default;
+  }
+
+  @keyframes respirar{
+    0%,100%{transform:scale(1)}
+    50%{transform:scale(1.045)}
+  }
+
+  @keyframes hablar{
+    0%,100%{transform:scale(1);box-shadow:0 12px 40px rgba(255,208,0,.35)}
+    50%{transform:scale(1.09);box-shadow:0 16px 56px rgba(255,208,0,.55)}
+  }
+
+  #estado{
+    text-align:center;
+    font-size:15px;
+    min-height:22px;
+    margin-top:28px;
+    color:var(--gris);
+  }
+
+  /* ── Controles ────────────────────────────────────────── */
+  footer{width:100%;max-width:420px;text-align:center}
+
+  .controles{
+    display:flex;
+    gap:8px;
+    background:var(--gris-claro);
+    border-radius:18px;
+    padding:10px;
+  }
+
+  .btn{
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:9px;
+    padding:16px 12px;
+    border:none;
+    border-radius:12px;
+    background:transparent;
+    color:var(--gris);
+    font-family:inherit;
+    font-size:16px;
+    font-weight:600;
+    cursor:pointer;
+    transition:background .18s ease;
+    /* objetivo táctil cómodo — se usa en móvil, a una mano */
+    min-height:56px;
+  }
+
+  .btn:hover,.btn:focus-visible{background:rgba(0,0,0,.055)}
+  .btn:focus-visible{outline:3px solid var(--azul);outline-offset:2px}
+
+  .btn[aria-pressed="true"]{background:rgba(0,103,177,.12);color:var(--azul)}
+
+  #btn-terminar{color:#c0392b}
+  #btn-terminar:hover,#btn-terminar:focus-visible{background:rgba(192,57,43,.09)}
+
+  .icono{width:20px;height:20px;flex:none}
+
+  .aviso{
+    font-size:12.5px;
+    color:var(--gris);
+    opacity:.7;
+    margin-top:16px;
+    line-height:1.45;
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    #orb{animation:none!important;transition:none}
+  }
+</style>
+</head>
+<body data-estado="inactivo">
+
+  <header>
+    <h1>Asegura <span id="timer">00:00</span></h1>
+    <p class="sub">Tu asesor de seguros · Colsubsidio</p>
+  </header>
+
+  <main>
+    <button id="orb" aria-label="Toca para hablar con Asegura"></button>
+  </main>
+
+  <footer>
+    <p id="estado" role="status" aria-live="polite">Toca el círculo para empezar a hablar</p>
+
+    <div class="controles">
+      <button class="btn" id="btn-mute" aria-pressed="false">
+        <svg class="icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="22"/>
+        </svg>
+        <span id="txt-mute">Silenciar</span>
+      </button>
+
+      <button class="btn" id="btn-terminar">
+        <svg class="icono" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <rect x="5" y="5" width="14" height="14" rx="3"/>
+        </svg>
+        <span>Terminar</span>
+      </button>
+    </div>
+
+    <p class="aviso">
+      Asegura puede cometer errores. Confirma siempre coberturas y precios en tu póliza.
+    </p>
+  </footer>
+
+<script>
+(() => {
+  const cuerpo   = document.body;
+  const orbe     = document.getElementById('orb');
+  const estado   = document.getElementById('estado');
+  const reloj    = document.getElementById('timer');
+  const btnMute  = document.getElementById('btn-mute');
+  const txtMute  = document.getElementById('txt-mute');
+  const btnFin   = document.getElementById('btn-terminar');
+
+  const MENSAJES = {
+    inactivo:   'Toca el círculo para empezar a hablar',
+    escuchando: 'Te escucho…',
+    hablando:   'Asegura está hablando…',
+    silenciado: 'Micrófono silenciado',
+    terminado:  'Conversación terminada. Ya puedes volver al chat.',
+  };
+
+  let segundos = 0, cronometro = null, silenciado = false, demo = null;
+
+  const setEstado = (e) => {
+    cuerpo.dataset.estado = e;
+    estado.textContent = MENSAJES[e] ?? '';
+  };
+
+  const arrancarReloj = () => {
+    if (cronometro) return;
+    cronometro = setInterval(() => {
+      segundos++;
+      const m = String(Math.floor(segundos / 60)).padStart(2, '0');
+      const s = String(segundos % 60).padStart(2, '0');
+      reloj.textContent = `${m}:${s}`;
+    }, 1000);
+  };
+
+  // Demo local: alterna escuchar/hablar para ver los tres estados del orbe.
+  // En la versión real esto lo maneja la sesión de voz (ver plan 17).
+  const arrancarDemo = () => {
+    arrancarReloj();
+    setEstado('escuchando');
+    let turno = 0;
+    demo = setInterval(() => {
+      if (silenciado) return;
+      turno++;
+      setEstado(turno % 2 ? 'hablando' : 'escuchando');
+    }, 3800);
+  };
+
+  orbe.addEventListener('click', () => {
+    if (cuerpo.dataset.estado === 'terminado') return;
+    if (!demo) { arrancarDemo(); return; }
+    setEstado(cuerpo.dataset.estado === 'hablando' ? 'escuchando' : 'hablando');
+  });
+
+  btnMute.addEventListener('click', () => {
+    silenciado = !silenciado;
+    btnMute.setAttribute('aria-pressed', String(silenciado));
+    txtMute.textContent = silenciado ? 'Activar' : 'Silenciar';
+    setEstado(silenciado ? 'silenciado' : 'escuchando');
+  });
+
+  btnFin.addEventListener('click', () => {
+    clearInterval(demo); clearInterval(cronometro);
+    demo = cronometro = null;
+    setEstado('terminado');
+    // Real: cerrar la sesión de voz y devolver al chat (ver plan 17, §4).
+  });
+})();
+</script>
+</body>
+</html>

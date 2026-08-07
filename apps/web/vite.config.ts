@@ -9,6 +9,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         pitch: resolve(__dirname, 'pitch.html'),
+        voz: resolve(__dirname, 'voz.html'),
       },
     },
   },
