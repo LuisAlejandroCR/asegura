@@ -1,3 +1,6 @@
+// app.module.ts: NestJS root module — wires config validation, throttling and every
+// feature module (agent, channel, quoting, policy, payments, database, health).
+
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';

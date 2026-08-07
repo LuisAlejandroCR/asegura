@@ -17,12 +17,9 @@ import { STATE_RESPONSES, formatNameList } from '../agent/conversation-state.mac
 
 const PROCESSED_STATUSES = ['paid', 'active'];
 
-// Static brand asset — referenced relative to the project root (not __dirname) because
-// nest-cli.json doesn't copy non-.ts assets into dist/, and the server runs `node dist/main`
-// from the project root, so `src/assets/` is reachable at runtime via process.cwd()
-// (same convention as pdf.service.ts's IMAGES_DIR and agent.service.ts's copy of this path).
-// "¡Pago recibido!" is baked into the video itself (2026-07-24 feedback) — same asset
-// used for the Tarjeta Colsubsidio choice in agent.service.ts.
+// Path is relative to the project root, not __dirname: nest-cli.json doesn't copy non-.ts
+// assets into dist/, and the server runs `node dist/main` from the root (same convention
+// as pdf.service.ts's IMAGES_DIR). "¡Pago recibido!" is baked into the video itself.
 const PAYMENT_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'payment-received.mp4');
 
 @Controller('webhooks/wompi')
@@ -139,13 +136,10 @@ export class WompiWebhookController {
       }
     }
 
-    // 2026-07-24 "restore the flow": cross-selling now happens strictly AFTER a purchase
-    // is fully paid, never mid-quote (see AgentService.deferCrossSell). If the user showed
-    // interest in a specific category earlier, follow up with THAT one by name and seed it
-    // into the fresh context so their very next message (even a bare "sí") produces a real
-    // quote immediately. Otherwise offer a generic "want something else?" prompt. Either
-    // way this starts a genuinely NEW, separate purchase — identity (cédula/nombre/correo)
-    // is kept so DATA_CAPTURE doesn't re-ask it, but every product-specific field is reset.
+    // 2026-07-24 — cross-sell happens strictly AFTER payment, never mid-quote (see
+    // deferCrossSell). An earlier category interest is followed up by name and seeded into
+    // context so even a bare "sí" quotes immediately. Starts a NEW purchase: identity is
+    // kept so DATA_CAPTURE doesn't re-ask, every product-specific field is reset.
     const pendingCategory = newContext.pendingCrossSell;
     const crossSellText = pendingCategory
       ? `¿Seguimos con el seguro de *${pendingCategory}* que mencionaste? Cuéntame y te cotizo.`
@@ -166,12 +160,10 @@ export class WompiWebhookController {
       selfieProvided: newContext.selfieProvided,
       productCategory: pendingCategory ?? undefined,
       awaitingCrossSellResponse: true,
-      // Real live-test bug: unlike policyId/policyIds (purchase-specific, reset here for
-      // the next one) and awaitingCrossSellResponse (a one-shot flag), this must persist
-      // permanently once set — it's the only durable signal that lets a LATER
-      // abandonIntent (processMessage in agent.service.ts) tell "already bought
-      // something" apart from "never bought anything", so a declined cross-sell doesn't
-      // get recorded as the same conversation status as never having purchased at all.
+      // Live bug: must persist permanently, unlike policyIds (reset per purchase) and
+      // awaitingCrossSellResponse (one-shot). It's the only signal that lets a later
+      // abandonIntent tell "already bought" from "never bought", so a declined cross-sell
+      // isn't recorded as never having purchased.
       hasCompletedPurchase: true,
       // 2026-07-26 feature request: unlike policyId/policyIds, this DOES carry forward —
       // it's the durable record a later "¿qué cubre mi póliza?" question in COMPLETED

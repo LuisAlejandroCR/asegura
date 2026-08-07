@@ -1,3 +1,6 @@
+// wompi.service.spec.ts: tests the enabled flag (missing keys must not crash startup)
+// and validateWebhookSignature against tampered checksum, amount and status.
+
 import { createHash } from 'crypto';
 import { WompiService } from './wompi.service';
 import { WompiWebhookEvent } from './types';
@@ -55,8 +58,6 @@ function makeEvent(overrides: {
     data,
   } as any;
 }
-
-// ── Unit tests ────────────────────────────────────────────────────────────────
 
 describe('WompiService — enabled flag', () => {
   it('is enabled when all required env vars are set', () => {
@@ -260,8 +261,6 @@ describe('WompiService — createPaymentLink success shape', () => {
     expect(capturedBody.expires_at).not.toContain(' ');
   });
 });
-
-// ── Fuzz tests ────────────────────────────────────────────────────────────────
 
 describe('WompiService FUZZ — signature validation', () => {
   it('invariant: valid event always validates correctly regardless of amount', () => {

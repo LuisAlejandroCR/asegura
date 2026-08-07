@@ -1,3 +1,6 @@
+// types.ts: the NLP boundary — InsuranceIntent (what the agent needs extracted from a
+// message) and INlpProvider, so Groq or Ollama can be swapped without touching the agent.
+
 interface InsuranceIntent {
   productCategory: 'vida' | 'hogar' | 'accidentes' | 'asistencia' | 'mascotas' | null;
   petType?: 'gato' | 'perro' | 'mixto' | null;

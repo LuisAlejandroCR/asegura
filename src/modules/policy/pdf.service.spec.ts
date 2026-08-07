@@ -1,3 +1,6 @@
+// pdf.service.spec.ts: tests policy PDF generation end-to-end — per-pet premium lines,
+// the pets table, optional email, every document type, and the audit QR target.
+
 import { PdfService } from './pdf.service';
 
 // Regression: pdfkit's default export ships no `.default` property, so
@@ -37,7 +40,7 @@ describe('PdfService.generate', () => {
   });
 });
 
-// ── petCount pricing display ───────────────────────────────────────────────────
+// petCount pricing display
 // Real bug: the chat quote correctly showed "$14.500/mes por mascota, Total para 3
 // mascotas: $43.500/mes", but the PDF's PRIMA MENSUAL box always showed a flat single
 // price — PdfService never received petCount at all, so it had no way to know.
@@ -108,7 +111,7 @@ describe('PdfService — petCount pricing display', () => {
   }, 15000);
 });
 
-// ── resolveAuditUrl — QR target logic ─────────────────────────────────────────
+// resolveAuditUrl — QR target logic
 // Blockchain (Celo) verification was descoped from the active flow — the QR now always
 // encodes the deterministic referenceURI, a stable, permanent lookup link for the policy.
 

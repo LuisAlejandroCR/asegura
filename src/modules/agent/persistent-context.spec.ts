@@ -1,3 +1,6 @@
+// persistent-context.spec.ts: tests pickPersistentFields and hasRememberedProfile —
+// notably that a real 0 survives and that one-shot gates are not treated as durable.
+
 import { pickPersistentFields, hasRememberedProfile, PERSISTENT_FIELDS } from './persistent-context';
 import { ConversationContext } from './types';
 

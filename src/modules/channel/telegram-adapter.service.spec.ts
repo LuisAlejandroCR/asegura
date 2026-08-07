@@ -1,3 +1,6 @@
+// telegram-adapter.service.spec.ts: tests TelegramAdapter.normalize — photo size
+// selection, sender fields, and which media types are flagged as unsupported input.
+
 import { Logger } from '@nestjs/common';
 import { TelegramAdapter } from './telegram-adapter.service';
 

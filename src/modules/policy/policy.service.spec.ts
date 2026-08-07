@@ -1,3 +1,6 @@
+// policy.service.spec.ts: tests policy issue and lookup — that issuing does not
+// generate the PDF, and that pet count, per-pet details and document type are stored.
+
 import { PolicyService } from './policy.service';
 
 function makeSupabaseMock(overrides: { data?: unknown; error?: unknown } = {}) {

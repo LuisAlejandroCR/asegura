@@ -1,3 +1,6 @@
+// conversation.service.ts: loads, creates and persists conversation rows in Supabase,
+// with a short-lived in-memory cache keyed by user + channel.
+
 import { Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.service';
 import { Conversation, ConversationContext, ConversationState } from './types';

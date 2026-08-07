@@ -1,3 +1,8 @@
+// agent.service.ts: the conversation orchestrator — routes every inbound message
+// through the state machine, asks the NLP layer for intent, and lets the rules engine
+// decide product and price. Most comments below record a specific live-test bug and
+// why the fix is shaped the way it is; they are the reason the flow looks like this.
+
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as path from 'path';
@@ -585,7 +590,7 @@ export class AgentService {
     }
   }
 
-  // ── Affiliate ID lookup ─────────────────────────────────────────────────────
+  // Affiliate ID lookup
   // 2026-07-26 — "nunca preguntar lo que ya sabemos" (Diseño preguntas.docx, Nivel 1)
   // for income: DISCOVERY's filter has no income question at all, so this is the one
   // signal Colsubsidio can supply directly if the user self-identifies with their
@@ -675,7 +680,7 @@ export class AgentService {
     };
   }
 
-  // ── Discovery ────────────────────────────────────────────────────────────────
+  // Discovery
 
   private handleDiscovery(
     context: ConversationContext,
@@ -1093,7 +1098,7 @@ export class AgentService {
     };
   }
 
-  // ── Quotation ────────────────────────────────────────────────────────────────
+  // Quotation
 
   private handleQuotation(context: ConversationContext, text: string, intent: InsuranceIntent): ProcessResult {
     // Real bug (2026-07-26): this flag is set below when a category's alternatives run
@@ -1715,7 +1720,7 @@ export class AgentService {
     return 'CC';
   }
 
-  // ── Data capture ─────────────────────────────────────────────────────────────
+  // Data capture
 
   private async handleDataCapture(
     convId: string,
@@ -2317,7 +2322,7 @@ export class AgentService {
     }
   }
 
-  // ── Payment ─────────────────────────────────────────────────────────────────
+  // Payment
 
   private async handlePayment(
     convId: string,
@@ -2361,8 +2366,6 @@ export class AgentService {
 
     return { text: STATE_RESPONSES[ConversationState.PAYMENT](context) };
   }
-
-  // ── Helpers ──────────────────────────────────────────────────────────────────
 
   private formatQuote(
     product: InsuranceProduct,

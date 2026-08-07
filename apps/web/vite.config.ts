@@ -1,3 +1,5 @@
+// vite.config.ts: Vite build config for the pitch web app (apps/web).
+
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 

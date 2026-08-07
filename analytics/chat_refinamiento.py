@@ -15,11 +15,9 @@ base, no debería bloquearse al esperar respuesta.
 """
 from reglas_negocio import CATALOGO
 
-# ---------------------------------------------------------------------------
 # Catálogo de preguntas: qué se pregunta, qué tipo de respuesta se espera,
 # y qué de la recomendación afina cada una. Pensado para que un chatbot pueda
 # iterar sobre este diccionario y saber qué preguntar y en qué formato.
-# ---------------------------------------------------------------------------
 PREGUNTAS_CHAT = {
     "ya_tiene_seguro": {
         "pregunta": "¿Ya tienes algún seguro contratado (con Colsubsidio o con otra aseguradora)? ¿Cuál?",

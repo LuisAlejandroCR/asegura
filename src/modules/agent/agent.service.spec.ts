@@ -1,8 +1,12 @@
+// agent.service.spec.ts: the conversation suite for AgentService — one describe per
+// state (GREETING through COMPLETED) plus the regression cases from live testing.
+// Each dated block names the real bug it locks down; keep that context when editing.
+
 import { ConversationState, ConversationContext } from './types';
 import { PRODUCTS } from '../quoting/products.data';
 import { makeMessage, makeIntent, makeConversation, buildService } from './agent.service.test-helpers';
 
-// ── Unsupported input (images, long audio) ────────────────────────────────────
+// Unsupported input (images, long audio)
 
 describe('AgentService — unsupported input', () => {
   it('regression — an image gets an informative message instead of being silently ignored', async () => {
@@ -29,7 +33,7 @@ describe('AgentService — unsupported input', () => {
   });
 });
 
-// ── GREETING state ───────────────────────────────────────────────────────────
+// GREETING state
 
 describe('AgentService — GREETING', () => {
   // 2026-07-24 feedback: greeting + a full separate authorization paragraph read as a
@@ -82,7 +86,7 @@ describe('AgentService — GREETING', () => {
   });
 });
 
-// ── AUTHORIZATION state ───────────────────────────────────────────────────────
+// AUTHORIZATION state
 
 describe('AgentService — AUTHORIZATION', () => {
   // 2026-07-26 affiliate CSV lookup — "sí" no longer jumps straight to DISCOVERY. It now
@@ -185,7 +189,7 @@ describe('AgentService — AUTHORIZATION', () => {
   });
 });
 
-// ── Affiliate ID lookup (2026-07-26) ───────────────────────────────────────────
+// Affiliate ID lookup (2026-07-26)
 // "sí" asks a one-shot affiliate-ID question before DISCOVERY starts — a decline, an
 // unrecognized ID, or the lookup being disabled (missing CSV) all proceed to DISCOVERY
 // identically, just without the rangoSalarial boost. F01 hybrid buttons move here too
@@ -577,7 +581,7 @@ describe('AgentService — F01 button taps deterministically force productCatego
   });
 });
 
-// ── KYC — phone verification via Telegram's native contact-share button ───────
+// KYC — phone verification via Telegram's native contact-share button
 // 2026-07-24 feedback: "simple KYC to know the user is real... Telegram autocomplete as
 // autoconfirmation and avoid user leave the chat" — confirmed approach is Telegram's
 // native request_contact button (no SMS/Twilio provider), fired once at the very start
@@ -673,7 +677,7 @@ describe('AgentService — KYC phone verification gate', () => {
   });
 });
 
-// ── KYC — cosmetic selfie step (2026-07-24, simulated identity confirmation) ──
+// KYC — cosmetic selfie step (2026-07-24, simulated identity confirmation)
 // User feedback: "let user know that the camera will open, take the selfie immediately,
 // simulate a KYC as cosmetic and let the user know it was successfully approved... this
 // is possible with a third-party service integrated into the chat to avoid false
@@ -800,7 +804,7 @@ describe('AgentService — KYC cosmetic selfie step', () => {
   });
 });
 
-// ── DATA_CAPTURE flow ─────────────────────────────────────────────────────────
+// DATA_CAPTURE flow
 
 describe('AgentService — DATA_CAPTURE sequential flow', () => {
   it('invalid cédula (letters) shows error and stays in DATA_CAPTURE', async () => {
@@ -1301,7 +1305,7 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
   });
 });
 
-// ── Conditional underwriting (2026-07-24 business feedback) ──────────────────
+// Conditional underwriting (2026-07-24 business feedback)
 // "Seguro de vida" and both "Medicina prepagada" (gatos/perros) products need age,
 // pre-existing illnesses, and clinical history before they can be sold — everything
 // else in the catalog is direct-sell (cédula/nombre/correo only).
@@ -1434,7 +1438,7 @@ describe('AgentService — conditional underwriting gate', () => {
   });
 });
 
-// ── Payment method choice (2026-07-24 feedback) ───────────────────────────────
+// Payment method choice (2026-07-24 feedback)
 // "at the end let user choose if they want to pay with Tarjeta Colsubsidio or Link de
 // pago" — both route to the exact same real Wompi checkout link (no new payment rail,
 // nothing faked): Wompi already accepts card payments, so this is a wording/framing
@@ -1565,7 +1569,7 @@ describe('AgentService — payment method choice (Tarjeta Colsubsidio vs Link de
   });
 });
 
-// ── DATA_CAPTURE — per-pet detail collection (name, age, breed) ──────────────
+// DATA_CAPTURE — per-pet detail collection (name, age, breed)
 
 describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
   it('asks for the first pet\'s details before asking for cédula', async () => {
@@ -1934,7 +1938,7 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
   });
 });
 
-// ── PAYMENT — webhook is the source of truth, chat "sí" no longer confirms ────
+// PAYMENT — webhook is the source of truth, chat "sí" no longer confirms
 
 describe('AgentService — PAYMENT webhook-driven confirmation', () => {
   it('regression — charges the correct multiplied total for multi-pet households, not the flat single-pet price', async () => {
@@ -2012,7 +2016,7 @@ describe('AgentService — PAYMENT webhook-driven confirmation', () => {
   });
 });
 
-// ── abandonIntent vs. an already-completed purchase ──────────────────────────────
+// abandonIntent vs. an already-completed purchase
 // Real live-test bug (confirmed directly in the production Supabase conversations
 // table): two conversations that had ALREADY completed a real, Wompi-approved purchase
 // ended up with state='abandoned' after the customer later declined to buy anything
@@ -2050,9 +2054,9 @@ describe('AgentService — abandonIntent after an already-completed purchase', (
   });
 });
 
-// ── QUOTE_PRESENTED — no-repeat invariant ─────────────────────────────────────
+// QUOTE_PRESENTED — no-repeat invariant
 
-// ── QUOTE_PRESENTED — back-reference resolution (2026-07-26 live bug) ─────────
+// QUOTE_PRESENTED — back-reference resolution (2026-07-26 live bug)
 // "Prefiero la anterior.", "Quiero la primera opción que me ofreciste.", "la que vale
 // 16.800", "¿alguna más económica?" all reference a SPECIFIC already-shown product (or a
 // cheaper one among them) -- none had a handler before this fix; they either fell
@@ -2163,7 +2167,7 @@ describe('AgentService — QUOTE_PRESENTED back-reference resolution', () => {
   });
 });
 
-// ── QUOTE_PRESENTED — category exhaustion no longer resets to DISCOVERY ────────
+// QUOTE_PRESENTED — category exhaustion no longer resets to DISCOVERY
 // Real live-test bug (2026-07-26): resetting productCategory/coverage and transitioning
 // to DISCOVERY when a category runs out of unseen options let the NEXT ambiguous
 // message's hallucinated productCategory silently start a brand-new, unrelated quote (an
@@ -2198,7 +2202,7 @@ describe('AgentService — QUOTE_PRESENTED category exhaustion stays anchored', 
 
 });
 
-// ── Lead capture — waitlist offer when a category's alternatives run out ───────
+// Lead capture — waitlist offer when a category's alternatives run out
 // Real live-test bug (2026-07-26, "flow is broken"): awaitingContactConsent was set by
 // handleQuotation (category exhaustion, above) but only ever CHECKED inside
 // `case ConversationState.AUTHORIZATION` in processMessage — unreachable, since the
@@ -2752,7 +2756,7 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
   });
 });
 
-// ── QUOTE_PRESENTED / DISCOVERY — out-of-catalog category mentions ────────────
+// QUOTE_PRESENTED / DISCOVERY — out-of-catalog category mentions
 // Real bug independently confirmed by both a live test session and a teammate's
 // findings report: asking for a category we don't sell ("vehicular", "seguro vehicular")
 // silently re-showed the unrelated, already-quoted product verbatim (Seguro de vida,
@@ -2831,7 +2835,7 @@ describe('AgentService — QUOTE_PRESENTED honest response to an out-of-catalog 
   });
 });
 
-// ── QUOTE_PRESENTED — explain/compare meta-questions (2026-07-26 live bug) ─────
+// QUOTE_PRESENTED — explain/compare meta-questions (2026-07-26 live bug)
 // "¿Cuál es mejor?" / "Cuéntame más de ellos" / "Explícame de qué se trata" carry no
 // affirmative/negative/alternative signal, so they used to fall through to the same
 // truncated quote card being silently re-shown every time — read by the user as "it just
@@ -2902,7 +2906,7 @@ describe('AgentService — QUOTE_PRESENTED explain/compare meta-questions', () =
   });
 });
 
-// ── QUOTE_PRESENTED — cross-sell for the human owner ──────────────────────────
+// QUOTE_PRESENTED — cross-sell for the human owner
 
 describe('AgentService — QUOTE_PRESENTED cross-sell for personal coverage', () => {
   it('regression — asking about coverage "para mí" during a pet quote defers it instead of abandoning the pending purchase', async () => {
@@ -3061,7 +3065,7 @@ describe('AgentService — QUOTE_PRESENTED explicit category mention defers, doe
   });
 });
 
-// ── DISCOVERY — mixed pets clarification ──────────────────────────────────────
+// DISCOVERY — mixed pets clarification
 
 describe('AgentService — DISCOVERY mixed pets', () => {
   it('regression — mixto petType triggers clarification question', async () => {
@@ -3315,7 +3319,7 @@ describe('AgentService — DISCOVERY mixed pets', () => {
   });
 });
 
-// ── QUOTE_PRESENTED — switching species after narrowing a mixed-species quote ──
+// QUOTE_PRESENTED — switching species after narrowing a mixed-species quote
 // Real live-test bug (2026-07-26, screenshot): "solo perros" worked (narrowed the
 // combined gato+perro quote down to just perros), but a FOLLOW-UP "solo gato" — trying
 // to switch to the OTHER species — just re-showed the SAME perros quote, and asking to
@@ -3398,7 +3402,7 @@ describe('AgentService — QUOTE_PRESENTED switching species in a mixed househol
   });
 });
 
-// ── DATA_CAPTURE — pet-count collection respects a narrowed single-species purchase ──
+// DATA_CAPTURE — pet-count collection respects a narrowed single-species purchase
 // Real live-test bug (2026-07-26, screenshot): after narrowing a mixed household ("1
 // gata + 2 perros") down to "solo perros", the per-pet details summary still showed 3
 // pets (Bruna the cat included) instead of 2 (only the dogs) — firstDataCaptureQuestion
@@ -3469,7 +3473,7 @@ describe('AgentService — DATA_CAPTURE pet count respects species narrowing', (
   });
 });
 
-// ── DISCOVERY — productCategory inference + ages loop regression ──────────────
+// DISCOVERY — productCategory inference + ages loop regression
 
 describe('AgentService — DISCOVERY productCategory inference', () => {
   it('infers productCategory mascotas from petType gato when NLP does not extract it', async () => {
@@ -3528,7 +3532,7 @@ describe('AgentService — DISCOVERY productCategory inference', () => {
   });
 });
 
-// ── DISCOVERY — catalog-honesty bridge (2026-07-26, Step 5) ────────────────────
+// DISCOVERY — catalog-honesty bridge (2026-07-26, Step 5)
 // "Quiero asegurar mi carro" during DISCOVERY had no branch at all — no vehicular/
 // empresa product exists, so it silently extracted no category and looped forever on
 // the generic tier-1 question. QUOTE_PRESENTED already had this exact check
@@ -3591,7 +3595,7 @@ describe('AgentService — DISCOVERY catalog-honesty bridge', () => {
   });
 });
 
-// ── DISCOVERY — pet count + quote clarity ────────────────────────────────────
+// DISCOVERY — pet count + quote clarity
 
 describe('AgentService — DISCOVERY pet count and quote pricing', () => {
   // petType: 'perro' below — these 3 tests are about petCount/pricing propagation, not
@@ -3655,7 +3659,7 @@ describe('AgentService — DISCOVERY pet count and quote pricing', () => {
   });
 });
 
-// ── DISCOVERY — must know species before quoting mascotas ────────────────────
+// DISCOVERY — must know species before quoting mascotas
 // Real live-test gap: "Tengo dos mascotas y yo." went straight to a quote without the
 // agent ever learning cat/dog/mixed. The real catalog has species-restricted products
 // (medicina-prepagada-gatos / medicina-prepagada-perros) alongside a generic one —
@@ -3703,7 +3707,7 @@ describe('AgentService — DISCOVERY asks species before quoting mascotas', () =
   });
 });
 
-// ── DISCOVERY — unclear/unextractable message acknowledgment ────────────────
+// DISCOVERY — unclear/unextractable message acknowledgment
 
 describe('AgentService — DISCOVERY unclear message handling', () => {
   it('regression — message with no extractable signal gets an acknowledgment, not a silent verbatim repeat', async () => {
@@ -3882,7 +3886,7 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
   });
 });
 
-// ── DISCOVERY — dependents question (2026-07-26 Step 3) ───────────────────────
+// DISCOVERY — dependents question (2026-07-26 Step 3)
 // Gated on `discoveryFilter`, set ONLY in the AUTHORIZATION→isAffirmative branch — every
 // hand-built context in the existing suite never sets it, so this MUST be a strict
 // opt-in with zero effect on any test that predates this feature.
@@ -4007,7 +4011,7 @@ describe('AgentService — DISCOVERY dependents question (Step 3)', () => {
   });
 });
 
-// ── DISCOVERY — urgency capture (2026-07-26, Matriz 2 C05) ─────────────────────
+// DISCOVERY — urgency capture (2026-07-26, Matriz 2 C05)
 // Already inferred by the NLP layer from words like "urgente"/"ya" — no new question,
 // just wiring an existing-but-dead field into context and, from there, into scoring.
 describe('AgentService — DISCOVERY urgency capture', () => {
@@ -4062,7 +4066,7 @@ describe('AgentService — DISCOVERY urgency capture', () => {
   });
 });
 
-// ── DISCOVERY — lost-context resilience ──────────────────────────────────────
+// DISCOVERY — lost-context resilience
 
 describe('AgentService — DISCOVERY lost-context resilience', () => {
   it('regression — ages answer with lost petType (coverage set) does not re-trigger mixto loop', async () => {
@@ -4089,7 +4093,7 @@ describe('AgentService — DISCOVERY lost-context resilience', () => {
   });
 });
 
-// ── Post-purchase cross-sell decline (2026-07-24 live bug) ────────────────────
+// Post-purchase cross-sell decline (2026-07-24 live bug)
 // After a purchase, wompi-webhook.controller.ts asks "¿Quieres proteger algo más?" and
 // resets the conversation to DISCOVERY. A decline ("No, está bien así.") used to fall
 // through DISCOVERY's generic "no entendí" acknowledgment — the agent literally
@@ -4222,8 +4226,6 @@ describe('AgentService — DISCOVERY polite decline of the post-purchase cross-s
     );
   });
 });
-
-// ── Fuzz tests ────────────────────────────────────────────────────────────────
 
 describe('AgentService FUZZ — cédula validation', () => {
   const validCedulas = ['100000', '1234567', '12345678', '123456789', '1234567890'];
@@ -4401,7 +4403,7 @@ describe('AgentService INVARIANT — underwriting question matches catalog flag 
   );
 });
 
-// ── 30s "come back to chat" reminder (2026-07-25 feature request) ─────────────
+// 30s "come back to chat" reminder (2026-07-25 feature request)
 // This app is otherwise fully stateless (driven only by incoming Telegram messages) — the
 // reminder is the one place with an in-memory timer, scoped per conversation id. Every
 // incoming message must cancel any reminder pending for THIS conversation (proof the user
@@ -4480,7 +4482,7 @@ describe('AgentService — 30s reminder scheduling', () => {
   });
 });
 
-// ── Terminal-state restart (2026-07-26 live-test bug) ─────────────────────────
+// Terminal-state restart (2026-07-26 live-test bug)
 // ReminderService's auto-close message explicitly promises "cuando quieras continuar,
 // aquí estoy — 24/7" — but only an EXACT hola/ayuda/inicio/start match ever restarted an
 // ABANDONED/REJECTED conversation. A real follow-up question fell through to the static
@@ -4761,7 +4763,7 @@ describe('AgentService — terminal-state restart', () => {
   });
 });
 
-// ── Stuck-loop circuit breaker + human escalation (2026-07-26 live-test feedback) ─────
+// Stuck-loop circuit breaker + human escalation (2026-07-26 live-test feedback)
 // "If the agent doesn't have the info about the insurance asked, redirect the chat to a
 // human." Only turns explicitly flagged unclearReply (DISCOVERY's genuinely-stuck
 // fallback, QUOTE_PRESENTED's neutral re-show) count toward the streak — a real
@@ -4901,7 +4903,7 @@ describe('AgentService — stuck-loop circuit breaker + human escalation', () =>
   });
 });
 
-// ── Comprehensive end-to-end live-test scenarios (2026-07-26) ─────────────────────────
+// Comprehensive end-to-end live-test scenarios (2026-07-26)
 // Each scenario below chains multiple real service.handleMessage() calls, manually
 // threading each turn's saved context into the next buildService() call — the same
 // convention already used by the mixed-species regression test above (this codebase has

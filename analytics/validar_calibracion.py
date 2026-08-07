@@ -44,10 +44,8 @@ def validar(df: pd.DataFrame) -> str:
     p(f"Filas totales: {len(df):,}")
     p()
 
-    # ------------------------------------------------------------------
     # 1) Precision del producto principal (reglas_negocio) vs PRODUCTO_ID
     #    real, entre los afiliados efectivamente convertidos.
-    # ------------------------------------------------------------------
     activos = df[df["ESTADO_VENTA"] == "active"].copy()
     activos["PRODUCTO_KEY_MAPEADO"] = activos["PRODUCTO_KEY"].map(PRODUCTO_KEY_TO_ID)
     comparable = activos.dropna(subset=["PRODUCTO_KEY_MAPEADO"])
@@ -72,10 +70,8 @@ def validar(df: pd.DataFrame) -> str:
       "La cifra de arriba mide cuanto de la logica de tiers SI se preservo en la etiqueta sintetica.")
     p()
 
-    # ------------------------------------------------------------------
     # 2) Precision de canal_timing.py (CANAL_TOUCH_INICIAL) vs. el canal
     #    real por el que efectivamente se contacto al afiliado.
-    # ------------------------------------------------------------------
     contactados = df[df["CONTACTADO"] == "SI"].copy()
     aciertos_canal = (contactados["CANAL_TOUCH_INICIAL"] == contactados["CANAL_CONTACTO"]).sum()
     tasa_canal = aciertos_canal / len(contactados) * 100 if len(contactados) else 0.0
@@ -100,11 +96,9 @@ def validar(df: pd.DataFrame) -> str:
       "hay que pedirle a Colsubsidio (historial real de canal-respuesta) para calibrar el modelo de verdad.")
     p()
 
-    # ------------------------------------------------------------------
     # 3) Tasa de conversion real por TIER (reglas_negocio) y por CLUSTER
     #    (KPrototypes) -- valida si el tier/cluster asignado correlaciona
     #    con mayor probabilidad de conversion real.
-    # ------------------------------------------------------------------
     p("## 3. Tasa de conversion real (ESTADO_VENTA=active) por TIER de reglas_negocio.py")
     p()
     conv_por_tier = df.groupby("TIER").apply(

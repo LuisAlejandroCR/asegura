@@ -1,3 +1,6 @@
+// pricing.spec.ts: unit, fuzz and invariant tests for computeTotalPremium — only
+// mascotas multiply by pet count, and the result is always a multiple of basePremium.
+
 import { computeTotalPremium } from './pricing';
 import { InsuranceProduct } from './types';
 

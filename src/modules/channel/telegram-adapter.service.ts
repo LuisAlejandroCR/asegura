@@ -1,3 +1,7 @@
+// telegram-adapter.service.ts: the Telegram implementation of IChannelAdapter —
+// normalizes inbound updates into NormalizedMessage, transcribes voice notes, and
+// sends text, reply keyboards, reactions, animations and documents back.
+
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Bot, Context, InputFile, Keyboard, webhookCallback } from 'grammy';

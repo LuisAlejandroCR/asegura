@@ -1,3 +1,6 @@
+// product-catalog.service.spec.ts: checks the real catalog loads and validates, and
+// that the YAML source stays byte-identical to products.data.ts.
+
 import { ProductCatalog } from './product-catalog.service';
 import { PRODUCTS } from './products.data';
 import { InsuranceProduct } from './types';

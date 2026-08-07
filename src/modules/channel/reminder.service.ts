@@ -1,22 +1,18 @@
+// reminder.service.ts: nudges a silent conversation after 60s and auto-closes it if
+// still unanswered — with a much longer window when a payment link is outstanding,
+// so nobody gets closed out mid-payment.
+
 import { Injectable, Logger } from '@nestjs/common';
 import { TelegramAdapter } from './telegram-adapter.service';
 import { ConversationService } from '../agent/conversation.service';
 import { ConversationState } from '../agent/types';
 
-// 2026-07-25 feature request: nudge a user back to the chat if they go quiet after a
-// prompt (a quote, the post-purchase cross-sell offer, etc.). This app is otherwise fully
-// stateless — driven only by incoming Telegram messages — so this is the one place with
-// an in-memory timer. Deliberately simple: it resets on every deploy/restart, which is an
-// accepted tradeoff for the hackathon (recommended over a DB-polled job at this
-// granularity — 60s is too short for cron-style polling to make sense).
+// 2026-07-25 — nudge a user who goes quiet after a prompt. The app is otherwise stateless
+// (driven only by incoming messages), so this is the one in-memory timer. It resets on
+// every deploy: accepted tradeoff, 60s is too short for cron-style DB polling.
 //
-// 2026-07-25 live-test feedback: the original 30s fired while the user was still
-// recording a voice reply to DISCOVERY's open-ended question ("¿Tienes familia... qué te
-// preocupa proteger... audio o texto"), which itself invites a longer voice message —
-// a 29s voice note alone eats almost the whole window before the user even sends it.
-// Doubled to 60s; this fires from every non-terminal prompt (a quick yes/no quote
-// confirmation included), so a little slack elsewhere is an acceptable tradeoff for not
-// interrupting someone mid-recording.
+// 2026-07-25 live test: the original 30s fired while the user was still recording a voice
+// reply to DISCOVERY — a 29s voice note alone ate the window. Doubled to 60s.
 const REMINDER_DELAY_MS = 60_000;
 const REMINDER_TEXT = '¿Sigues ahí? Aquí estoy cuando quieras continuar 😊';
 

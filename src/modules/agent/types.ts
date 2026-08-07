@@ -1,3 +1,6 @@
+// types.ts: the conversation domain model — ConversationState, ConversationContext
+// (everything remembered about the person mid-flow), PetDetail and DocumentType.
+
 import type { AffiliateRecord } from '../quoting/affiliate-lookup.service';
 
 enum ConversationState {
@@ -64,45 +67,28 @@ interface ConversationContext {
   // to DISCOVERY's generic "no entendí" acknowledgment, which read as the agent ignoring
   // a clear "I'm done" (real live-test bug, 2026-07-24).
   awaitingCrossSellResponse?: boolean;
-  // Real live-test bug: two production conversations that had ALREADY completed a real,
-  // Wompi-approved purchase ended up with conversations.state = 'abandoned' after the
-  // customer later declined to buy anything more — policyId/policyIds are NOT carried
-  // into the post-purchase followUpContext (they're purchase-specific, reset for the next
-  // one), and awaitingCrossSellResponse is a one-shot flag cleared after a single turn, so
-  // neither survives long enough to tell processMessage's abandonIntent check "this person
-  // already bought something" a few turns later. This flag is set once, permanently, by
-  // wompi-webhook.controller.ts on the first real payment approval and never cleared —
-  // "abandoned before buying anything" and "bought something, then declined more" must
-  // never share a conversation status.
+  // Live bug: two conversations with a Wompi-approved purchase ended up 'abandoned' after
+  // the customer declined to buy more. policyIds are reset for the next purchase and
+  // awaitingCrossSellResponse is one-shot, so neither survives to tell abandonIntent
+  // "already bought". Set once by wompi-webhook.controller.ts, never cleared.
   hasCompletedPurchase?: boolean;
-  // Set when the user is buying 2+ products together in one purchase (e.g. "quiero los
-  // dos") — each gets its own policy row and PDF, sharing one combined Wompi payment.
-  // Falls back to quoteProductId (single) when unset/empty. Nothing in the live agent
-  // flow sets this automatically anymore (see 2026-07-24 "restore the flow" change) —
-  // the underlying multi-policy/one-payment machinery is kept because it degrades
-  // cleanly to the single-product case, not because it's actively triggered.
+  // 2+ products in one purchase: each gets its own policy row and PDF, one shared Wompi
+  // payment. Falls back to quoteProductId when unset. Nothing sets this automatically
+  // anymore (2026-07-24 "restore the flow"); kept because it degrades cleanly to single.
   selectedProductIds?: string[];
   policyId?: string;
   policyIds?: string[];
-  // 2026-07-26 feature request: unlike policyId/policyIds (purchase-in-progress,
-  // deliberately reset in the post-purchase followUpContext for the NEXT purchase — see
-  // wompi-webhook.controller.ts), this accumulates every product id ever actually
-  // ISSUED for this conversation and is never reset — the durable record a later
-  // "¿qué cubre mi póliza?" question in COMPLETED reads from, since by then
-  // policyId/policyIds have already been cleared for whatever comes next.
+  // Accumulates every product id ever ISSUED here and is never reset, unlike policyIds.
+  // It's what a later "¿qué cubre mi póliza?" in COMPLETED reads from.
   purchasedProductIds?: string[];
   checkoutUrl?: string;
-  // Set the instant DATA_CAPTURE starts, before phoneVerified is true — signals that the
-  // next message is expected to be a Telegram contact-share (or another attempt) rather
-  // than an answer to any real data-capture question. Cleared once verified.
+  // Set the instant DATA_CAPTURE starts: the next message is expected to be a contact
+  // share, not an answer to a data-capture question. Cleared once verified.
   awaitingPhoneVerification?: boolean;
-  // True once the user has shared their Telegram-verified phone number via the native
-  // request_contact button. 2026-07-24 KYC feedback: "know the user is real" without a
-  // separate SMS/Twilio provider — Telegram already verified this phone number when the
-  // account was created, so a self-attested contact share (guaranteed by Telegram to be
-  // the tapping user's own number, not an arbitrary forwarded card) is treated as
-  // sufficient identity signal for a low-stakes micro-insurance purchase. Persisted across
-  // a post-purchase cross-sell follow-up so a returning customer isn't asked to re-verify.
+  // Phone shared via Telegram's native request_contact. 2026-07-24 KYC feedback: proves
+  // the user is real without SMS/Twilio — Telegram already verified the number and
+  // guarantees it's the tapping user's own. Enough for a low-stakes micro-insurance
+  // purchase. Persists across cross-sell so a returning customer isn't re-asked.
   phoneVerified?: boolean;
   verifiedPhone?: string;
   // Cosmetic/simulated selfie step (2026-07-24) — asked right after phone verification.
@@ -131,72 +117,51 @@ interface ConversationContext {
   awaitingMedicalInfo?: boolean;
   medicalInfoProvided?: boolean;
   medicalInfo?: string;
-  // Set only when ReminderService auto-closes a conversation after prolonged silence
-  // (2026-07-25 feature request) — distinguishes a genuinely stalled chat from the
-  // existing manual-decline paths above (a plain "no"), which don't set this field.
-  // 'insufficient_info': went quiet before a productCategory was ever established —
-  // there wasn't enough to quote. 'no_response': went quiet after that point (e.g. a
-  // presented quote never got a reply) — the agent had enough to act, the person just
-  // never answered.
+  // Set only when ReminderService auto-closes after silence — distinguishes a stalled chat
+  // from a manual decline (a plain "no"), which doesn't set this.
+  // 'insufficient_info': quiet before a productCategory existed, nothing to quote.
+  // 'no_response': quiet after that — the agent could act, the person never answered.
   abandonReason?: 'insufficient_info' | 'no_response';
-  // 2026-07-26 hiperperfilamiento subset — set ONLY in the AUTHORIZATION→isAffirmative
-  // branch, right after a fresh "sí". Acts as a test/behavior firewall: every existing
-  // DISCOVERY context (built by hand in specs, or carried through the post-purchase
-  // cross-sell follow-up in wompi-webhook.controller.ts) never sets this, so the new
-  // `dependents` question below never fires for them — they keep today's immediate-quote
-  // path unchanged. A returning buyer on a cross-sell is correctly NOT re-interrogated.
+  // 2026-07-26 — set ONLY in AUTHORIZATION→isAffirmative, right after a fresh "sí". Acts
+  // as a firewall: existing DISCOVERY contexts (specs, cross-sell follow-up) never set it,
+  // so the `dependents` question never fires for them and a returning buyer isn't
+  // re-interrogated.
   discoveryFilter?: boolean;
-  // A real, live-captured signal for QuotingService's dormant hyper-personalization tier
-  // (see AffiliateSignals.dependents) — 0 is a meaningful, deliberate answer ("vivo
-  // solo"); undefined means the question was never asked or never answered.
+  // Live-captured signal for QuotingService's hyper-personalization tier. 0 is a real
+  // answer ("vivo solo"); undefined means never asked.
   dependents?: number;
-  // One-shot guard so the dependents question is asked at most once per conversation —
-  // set in the SAME return that asks it, so the next turn always proceeds to quote
-  // whether or not the answer parsed (never-loop-forever contract, same as every other
-  // KYC gate in this file).
+  // One-shot guard: asked at most once, set in the SAME return that asks it, so the next
+  // turn quotes whether or not the answer parsed (never-loop-forever, like every KYC gate).
   askedDependents?: boolean;
-  // 2026-07-26 affiliate CSV lookup — set right after AUTHORIZATION's "sí", before
-  // DISCOVERY starts. One-shot: the very next message is treated as either an ID to look
-  // up (AffiliateLookupService.findBySerie) or a decline ("no"), never asked again.
-  // Never blocks the flow — a lookup miss or an outright decline both proceed to
-  // DISCOVERY identically, just without the `rangoSalarial` boost.
+  // 2026-07-26 — set right after AUTHORIZATION's "sí". One-shot: the next message is
+  // either an ID to look up or a decline, never asked again. Never blocks — a miss and a
+  // decline both proceed to DISCOVERY identically, just without the rangoSalarial boost.
   awaitingAffiliateId?: boolean;
   // The SERIE the user provided, IF a lookup succeeded — kept for reference/debugging,
   // not read by scoring directly (rangoSalarial below is what QuotingService uses).
   serieId?: string;
-  // 2026-07-26 (Matriz 2, C05) — already inferred by the NLP layer from words like
-  // "urgente"/"ya" (InsuranceIntent.urgency) but never previously captured into context.
-  // Deliberately NOT in persistent-context.ts: "necesito protección ya" reflects the
-  // moment, not a durable fact about the person — a restarted conversation re-derives it
-  // from whatever's said this time, same as productCategory.
+  // 2026-07-26 (Matriz 2, C05) — inferred by the NLP from "urgente"/"ya", never captured
+  // before. NOT persistent: it reflects the moment, not the person, so a restart re-derives
+  // it like productCategory.
   urgency?: 'immediate' | 'exploring';
-  // Real, live-sourced income signal from the affiliate's own historical record (see
-  // AffiliateSignals.rangoSalarial, quoting/types.ts) — already has a scoring consumer
-  // (QuotingService.budgetFromSalary) that was previously unreachable in the live agent
-  // because nothing ever populated this field from a real conversation.
+  // Income signal from the affiliate's historical record. Its scoring consumer
+  // (QuotingService.budgetFromSalary) was unreachable live until this got populated.
   rangoSalarial?: string;
   // 2026-07-26 — family segment from the affiliate CSV (e.g. FAMILIA MONOPARENTAL,
   // FAMILIA NUCLEAR INTEGRAL). Populated by handleAffiliateId when the lookup succeeds;
   // passed through to AffiliateSignals for personalized recommendation reasons.
   segmentoGrupoFamiliar?: string;
-  // 2026-07-26 feature request: "capture the complete row... so the agent will know all
-  // about the registered user" — the FULL affiliate CSV row (see AffiliateRecord), not
-  // just the two fields already wired into live scoring above. Captured verbatim (rule
-  // #12 — never invented) and persisted so it survives a restart, ready for whatever
-  // future personalization touch reads it — see affiliate-lookup.service.ts's own field
-  // comments for which parts are already consumed vs. just captured for now.
+  // 2026-07-26 — the FULL affiliate CSV row, not just the two fields wired into scoring
+  // above. Captured verbatim (rule #12) and persisted across restarts. See
+  // affiliate-lookup.service.ts for which parts are consumed vs. only captured.
   affiliateProfile?: AffiliateRecord;
   // Last N conversation exchanges for LLM context (role + text). Trimmed to
   // MAX_HISTORY_LENGTH on each save. Session-scoped (not in PERSISTENT_FIELDS) so a
   // restart starts fresh — durable facts already live in the other persistent fields.
   lastMessages?: Array<{ role: 'user' | 'agent'; text: string }>;
-  // 2026-07-26 live-test feedback ("the agent should redirect to a human when it doesn't
-  // understand") — counts consecutive turns the agent genuinely failed to make sense of
-  // (see ProcessResult.unclearReply in agent.service.ts). Reset to 0 the moment any turn
-  // IS understood; once it reaches the escalation threshold the agent hands off to a
-  // human lead instead of repeating itself a 4th time. Deliberately NOT in
-  // persistent-context.ts — it describes THIS session's confusion, not a durable fact
-  // about the person, so a restarted conversation starts the count fresh.
+  // 2026-07-26 — consecutive turns the agent failed to understand. Reset to 0 on any
+  // understood turn; at the threshold it hands off to a human instead of repeating itself
+  // a 4th time. NOT persistent: it describes this session's confusion, not the person.
   consecutiveUnclearReplies?: number;
   // Set when a pet-specific product has been exhausted and the waitlist offer is shown
   // to the user ("no tenemos más oferta, ¿compartes tus datos?").

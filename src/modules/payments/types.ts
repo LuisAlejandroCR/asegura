@@ -1,3 +1,6 @@
+// types.ts: Wompi request/response shapes — payment link params and result, plus the
+// webhook event and transaction payloads.
+
 interface CreatePaymentLinkParams {
   policyId: string;
   productName: string;

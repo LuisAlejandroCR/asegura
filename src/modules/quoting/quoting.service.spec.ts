@@ -1,3 +1,6 @@
+// quoting.service.spec.ts: tests the scoring engine — the pet-type and category hard
+// filters, and that every returned score carries a reason the jury can be shown.
+
 import { QuotingService } from './quoting.service';
 import { AffiliateSignals, IProductRepository, InsuranceProduct } from './types';
 import { PRODUCTS } from './products.data';
@@ -12,8 +15,6 @@ function makeFakeCatalog(products: InsuranceProduct[] = PRODUCTS): IProductRepos
 function makeService(): QuotingService {
   return new QuotingService(makeFakeCatalog());
 }
-
-// ── Unit tests ────────────────────────────────────────────────────────────────
 
 describe('QuotingService — pet type hard filter', () => {
   const service = makeService();
@@ -98,8 +99,6 @@ describe('QuotingService — shownProductIds / no-repeat', () => {
     }
   });
 });
-
-// ── Invariant tests ───────────────────────────────────────────────────────────
 
 describe('QuotingService INVARIANTS', () => {
   const service = makeService();
@@ -205,7 +204,7 @@ describe('QuotingService — budget scoring from RANGO_SALARIAL', () => {
   });
 });
 
-// ── beneficiaries reason text (2026-07-24, findings from an external test session) ──
+// beneficiaries reason text (2026-07-24, findings from an external test session)
 // Real observed bug: "Te lo recomiendo porque: Cubre a 1 personas." — ungrammatical
 // (singular "1" with plural "personas"), and Groq's own JSON schema shows
 // "beneficiaries": 1 as an EXAMPLE value in the prompt, so the LLM often defaults to 1
@@ -541,7 +540,7 @@ describe('QuotingService — hyper-personalization tier (dependents/income)', ()
   });
 });
 
-// ── "why this product" reason ordering (2026-07-26 Step 1) ────────────────────
+// "why this product" reason ordering (2026-07-26 Step 1)
 // Reasons used to surface in PUSH order: the exact-category branch pushed NO reason at
 // all, the related-category branch pushed a raw slug (`Categoría: vida`), and the
 // persuasive tier sentences were pushed LAST — so `formatQuote`'s `reasons[0]`
@@ -612,7 +611,7 @@ describe('QuotingService — weight-ranked "why this product" reasons (Step 1)',
   });
 });
 
-// ── Step 2: `dependents` wakes the dormant tiers with a trustworthy signal ─────
+// Step 2: `dependents` wakes the dormant tiers with a trustworthy signal
 // `beneficiaries` is untrustworthy by design (Groq's schema shows "beneficiaries": 1 as
 // its OWN example, so the LLM often defaults to 1 with no real signal). `dependents` is
 // only ever set by a real DISCOVERY question (Step 3) — when present, it takes
@@ -640,7 +639,7 @@ describe('QuotingService — dependents field precedence (Step 2)', () => {
   });
 });
 
-// ── Urgency wakes non-underwriting products (2026-07-26, Matriz 2 C05) ─────────
+// Urgency wakes non-underwriting products (2026-07-26, Matriz 2 C05)
 // Already inferred by the NLP layer from words like "urgente"/"ya" (InsuranceIntent.
 // urgency), but never previously read here. requiresUnderwriting products (vida,
 // medicina-prepagada-*) genuinely take longer to activate (age/illness info required
@@ -679,8 +678,6 @@ describe('QuotingService — urgency wakes non-underwriting products (Matriz 2)'
     expect(withUrgency).toBe(without + 10);
   });
 });
-
-// ── Fuzz tests ────────────────────────────────────────────────────────────────
 
 describe('QuotingService FUZZ', () => {
   const service = makeService();

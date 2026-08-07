@@ -1,3 +1,6 @@
+// auth.guard.spec.ts: tests SupabaseAuthGuard — accepts a valid Bearer token and
+// attaches the user, rejects missing/malformed headers and Supabase failures.
+
 import { UnauthorizedException } from '@nestjs/common';
 import { SupabaseAuthGuard } from './auth.guard';
 

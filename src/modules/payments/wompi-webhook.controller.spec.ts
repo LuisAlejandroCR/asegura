@@ -1,3 +1,7 @@
+// wompi-webhook.controller.spec.ts: tests the payment webhook — signature rejection,
+// resolving the policy by payment_link_id (not the transaction reference),
+// idempotency on repeat deliveries, and graceful handling of malformed payloads.
+
 import { UnauthorizedException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { WompiWebhookController } from './wompi-webhook.controller';

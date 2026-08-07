@@ -1,3 +1,7 @@
+// env.validation.spec.ts: tests startup env validation — required fields, and the
+// cross-field rules for Wompi and for Telegram webhook mode. The app must not boot
+// with a half-configured integration.
+
 import { validate } from './env.validation';
 
 function baseConfig(overrides: Record<string, unknown> = {}) {

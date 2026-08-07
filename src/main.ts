@@ -1,3 +1,6 @@
+// main.ts: NestJS bootstrap — helmet, CORS, global validation and exception filter,
+// then registers the Telegram webhook (or long-polling when PUBLIC_URL is unset).
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';

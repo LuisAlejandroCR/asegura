@@ -1,9 +1,12 @@
+// conversation-state.machine.spec.ts: tests STATE_RESPONSES and isValidTransition —
+// the progressive DATA_CAPTURE prompts and the document-type regression.
+
 import { STATE_RESPONSES, isValidTransition, VALID_TRANSITIONS } from './conversation-state.machine';
 import { ConversationState, ConversationContext } from './types';
 
 const empty: ConversationContext = {};
 
-// ── Unit tests — STATE_RESPONSES ──────────────────────────────────────────────
+// Unit tests — STATE_RESPONSES
 
 describe('STATE_RESPONSES — all states return strings', () => {
   it.each(Object.values(ConversationState))('state %s returns a non-empty string', (state) => {
@@ -127,7 +130,7 @@ describe('STATE_RESPONSES — null/undefined context safety', () => {
   });
 });
 
-// ── Unit tests — isValidTransition ────────────────────────────────────────────
+// Unit tests — isValidTransition
 
 describe('isValidTransition', () => {
   it('GREETING → AUTHORIZATION is valid', () => {
@@ -155,8 +158,6 @@ describe('isValidTransition', () => {
     }
   });
 });
-
-// ── Invariant tests ───────────────────────────────────────────────────────────
 
 describe('STATE_RESPONSES INVARIANTS', () => {
   it('invariant: AUTHORIZATION response always mentions Ley 1581', () => {

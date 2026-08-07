@@ -8,9 +8,7 @@ seguro y no otro" , no depende del cluster por las bajas métricas.
 import numpy as np
 import pandas as pd
 
-# ---------------------------------------------------------------------------
 # Catalogo real de productos y precios 
-# ---------------------------------------------------------------------------
 CATALOGO = {
     "vida_basico":        {"producto": "Seguro de vida",                  "aseguradora": "Pan American Life", "desde_mes": 12000},
     "vida_ahorro":         {"producto": "Vida + Ahorro",                   "aseguradora": "BMI",               "desde_mes": 20000},
@@ -102,7 +100,7 @@ def score_afiliado(row: pd.Series) -> dict:
         producto_key = "accidentes_std"
         razones.append(f"perfil sin dependientes registrados y aún no en rango de mayor riesgo actuarial ({row['RANGO_EDAD']}) -> se ofrece accidentes personales como piso de protección")
 
-    # --- Oferta secundaria / cross-sell (no compite con la principal) ---
+    # Oferta secundaria / cross-sell (no compite con la principal)
     secundarios = []
     if row["DROGUERIA"] == 1:
         sec_key = "asist_multiples" if (row["HOTELES"] == 1 or row["AGENCIAS"] == 1) else "asist_medicas"

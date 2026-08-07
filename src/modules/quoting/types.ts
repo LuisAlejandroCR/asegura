@@ -1,3 +1,6 @@
+// types.ts: the quoting domain — AffiliateSignals (the profile scoring reads),
+// InsuranceProduct, InsuranceScore, and the IProductRepository the catalog implements.
+
 interface InsuranceProduct {
   id: string;
   name: string;

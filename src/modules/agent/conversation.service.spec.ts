@@ -1,3 +1,6 @@
+// conversation.service.spec.ts: tests ConversationService.findById — returns null
+// rather than throwing when the row is missing or Supabase errors.
+
 import { ConversationService } from './conversation.service';
 import { ConversationState } from './types';
 

@@ -1,3 +1,7 @@
+// types.ts: the channel abstraction — NormalizedMessage (what every channel must
+// reduce an inbound message to) and the IChannelAdapter interface Telegram and a
+// future WhatsApp adapter both implement.
+
 interface NormalizedMessage {
   channelId: string;
   channel: 'telegram' | 'whatsapp';

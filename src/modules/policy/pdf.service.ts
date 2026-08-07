@@ -103,8 +103,6 @@ export class PdfService {
     this.drawFooter(doc, contentWidth);
   }
 
-  // ── Header banner ────────────────────────────────────────────────────────────
-
   private drawHeader(doc: InstanceType<typeof PDFDocument>, pageWidth: number): void {
     const bannerHeight = 100;
     doc.rect(0, 0, pageWidth, bannerHeight).fill(BRAND.blue);
@@ -126,8 +124,6 @@ export class PdfService {
     doc.y = bannerHeight + 20;
   }
 
-  // ── Title ─────────────────────────────────────────────────────────────────────
-
   private drawTitle(doc: InstanceType<typeof PDFDocument>, data: PolicyPdfData): void {
     doc.fontSize(20).font('Helvetica-Bold').fillColor(BRAND.black)
       .text('CERTIFICADO DE PÓLIZA', { align: 'center' });
@@ -137,7 +133,7 @@ export class PdfService {
     doc.moveDown(1);
   }
 
-  // ── Two-column info: holder details (left) + premium box (right) ─────────────
+  // Two-column info: holder details (left) + premium box (right)
 
   private drawInfoColumns(doc: InstanceType<typeof PDFDocument>, data: PolicyPdfData, contentWidth: number): void {
     const startY = doc.y;
@@ -202,7 +198,7 @@ export class PdfService {
     return { primary: `$${totalPremium.toLocaleString('es-CO')}`, total: null };
   }
 
-  // ── Pets table ─────────────────────────────────────────────────────────────
+  // Pets table
 
   private drawPetsTable(doc: InstanceType<typeof PDFDocument>, data: PolicyPdfData, contentWidth: number): void {
     if (!data.pets?.length) return;
@@ -265,7 +261,7 @@ export class PdfService {
     doc.y = startY + boxHeight + 20;
   }
 
-  // ── Verification QR ────────────────────────────────────────────────────────────
+  // Verification QR
 
   private drawAuditBox(
     doc: InstanceType<typeof PDFDocument>,
@@ -303,8 +299,6 @@ export class PdfService {
     doc.fillColor(BRAND.black);
     doc.y = startY + boxHeight + 20;
   }
-
-  // ── Footer ──────────────────────────────────────────────────────────────────
 
   private drawFooter(doc: InstanceType<typeof PDFDocument>, contentWidth: number): void {
     doc.moveTo(50, doc.y).lineTo(50 + contentWidth, doc.y).stroke(BRAND.gray);

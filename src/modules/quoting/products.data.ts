@@ -1,3 +1,7 @@
+// products.data.ts: the 11 MVP products with the real prices published on
+// colsubsidio.com/seguros. Never invent a product or a premium here — the catalog is
+// what every quote and every charged amount is derived from.
+
 import { InsuranceProduct } from './types';
 
 export const PRODUCTS: InsuranceProduct[] = [

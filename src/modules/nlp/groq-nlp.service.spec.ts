@@ -1,3 +1,7 @@
+// groq-nlp.service.spec.ts: tests the Groq provider — the 429 retry-once policy, the
+// fallback intent when it fails, and the deterministic postProcess guardrails that
+// correct or fill in what the LLM got wrong.
+
 import { Logger } from '@nestjs/common';
 import { GroqNlpService } from './groq-nlp.service';
 import { InsuranceIntent } from './types';
@@ -125,8 +129,6 @@ function postProcess(service: GroqNlpService, intent: InsuranceIntent, text: str
 function fallback(service: GroqNlpService, text: string): InsuranceIntent {
   return (service as any).fallbackIntent(text);
 }
-
-// ── Unit tests ────────────────────────────────────────────────────────────────
 
 describe('GroqNlpService.postProcess — pet type detection', () => {
   const service = makeService();
@@ -335,7 +337,7 @@ describe('GroqNlpService.fallbackIntent — intent extraction', () => {
   });
 });
 
-// ── Per-pet detail extraction (fallback) ──────────────────────────────────────
+// Per-pet detail extraction (fallback)
 
 describe('GroqNlpService.fallbackIntent — pet name/age/breed extraction', () => {
   const service = makeService();
@@ -370,7 +372,7 @@ describe('GroqNlpService.fallbackIntent — pet name/age/breed extraction', () =
   });
 });
 
-// ── Multi-pet "Name, age, breed." period-separated extraction (2026-07-24 live bug) ──
+// Multi-pet "Name, age, breed." period-separated extraction (2026-07-24 live bug)
 // Real live-test bug: a 3-pet voice message ("Bruna, 10 años, criollo. Ramón, 3 años,
 // cocker. Pancha, 10 años, doberman.") only yielded 2 pets — Bruna was silently dropped
 // (Groq's own extraction under-counted a compound sentence), and the user's later
@@ -490,7 +492,7 @@ describe('GroqNlpService.postProcess — pets undercount override (2026-07-24 li
   });
 });
 
-// ── Fuzz / property-based tests ───────────────────────────────────────────────
+// Fuzz / property-based tests
 
 describe('GroqNlpService FUZZ — petType invariants', () => {
   const service = makeService();
@@ -539,7 +541,7 @@ describe('GroqNlpService FUZZ — petType invariants', () => {
   });
 });
 
-// ── wantsAlternative extraction ───────────────────────────────────────────────
+// wantsAlternative extraction
 
 describe('GroqNlpService — wantsAlternative (fallback)', () => {
   const service = makeService();
@@ -760,7 +762,7 @@ describe('GroqNlpService.fallbackIntent — negated desire deterministic overrid
   });
 });
 
-// ── petResolution extraction ──────────────────────────────────────────────────
+// petResolution extraction
 
 describe('GroqNlpService.postProcess — petResolution extraction', () => {
   const service = makeService();
@@ -804,7 +806,7 @@ describe('GroqNlpService.postProcess — petResolution extraction', () => {
   });
 });
 
-// ── productCategory inference from petType ────────────────────────────────────
+// productCategory inference from petType
 
 describe('GroqNlpService.postProcess — productCategory inference from petType', () => {
   const service = makeService();
@@ -846,7 +848,7 @@ describe('GroqNlpService.postProcess — productCategory inference from petType'
   });
 });
 
-// ── petType inference when Groq returns productCategory=null (regression) ─────
+// petType inference when Groq returns productCategory=null (regression)
 // Real bug: "Tengo un gato, dos perros y yo solo." — Groq returned productCategory=null
 // AND petType=null. The old petType-from-keywords block only ran when
 // productCategory === 'mascotas', so petType stayed null forever even though the text
@@ -885,7 +887,7 @@ describe('GroqNlpService.postProcess — petType inference when productCategory 
   });
 });
 
-// ── isAffirmative question-mark guardrail (regression) ────────────────────────
+// isAffirmative question-mark guardrail (regression)
 // Real bug: "Me interesan mascotas y para mí ¿qué hay?" was classified isAffirmative=true
 // (substring match: "me interesan" contains "me interesa") and fast-forwarded straight to
 // DATA_CAPTURE / purchase confirmation, even though the user was asking a follow-up
@@ -950,7 +952,7 @@ describe('GroqNlpService.fallbackIntent — isAffirmative question-mark guardrai
   });
 });
 
-// ── Colombian slang affirmatives (regression) ─────────────────────────────────
+// Colombian slang affirmatives (regression)
 // Real live-test bug: "generalo" (Colombian slang for "generate it") was not recognized
 // as a confirmation, so the payment-link prompt repeated verbatim instead of proceeding.
 
@@ -1010,7 +1012,7 @@ describe('GroqNlpService.fallbackIntent — deictic confirmations ("dame ese", "
   });
 });
 
-// ── Deterministic petCount extraction (2026-07-24 regression) ──────────────────
+// Deterministic petCount extraction (2026-07-24 regression)
 // Real live-test bug: "Tengo dos mascotas y yo." was quoted and charged for 3 mascotas,
 // not 2 — petCount had zero deterministic validation, unlike petType/petResolution
 // (both cross-checked against the raw text regardless of what the LLM returned).
@@ -1094,7 +1096,7 @@ describe('GroqNlpService.fallbackIntent — deterministic petCount extraction', 
   });
 });
 
-// ── Step 3: `dependents` extraction (2026-07-26) ───────────────────────────────
+// Step 3: `dependents` extraction (2026-07-26)
 // Not in Groq's JSON schema at all — this deterministic extraction is the ONLY source
 // for this field in both the primary (postProcess) and fallback paths.
 describe('GroqNlpService.fallbackIntent — dependents extraction', () => {
@@ -1144,7 +1146,7 @@ describe('GroqNlpService.postProcess — dependents extraction', () => {
   });
 });
 
-// ── Step 4: F01 button label → parser invariant ────────────────────────────────
+// Step 4: F01 button label → parser invariant
 // The highest-value test for the hybrid-buttons feature: a label is a PROMISE the NLP
 // parser must actually honor. Imports the SAME array AgentService presents as buttons
 // (F01_CHOICES) — not a hand-copied duplicate — so this test breaks the moment the two

@@ -1,3 +1,6 @@
+// channel.module.ts: wires the Telegram adapter, its webhook controller and the
+// inactivity ReminderService.
+
 import { Module } from '@nestjs/common';
 import { TelegramAdapter } from './telegram-adapter.service';
 import { TelegramWebhookController } from './telegram-webhook.controller';

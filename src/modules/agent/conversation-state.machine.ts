@@ -1,3 +1,7 @@
+// conversation-state.machine.ts: the allowed state transitions plus the Spanish reply
+// text for each state. STATE_RESPONSES is a function per state so the copy can adapt
+// to what the context already knows (name, cédula, remembered profile).
+
 import { ConversationState, ConversationContext } from './types';
 import { PRODUCTS } from '../quoting/products.data';
 import { hasRememberedProfile } from './persistent-context';
@@ -32,21 +36,13 @@ export function formatNameList(names: string[]): string {
 }
 
 export const STATE_RESPONSES: ResponsesMap = {
-  // 2026-07-24 feedback: the greeting + full authorization paragraph as two separate
-  // messages read as a wall of text before the user gets to say anything — people
-  // arrive with social-media attention spans and bounce. Combined into one short
-  // message; the Ley 1581 disclosure is kept (legally required) but folded into a
-  // parenthetical instead of its own centered paragraph.
-  // 2026-07-26 persistent memory (Diseño preguntas.docx: "la siguiente conversación
-  // nunca debe empezar desde cero") — a returning user whose durable profile facts
-  // survived a restart (see persistent-context.ts) gets an honest acknowledgment: only
-  // ever states that SOME profile carried over, never invents specifics not actually in
-  // context (rule #12). Personalizes by first name when we already have it (KYC nombre
-  // survives restarts too) — same pattern already used in POLICY_ISSUED's greeting.
-  // 2026-07-26 (moved up from the affiliate-ID question, per feedback): "puedes
-  // responder por texto o audio" belongs in the very FIRST message, not two turns later
-  // — reworded short so it doesn't recreate the "wall of text" the 2026-07-24 combine
-  // was meant to fix. Not repeated in the affiliate-ID question anymore (agent.service.ts).
+  // 2026-07-24 — greeting + authorization were two messages and read as a wall of text;
+  // people bounced. Combined into one, Ley 1581 disclosure kept as a parenthetical.
+  // 2026-07-26 — persistent memory: a returning user gets an honest acknowledgment that
+  // SOME profile carried over, never invented specifics (rule #12). Uses the first name
+  // when we have it.
+  // 2026-07-26 — "puedes responder por texto o audio" moved here from the affiliate-ID
+  // question: it belongs in the FIRST message. Kept short, not repeated later.
   [ConversationState.GREETING]: (ctx) => {
     const c = translate(ctx);
     const firstName = c.nombre?.split(' ')[0];
@@ -77,14 +73,9 @@ export const STATE_RESPONSES: ResponsesMap = {
         'Puedes enviar tus respuestas en audio o texto'
       );
     }
-    // 2026-07-26 cleanup: this used to have a 3rd tier asking "¿En qué rango de edades
-    // están?" once coverage AND beneficiaries were both known. No field in the NLP intent
-    // schema ever captured a human beneficiary's age (only petAge, for pets), and
-    // QuotingService never read one — the question was unreachable from its only call
-    // site anyway (handleDiscovery's hasEnoughInfo/stuckWithoutCategory guard fires
-    // before this tier could ever be hit — see agent.service.ts:387-394) but stayed here
-    // as dead, confusing copy. Removed; Step 3's `dependents` question is the real,
-    // functional replacement.
+    // 2026-07-26 — removed a 3rd tier asking beneficiaries' age range: no NLP field ever
+    // captured a human's age (only petAge), QuotingService never read one, and
+    // handleDiscovery's guard made it unreachable. Step 3's `dependents` replaces it.
     return '¿Cuántas personas son en tu familia o grupo familiar?';
   },
 

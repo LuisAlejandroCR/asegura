@@ -1,3 +1,6 @@
+// types.ts: the issued-policy row as stored in Supabase, plus the per-pet detail shape
+// captured during DATA_CAPTURE.
+
 interface PetDetail {
   name: string;
   age: string;

@@ -1,3 +1,6 @@
+// breed-matcher.spec.ts: tests matchBreed and classifyPetsBySpecies against real
+// voice-transcription noise, plus fuzz cases for garbage and unlisted breeds.
+
 import { matchBreed, classifyPetsBySpecies, DOG_BREEDS, CAT_BREEDS } from './breed-matcher';
 
 // Real live-test bug: a mixed household's final PDFs both listed all 3 pets instead of

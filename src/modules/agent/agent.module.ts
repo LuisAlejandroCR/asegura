@@ -1,3 +1,6 @@
+// agent.module.ts: wires AgentService to the channel, NLP, quoting, policy and
+// payments modules it orchestrates.
+
 import { Module } from '@nestjs/common';
 import { ChannelModule } from '../channel/channel.module';
 import { NlpModule } from '../nlp/nlp.module';

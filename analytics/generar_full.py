@@ -1,3 +1,6 @@
+# generar_full.py: runs the full analytics pipeline over the affiliate dataset —
+# preprocess, KPrototypes clustering, business rules and channel/timing scoring.
+
 import os
 import time
 import numpy as np

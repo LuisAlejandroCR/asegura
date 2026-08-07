@@ -2,17 +2,13 @@
 // insurance product catalog in memory at boot, behind IProductRepository (CLAUDE.md rule
 // #6), so QuotingService's scoring engine no longer depends on products.data.ts directly.
 //
-// 2026-07-26 — reads catalog/products/*.yaml directly. Only converts a raw file into a
-// real InsuranceProduct when it's actually a priced, sellable product (company/
-// public_price/requires_quote all set) — this is what naturally excludes the products not
-// yet migrated (SOAT, vehicular, etc: company: null, public_price: null, requires_quote:
-// true) without hardcoding their ids anywhere. A YAML syntax error or a real product
-// missing coverages/eligibility does NOT get silently dropped here — it's caught loudly by
-// validate() below (the missing-real-product check plus the existing Array.isArray/object
-// checks), because silently shipping a smaller catalog is a worse failure than a boot
-// crash for a quoting engine. products.data.ts stays in the repo (still imported directly
-// by agent.service.ts/conversation-state.machine.ts/policy.service.ts) — it's no longer
-// read here, but migrating those three call sites is separate, later scope.
+// 2026-07-26 — reads catalog/products/*.yaml. Only priced, sellable products (company/
+// public_price/requires_quote all set) become an InsuranceProduct; that alone excludes the
+// unmigrated ones (SOAT, vehicular) without hardcoding ids. Broken YAML or a real product
+// missing coverages never gets dropped silently — validate() below crashes the boot, since
+// shipping a smaller catalog is worse than not booting. products.data.ts is no longer read
+// here but stays: agent.service.ts/conversation-state.machine.ts/policy.service.ts still
+// import it, migrating those is later scope.
 import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';

@@ -1,3 +1,6 @@
+// affiliate-lookup.service.spec.ts: tests CSV-backed affiliate lookup by SERIE, and
+// that a missing or malformed file disables the feature instead of crashing the app.
+
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';

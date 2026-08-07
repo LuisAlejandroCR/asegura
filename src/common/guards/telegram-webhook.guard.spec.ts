@@ -1,3 +1,6 @@
+// telegram-webhook.guard.spec.ts: tests TelegramWebhookGuard — fixed-time secret
+// comparison, length-mismatch safety, duplicate headers, and the dev-only bypass.
+
 import { UnauthorizedException } from '@nestjs/common';
 import { TelegramWebhookGuard } from './telegram-webhook.guard';
 

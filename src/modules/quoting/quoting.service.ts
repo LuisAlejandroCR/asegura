@@ -1,3 +1,7 @@
+// quoting.service.ts: scores the catalog against an affiliate's signals and returns a
+// ranked list with an explicit reason per product. Rules decide here, not the LLM —
+// the agent only supplies the extracted signals.
+
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { AffiliateSignals, IProductRepository, InsuranceProduct, InsuranceScore } from './types';
 
@@ -140,26 +144,17 @@ export class QuotingService {
       matchScore += 10;
     }
 
-    // 2026-07-25 hyper-personalization tier — ported from a teammate's Python prototype
-    // (feature/motor-python-hiperpersonalizacion, analytics/reglas_negocio.py), reworked
-    // to use only signals the live conversation actually collects. The branch's
-    // age/pensioner tier (exequial for 55+) could NOT be ported: AffiliateSignals.edad is
-    // declared in the type but never populated live — the NLP schema only ever extracts a
-    // PET's age (petAge / pets[].age), never a human affiliate's own age. Deferred until
-    // a real DISCOVERY question captures it.
+    // 2026-07-25 hyper-personalization tier — ported from analytics/reglas_negocio.py,
+    // reworked to use only signals the live conversation collects. The age/pensioner tier
+    // (exequial for 55+) could NOT be ported: AffiliateSignals.edad is declared but never
+    // populated live — the NLP schema only extracts a PET's age, never the affiliate's.
     //
-    // Real bug found 2026-07-25 while writing the manual-verification script for this
-    // tier: this originally checked ONLY `budgetFromSalary(signals.rangoSalarial)` — but
-    // rangoSalarial is ALSO never populated live (InsuranceIntent has no such field; it
-    // only ever existed as an offline CSV-calibration signal, same class of bug as edad
-    // above). The only live income signal a user's own words can set is `budget` — reusing
-    // `effectiveBudget` (already computed above for the existing budget boost) so the tier
-    // actually reacts to what a real conversation can produce.
-    // 2026-07-26 — `dependents` (Step 3's DISCOVERY question) is a real, live-captured
-    // signal, unlike `beneficiaries` (see the comment on that field above). When it was
-    // actually asked and answered, it takes precedence over the beneficiaries heuristic;
-    // when it's `undefined` (never asked), behavior is byte-for-byte the old fallback —
-    // every existing test/signal set that only ever set `beneficiaries` is unaffected.
+    // Bug found 2026-07-25: this originally checked only budgetFromSalary(rangoSalarial),
+    // which is also never populated live (offline CSV-calibration signal only, same class
+    // of bug as edad). `budget` is the one live income signal, so it reuses effectiveBudget.
+    //
+    // 2026-07-26 — `dependents` (Step 3 DISCOVERY) is live-captured, unlike `beneficiaries`;
+    // it wins when asked, and when undefined the old fallback is byte-for-byte unchanged.
     const hasDependents = signals.dependents !== undefined
       ? signals.dependents > 0
       : (!!signals.beneficiaries && signals.beneficiaries > 1);

@@ -166,8 +166,145 @@
     line-height:1.45;
   }
 
+  /* ── Hoja de resumen (previa al checkout) ──────────────── */
+  /* <dialog> nativo: foco atrapado, Esc y ::backdrop gratis. Anclada abajo =
+     zona del pulgar. Posición explícita, no la del user-agent: corre en el
+     WebView de WhatsApp. */
+  #resumen{
+    position:fixed;
+    inset:auto 0 0;              /* top:auto → anclada al borde inferior */
+    margin:0 auto;
+    width:min(100%,460px);
+    max-width:100%;
+    max-height:90dvh;
+    border:none;
+    padding:0;
+    background:transparent;
+    overflow:visible;
+  }
+
+  #resumen::backdrop{background:rgba(0,0,0,.45)}
+
+  /* Orbe atenuado detrás: la sesión está en pausa, no muerta. */
+  body[data-estado="resumen"] #orb{
+    animation:none;
+    transform:scale(.94);
+    opacity:.45;
+  }
+
+  /* Anima .hoja 12px, nunca el <dialog> (sostiene la posición). Si el reloj se
+     congela (pestaña en segundo plano) queda 12px corrida, no fuera de pantalla. */
+  @keyframes subir{
+    from{opacity:0;transform:translateY(12px)}
+    to{opacity:1;transform:translateY(0)}
+  }
+
+  #resumen[open] .hoja{animation:subir .28s cubic-bezier(.32,.72,0,1)}
+
+  .hoja{
+    background:var(--blanco);
+    border-radius:20px 20px 0 0;
+    padding:14px 20px max(20px,env(safe-area-inset-bottom));
+    text-align:left;
+    box-shadow:0 -8px 40px rgba(0,0,0,.18);
+    max-height:90dvh;
+    overflow-y:auto;             /* pantallas chicas: la hoja scrollea, no se corta */
+  }
+
+  .asa{width:38px;height:4px;border-radius:2px;background:rgba(0,0,0,.15);margin:0 auto 18px}
+
+  .hoja h2{font-size:19px;font-weight:700;color:var(--azul);letter-spacing:-.01em}
+
+  .aseguradora{font-size:13px;color:var(--gris);opacity:.75;margin-top:2px}
+
+  /* "Por qué este seguro" = criterio #1 del reto por escrito. */
+  .razon{
+    background:rgba(0,103,177,.07);
+    border-left:3px solid var(--azul);
+    border-radius:0 8px 8px 0;
+    padding:10px 12px;
+    margin:14px 0;
+    font-size:14px;
+    line-height:1.5;
+    color:var(--negro);
+  }
+
+  .coberturas{list-style:none;margin:0 0 16px}
+
+  .coberturas li{
+    display:flex;
+    align-items:flex-start;
+    gap:9px;
+    font-size:14.5px;
+    line-height:1.45;
+    padding:5px 0;
+    color:var(--negro);
+  }
+
+  .coberturas li::before{
+    content:"";
+    flex:none;
+    width:16px;
+    height:16px;
+    margin-top:2px;
+    border-radius:50%;
+    background:var(--amarillo) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center/10px no-repeat;
+  }
+
+  .precio{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    border-top:1px solid var(--gris-claro);
+    padding-top:14px;
+    margin-bottom:16px;
+  }
+
+  .precio dt{font-size:14px;color:var(--gris)}
+  .precio dd{font-size:26px;font-weight:800;color:var(--negro);letter-spacing:-.02em}
+  .precio dd span{font-size:14px;font-weight:600;color:var(--gris)}
+
+  .acciones{display:flex;flex-direction:column;gap:8px}
+
+  .btn-pagar{
+    width:100%;
+    min-height:56px;
+    border:none;
+    border-radius:12px;
+    background:var(--amarillo);
+    color:var(--negro);
+    font-family:inherit;
+    font-size:17px;
+    font-weight:700;
+    cursor:pointer;
+    transition:filter .18s ease;
+  }
+
+  .btn-pagar:hover,.btn-pagar:focus-visible{filter:brightness(.94)}
+
+  /* Nunca un callejón sin salida: siempre se puede volver a preguntar. */
+  .btn-duda{
+    width:100%;
+    min-height:52px;
+    border:none;
+    border-radius:12px;
+    background:transparent;
+    color:var(--azul);
+    font-family:inherit;
+    font-size:15.5px;
+    font-weight:600;
+    cursor:pointer;
+  }
+
+  .btn-duda:hover,.btn-duda:focus-visible{background:rgba(0,103,177,.08)}
+
+  .btn-pagar:focus-visible,.btn-duda:focus-visible{outline:3px solid var(--azul);outline-offset:2px}
+
+  .letra-chica{font-size:12px;color:var(--gris);opacity:.7;margin-top:12px;line-height:1.45}
+
   @media (prefers-reduced-motion:reduce){
     #orb{animation:none!important;transition:none}
+    #resumen[open] .hoja{animation:none}
   }
 </style>
 </head>
@@ -185,17 +322,8 @@
   <footer>
     <p id="estado" role="status" aria-live="polite">Toca el círculo para empezar a hablar</p>
 
+    <!-- Mute removed: it left the screen stuck "waiting for Asegura" with no exit. -->
     <div class="controles">
-      <button class="btn" id="btn-mute" aria-pressed="false">
-        <svg class="icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-          <line x1="12" y1="19" x2="12" y2="22"/>
-        </svg>
-        <span id="txt-mute">Silenciar</span>
-      </button>
-
       <button class="btn" id="btn-terminar">
         <svg class="icono" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <rect x="5" y="5" width="14" height="14" rx="3"/>
@@ -209,25 +337,73 @@
     </p>
   </footer>
 
+  <!-- Se pinta desde COTIZACION, nunca desde el modelo: comprobante de la
+       regla #5 en un canal donde el precio se escucha. -->
+  <dialog id="resumen" aria-labelledby="resumen-titulo">
+    <div class="hoja">
+      <div class="asa" aria-hidden="true"></div>
+
+      <h2 id="resumen-titulo" data-campo="producto"></h2>
+      <p class="aseguradora" data-campo="aseguradora"></p>
+
+      <p class="razon" data-campo="razon"></p>
+
+      <ul class="coberturas" data-campo="coberturas"></ul>
+
+      <dl class="precio">
+        <dt>Tu prima mensual</dt>
+        <dd data-campo="precio"></dd>
+      </dl>
+
+      <div class="acciones">
+        <button class="btn-pagar" id="btn-pagar"></button>
+        <button class="btn-duda" id="btn-duda">Tengo una duda</button>
+      </div>
+
+      <p class="letra-chica">
+        Pagas de forma segura con Wompi y vuelves aquí. Tu póliza llega al chat apenas
+        se confirme el pago.
+      </p>
+    </div>
+  </dialog>
+
 <script>
 (() => {
   const cuerpo   = document.body;
   const orbe     = document.getElementById('orb');
   const estado   = document.getElementById('estado');
   const reloj    = document.getElementById('timer');
-  const btnMute  = document.getElementById('btn-mute');
-  const txtMute  = document.getElementById('txt-mute');
   const btnFin   = document.getElementById('btn-terminar');
+  const hoja     = document.getElementById('resumen');
+  const btnPagar = document.getElementById('btn-pagar');
+  const btnDuda  = document.getElementById('btn-duda');
 
   const MENSAJES = {
     inactivo:   'Toca el círculo para empezar a hablar',
     escuchando: 'Te escucho…',
     hablando:   'Asegura está hablando…',
-    silenciado: 'Micrófono silenciado',
+    resumen:    'Revisa el resumen antes de pagar',
+    pagando:    'Abriendo el pago seguro…',
     terminado:  'Conversación terminada. Ya puedes volver al chat.',
   };
 
-  let segundos = 0, cronometro = null, silenciado = false, demo = null;
+  // Ejemplo. Real: GET /web-session/:token → QuotingService, nunca el modelo. Regla #12.
+  const COTIZACION = {
+    producto:      'Accidentes Personales',
+    aseguradora:   'MetLife',
+    razon:         'Te mueves en moto todos los días y eres el único ingreso de tu casa. '
+                 + 'Esto cubre justo el accidente que te dejaría sin poder trabajar.',
+    coberturas:    ['Muerte accidental',
+                    'Incapacidad total y permanente',
+                    'Gastos médicos por accidente',
+                    'Cubrimiento 24/7, dentro y fuera del trabajo'],
+    precioMensual: 18000,
+  };
+
+  const pesos = (n) => '$' + n.toLocaleString('es-CO');
+
+  let segundos = 0, cronometro = null, demo = null;
+  let yaMostroResumen = false;
 
   const setEstado = (e) => {
     cuerpo.dataset.estado = e;
@@ -244,15 +420,52 @@
     }, 1000);
   };
 
-  // Demo local: alterna escuchar/hablar para ver los tres estados del orbe.
-  // En la versión real esto lo maneja la sesión de voz (ver plan 17).
+  // ── Hoja de resumen ────────────────────────────────────
+  const pintarResumen = () => {
+    const campo = (c) => hoja.querySelector(`[data-campo="${c}"]`);
+
+    campo('producto').textContent    = COTIZACION.producto;
+    campo('aseguradora').textContent = COTIZACION.aseguradora;
+    campo('razon').textContent       = COTIZACION.razon;
+
+    campo('coberturas').replaceChildren(
+      ...COTIZACION.coberturas.map((t) => {
+        const li = document.createElement('li');
+        li.textContent = t;
+        return li;
+      }),
+    );
+
+    const mes = document.createElement('span');
+    mes.textContent = ' /mes';
+    campo('precio').replaceChildren(pesos(COTIZACION.precioMensual), mes);
+
+    btnPagar.textContent = `Pagar ${pesos(COTIZACION.precioMensual)} y quedar asegurado`;
+  };
+
+  const pausarVoz = () => { clearInterval(demo); demo = null; };
+
+  const abrirResumen = () => {
+    pausarVoz();                 // el agente no habla encima de quien lee
+    setEstado('resumen');
+    pintarResumen();
+    hoja.showModal();
+    // Real: el agente además la lee en voz alta — no puede ser solo visual.
+  };
+
+  // Demo: alterna estados y a los 3 turnos "cotiza".
+  // Real: function calling a QuotingService (plan 17 §6).
   const arrancarDemo = () => {
     arrancarReloj();
     setEstado('escuchando');
     let turno = 0;
     demo = setInterval(() => {
-      if (silenciado) return;
       turno++;
+      if (turno === 3 && !yaMostroResumen) {
+        yaMostroResumen = true;
+        abrirResumen();
+        return;
+      }
       setEstado(turno % 2 ? 'hablando' : 'escuchando');
     }, 3800);
   };
@@ -263,17 +476,31 @@
     setEstado(cuerpo.dataset.estado === 'hablando' ? 'escuchando' : 'hablando');
   });
 
-  btnMute.addEventListener('click', () => {
-    silenciado = !silenciado;
-    btnMute.setAttribute('aria-pressed', String(silenciado));
-    txtMute.textContent = silenciado ? 'Activar' : 'Silenciar';
-    setEstado(silenciado ? 'silenciado' : 'escuchando');
+  // Idempotente: el guardia de 'resumen' solo restaura si se salió por duda/Esc/backdrop.
+  const cerrarResumen = () => {
+    if (hoja.open) hoja.close();
+    if (cuerpo.dataset.estado === 'resumen') arrancarDemo();
+  };
+
+  // El botón restaura solo: no todo motor despacha 'close' y el orbe quedaría
+  // apagado con la sesión viva. close/cancel son la red para Esc y backdrop.
+  btnDuda.addEventListener('click', cerrarResumen);
+  hoja.addEventListener('close',  cerrarResumen);
+  hoja.addEventListener('cancel', cerrarResumen);
+
+  btnPagar.addEventListener('click', () => {
+    setEstado('pagando');        // antes de cerrar: si no, 'close' lo lee como "seguir preguntando"
+    hoja.close();
+    // Real: Payment Link de Wompi con redirect_url. Plan 17 §5:
+    //   · pago confirmado SOLO por webhook firmado, nunca por redirect
+    //   · pausar reminder.service.ts o marca ABANDONED a los 4 min
   });
 
   btnFin.addEventListener('click', () => {
     clearInterval(demo); clearInterval(cronometro);
     demo = cronometro = null;
     setEstado('terminado');
+    if (hoja.open) hoja.close();
     // Real: cerrar la sesión de voz y devolver al chat (ver plan 17, §4).
   });
 })();

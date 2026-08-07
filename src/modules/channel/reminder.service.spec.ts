@@ -1,3 +1,7 @@
+// reminder.service.spec.ts: tests the nudge and auto-close timers — independent
+// timers per conversation, cancel() as a no-op, and the extended window while a
+// Wompi payment link is still valid.
+
 import { ReminderService } from './reminder.service';
 import { ConversationState } from '../agent/types';
 

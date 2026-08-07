@@ -21,7 +21,7 @@ CANALES_GESTION = ["App propia", "Autogestión digital", "Asistido (persona)"]
 def calcular_canal_y_timing(df: pd.DataFrame) -> pd.DataFrame:
     d = df.copy()
 
-    # --- Score "App propia" ---
+    # Score "App propia"
     score_app = pd.Series(0.0, index=d.index)
     score_app += d["RANGO_EDAD"].map({
         "Menor de 19 años": 3, "20 a 35 años": 3, "36 a 45 años": 1,
@@ -31,7 +31,7 @@ def calcular_canal_y_timing(df: pd.DataFrame) -> pd.DataFrame:
     score_app += (d["CIUDAD_BUCKET"] == "Bogota D.C.") * 1
     score_app += d["PIRAMIDE_NUEVA"].isin(["6.1 Facultativo", "6.2 Independiente"]) * 1
 
-    # --- Score "Autogestión digital" (portal web, sin necesidad de app) ---
+    # Score "Autogestión digital" (portal web, sin necesidad de app)
     score_auto = pd.Series(0.0, index=d.index)
     score_auto += d["RANGO_EDAD"].map({
         "Menor de 19 años": 1, "20 a 35 años": 2, "36 a 45 años": 2,
@@ -40,7 +40,7 @@ def calcular_canal_y_timing(df: pd.DataFrame) -> pd.DataFrame:
     score_auto += d["PIRAMIDE_NUEVA"].isin(["6.1 Facultativo", "6.2 Independiente"]) * 2  # horario flexible
     score_auto += (d["CIUDAD_BUCKET"] == "Fuera de Bogota") * 1  # menos oficinas cerca
 
-    # --- Score "Asistido (persona)" ---
+    # Score "Asistido (persona)"
     score_asistido = pd.Series(0.0, index=d.index)
     score_asistido += d["RANGO_EDAD"].map({
         "Menor de 19 años": 0, "20 a 35 años": -1, "36 a 45 años": 0,
@@ -75,7 +75,7 @@ def calcular_canal_y_timing(df: pd.DataFrame) -> pd.DataFrame:
         default="WhatsApp",
     )
 
-    # --- Timing: ventana sugerida de contacto ---
+    # Timing: ventana sugerida de contacto
     # Sin fechas reales de evento, se usan las banderas de servicio como proxy
     # de "evento reciente" (supuesto explicito, a validar con timestamps reales)
     ventana = pd.Series("Sin disparador de evento detectado -> incluir en campaña mensual regular", index=d.index)

@@ -3,13 +3,10 @@
 // "nunca preguntar lo que ya sabemos" (Diseño preguntas.docx, Nivel 1) for every signal
 // Colsubsidio already has on file, not just income.
 //
-// Optional integration, same pattern as Wompi/Telegram/LLM elsewhere in this codebase:
-// a missing/misconfigured file logs a warning and disables the feature gracefully,
-// never crashes the app. The synthetic CSV is committed at the PUBLIC repo root (not
-// under docs/, which is private/gitignored — see CLAUDE.md; confirmed via `git log` —
-// commits "syntetic data" and "data: regenerate synthetic affiliate CSV via the
-// canonical generator script"), so it deploys with the code as-is. Still reads the path
-// from an env var rather than hardcoding it, so the file can move without a code change.
+// Optional integration, same pattern as Wompi/Telegram/LLM: a missing file logs a warning
+// and disables the feature, never crashes. The synthetic CSV lives at the PUBLIC repo root
+// (docs/ is gitignored) so it deploys with the code. Path comes from an env var so the
+// file can move without a code change.
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
@@ -166,12 +163,9 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
       const segmentoFamiliar = col(cols, 'SEGMENTO_GRUPO_FAMILIAR');
       if (segmentoFamiliar) record.segmentoGrupoFamiliar = segmentoFamiliar;
       if (segmentoFamiliar === 'AFILLIADO SIN GRUPO_FAMILIAR') record.dependents = 0;
-      // 2026-07-26: a single-parent family (FAMILIA MONOPARENTAL) or a nuclear family
-      // (FAMILIA NUCLEAR INTEGRAL) confirms at least 1 dependent — conservative minimum,
-      // same as the NLP's FAMILY_MENTION_PATTERN floor of 1 (groq-nlp.service.ts). Unlike
-      // "AFILLIADO SIN GRUPO_FAMILIAR" which confidently means 0, these just confirm
-      // existence; the caller may still ask the live dependents question for an exact count
-      // if precision matters more than skippability.
+      // 2026-07-26 — these two segments confirm at least 1 dependent (conservative floor,
+      // same as the NLP's FAMILY_MENTION_PATTERN). Unlike "AFILLIADO SIN GRUPO_FAMILIAR",
+      // which means 0, they only confirm existence — the caller may still ask for a count.
       if (segmentoFamiliar === 'FAMILIA MONOPARENTAL' || segmentoFamiliar === 'FAMILIA NUCLEAR INTEGRAL') {
         record.dependents = 1;
       }
