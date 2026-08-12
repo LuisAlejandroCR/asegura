@@ -4734,7 +4734,7 @@ describe('AgentService — terminal-state restart', () => {
       telegram.normalize.mockResolvedValue(makeMessage('sigo aquí'));
       await service.handleMessage({});
       const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-      expect(sentText).toContain('perfil de una conversación anterior');
+      expect(sentText).toContain('perfil de antes');
     });
 
     it('personalizes the greeting by first name when nombre survived the restart', async () => {

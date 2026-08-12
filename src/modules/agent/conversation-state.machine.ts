@@ -49,20 +49,22 @@ export const STATE_RESPONSES: ResponsesMap = {
   // when we have it.
   // 2026-07-26 — "puedes responder por texto o audio" moved here from the affiliate-ID
   // question: it belongs in the FIRST message. Kept short, not repeated later.
+  // 2026-08-12 — shortened further: short-attention social-media users bounce before
+  // finishing a 3-paragraph greeting. Merged the CTA into the same line as the
+  // authorization ask, and demoted Ley 1581 from its own paragraph to a trailing italic
+  // footnote — still disclosed, just not the visual center of the message.
   [ConversationState.GREETING]: (ctx) => {
     const c = translate(ctx);
     const firstName = c.nombre?.split(' ')[0];
     const greetingLine = firstName ? `¡Hola de nuevo, ${firstName}!` : '¡Hola!';
     const rememberedLine = hasRememberedProfile(c)
-      ? '\n\nYa tengo parte de tu perfil de una conversación anterior, así que esto debería ser más rápido.'
+      ? ' Ya tengo parte de tu perfil de antes, así que esto va rápido.'
       : '';
     return (
-      `${greetingLine} Soy Asegura 🛡️ — encuentro tu seguro ideal en 3 minutos, sin formularios ni asesores. ` +
-      `Puedes escribirme o responder por audio, lo que prefieras 😊` +
-      rememberedLine + '\n\n' +
-      'Para cotizarte necesito tu autorización para consultar tu perfil de afiliado ' +
-      '(*Ley 1581* · [política de datos](https://colsubsidio.com/transparencia-acceso-informacion/tratamiento-datos-personales)).\n\n' +
-      'Escríbeme *"sí"* para empezar.'
+      `${greetingLine} Soy Asegura 🛡️ — tu seguro ideal en 3 minutos, sin formularios. ` +
+      `Escríbeme o mándame un audio, como prefieras 😊${rememberedLine}\n\n` +
+      '¿Me autorizas a consultar tu perfil de afiliado? Responde *"sí"* para empezar.\n\n' +
+      '_(Ley 1581 · [política de datos](https://colsubsidio.com/transparencia-acceso-informacion/tratamiento-datos-personales))_'
     );
   },
 
