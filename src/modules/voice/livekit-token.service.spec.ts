@@ -1,0 +1,61 @@
+// livekit-token.service.spec.ts: same optional-integration contract as every other
+// external service in this codebase (disabled without a crash when unconfigured), plus
+// the real AccessToken/VideoGrant shape a session actually needs.
+
+import { LiveKitTokenService } from './livekit-token.service';
+
+function makeConfig(values: Record<string, string | undefined>) {
+  return { get: jest.fn((key: string) => values[key]) } as any;
+}
+
+describe('LiveKitTokenService — LIVEKIT_* not fully set', () => {
+  it('isEnabled is false and createSession returns null instead of throwing', async () => {
+    const service = new LiveKitTokenService(makeConfig({}));
+    expect(service.isEnabled).toBe(false);
+    await expect(service.createSession()).resolves.toBeNull();
+  });
+
+  it('a partially-configured set (missing secret) still disables cleanly', async () => {
+    const service = new LiveKitTokenService(makeConfig({
+      LIVEKIT_URL: 'wss://x.livekit.cloud', LIVEKIT_API_KEY: 'key',
+    }));
+    expect(service.isEnabled).toBe(false);
+  });
+});
+
+describe('LiveKitTokenService — configured', () => {
+  const config = makeConfig({
+    LIVEKIT_URL: 'wss://asegura.livekit.cloud',
+    LIVEKIT_API_KEY: 'APItest',
+    LIVEKIT_API_SECRET: 'secrettest',
+  });
+
+  it('returns a session with the configured url and a JWT-shaped token', async () => {
+    const service = new LiveKitTokenService(config);
+    const session = await service.createSession();
+    expect(session).not.toBeNull();
+    expect(session.url).toBe('wss://asegura.livekit.cloud');
+    // A real LiveKit access token is a signed JWT: three base64url segments.
+    expect(session.token.split('.')).toHaveLength(3);
+    expect(session.roomName).toMatch(/^asegura-/);
+  });
+
+  it('never reuses a room name across sessions — one throwaway room per session', async () => {
+    const service = new LiveKitTokenService(config);
+    const a = await service.createSession();
+    const b = await service.createSession();
+    expect(a.roomName).not.toBe(b.roomName);
+  });
+
+  it('the issued token actually grants roomJoin for the returned room, not a different one', async () => {
+    const { TokenVerifier } = await import('livekit-server-sdk');
+    const service = new LiveKitTokenService(config);
+    const session = await service.createSession('afiliado-123');
+
+    const verifier = new TokenVerifier('APItest', 'secrettest');
+    const claims = await verifier.verify(session.token);
+    expect(claims.video?.room).toBe(session.roomName);
+    expect(claims.video?.roomJoin).toBe(true);
+    expect(claims.sub).toBe('afiliado-123');
+  });
+});

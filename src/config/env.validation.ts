@@ -76,6 +76,26 @@ class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  LIVEKIT_URL: string;
+
+  @IsString()
+  @IsOptional()
+  LIVEKIT_API_KEY: string;
+
+  @IsString()
+  @IsOptional()
+  LIVEKIT_API_SECRET: string;
+
+  @IsString()
+  @IsOptional()
+  ELEVENLABS_API_KEY: string;
+
+  @IsString()
+  @IsOptional()
+  ELEVENLABS_VOICE_ID: string;
+
+  @IsString()
+  @IsOptional()
   WOMPI_ENVIRONMENT: string;
 
   @IsString()
@@ -130,6 +150,8 @@ class EnvironmentVariables {
 // request, at runtime, instead of at startup where an operator would actually notice.
 const ALL_OR_NOTHING_GROUPS: { label: string; keys: (keyof EnvironmentVariables)[] }[] = [
   { label: 'Twilio WhatsApp', keys: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_WHATSAPP_NUMBER'] },
+  { label: 'LiveKit', keys: ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'] },
+  { label: 'ElevenLabs', keys: ['ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID'] },
   { label: 'Wompi', keys: ['WOMPI_ENVIRONMENT', 'WOMPI_PRIVATE_KEY', 'WOMPI_EVENTS_SECRET'] },
   { label: 'Celo', keys: ['CELO_RPC_URL', 'OPERATOR_PRIVATE_KEY', 'POLICY_LEDGER_ADDRESS'] },
 ];

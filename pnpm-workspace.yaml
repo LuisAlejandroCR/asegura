@@ -2,6 +2,9 @@ packages:
   - 'apps/*'
 
 allowBuilds:
+  # false: we don't use LiveKit's local-inference (VAD/turn-detection) — cloud STT/LLM/TTS
+  # only (Groq + ElevenLabs, see src/voice-agent/). No reason to run its native build script.
+  '@livekit/local-inference': false
   '@nestjs/core': true
   esbuild: true
 

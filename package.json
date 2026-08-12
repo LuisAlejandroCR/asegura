@@ -7,11 +7,16 @@
     "dev": "node ./node_modules/@nestjs/cli/bin/nest.js start --watch",
     "start": "node dist/main",
     "start:prod": "node dist/main",
+    "voice-agent:dev": "node ./node_modules/@nestjs/cli/bin/nest.js build && node dist/voice-agent/main.js dev",
+    "voice-agent:start": "node dist/voice-agent/main.js start",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },
   "dependencies": {
+    "@livekit/agents": "^1.6.2",
+    "@livekit/agents-plugin-elevenlabs": "^1.6.2",
+    "@livekit/agents-plugin-openai": "^1.6.2",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^3.0.0",
     "@nestjs/core": "^10.0.0",
@@ -20,13 +25,17 @@
     "@supabase/supabase-js": "^2.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
+    "dotenv": "^17.4.2",
     "grammy": "^1.45.1",
     "helmet": "^7.0.0",
     "js-yaml": "^4.1.0",
+    "livekit-client": "^2.21.0",
+    "livekit-server-sdk": "^2.17.0",
     "pdfkit": "^0.19.1",
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.1.13",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",

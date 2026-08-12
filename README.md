@@ -84,7 +84,8 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 | Pagos | Wompi — Payment Links (sandbox) |
 | Deploy | Railway (API) + Vercel (pitch web) |
 | Dashboard | Metabase |
-| Tests | 935 (unit + fuzz + invariant) |
+| Voz en tiempo real | LiveKit Agents (AseguraWeb, en construcción — ver `apps/web/voz.html`) |
+| Tests | 948 (unit + fuzz + invariant) |
 
 ---
 

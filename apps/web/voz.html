@@ -117,6 +117,8 @@
     color:var(--gris);
   }
 
+  body[data-estado="conectando"] #orb{animation:respirar 1.4s ease-in-out infinite}
+
   /* ── Controles ────────────────────────────────────────── */
   footer{width:100%;max-width:420px;text-align:center}
 
@@ -367,7 +369,14 @@
     </div>
   </dialog>
 
-<script>
+<script type="module">
+import { Room, RoomEvent } from 'livekit-client';
+
+// Backend NestJS, no este sitio estático — mismo origen solo en local si se corren juntos.
+// Sin VITE_API_URL en producción, cae a same-origin (rompe si el backend vive en otro
+// dominio; Vercel/Railway necesitan la env var real).
+const API_URL = import.meta.env.VITE_API_URL || '';
+
 (() => {
   const cuerpo   = document.body;
   const orbe     = document.getElementById('orb');
@@ -380,34 +389,22 @@
 
   const MENSAJES = {
     inactivo:   'Toca el círculo para empezar a hablar',
+    conectando: 'Conectando…',
     escuchando: 'Te escucho…',
     hablando:   'Asegura está hablando…',
     resumen:    'Revisa el resumen antes de pagar',
     pagando:    'Abriendo el pago seguro…',
     terminado:  'Conversación terminada. Ya puedes volver al chat.',
-  };
-
-  // Ejemplo. Real: GET /web-session/:token → QuotingService, nunca el modelo. Regla #12.
-  const COTIZACION = {
-    producto:      'Accidentes Personales',
-    aseguradora:   'MetLife',
-    razon:         'Te mueves en moto todos los días y eres el único ingreso de tu casa. '
-                 + 'Esto cubre justo el accidente que te dejaría sin poder trabajar.',
-    coberturas:    ['Muerte accidental',
-                    'Incapacidad total y permanente',
-                    'Gastos médicos por accidente',
-                    'Cubrimiento 24/7, dentro y fuera del trabajo'],
-    precioMensual: 18000,
+    error:      'No se pudo conectar. Intenta de nuevo.',
   };
 
   const pesos = (n) => '$' + n.toLocaleString('es-CO');
 
-  let segundos = 0, cronometro = null, demo = null;
-  let yaMostroResumen = false;
+  let segundos = 0, cronometro = null, room = null;
 
-  const setEstado = (e) => {
+  const setEstado = (e, textoExtra) => {
     cuerpo.dataset.estado = e;
-    estado.textContent = MENSAJES[e] ?? '';
+    estado.textContent = textoExtra ?? MENSAJES[e] ?? '';
   };
 
   const arrancarReloj = () => {
@@ -421,15 +418,21 @@
   };
 
   // ── Hoja de resumen ────────────────────────────────────
-  const pintarResumen = () => {
+  // Se pinta con lo que el agente publique por el data channel de LiveKit
+  // (RoomEvent.DataReceived más abajo) — nunca con un valor inventado aquí, mismo
+  // comprobante de la regla #5 que ya exigía la versión de demo. El lado que FALTA:
+  // que src/voice-agent (el worker) efectivamente publique ese mensaje después de
+  // llamar la herramienta `cotizar` — no está cableado todavía (requiere el Room
+  // del lado de @livekit/rtc-node, API distinta a livekit-client; ver docs/memoria.md).
+  const pintarResumen = (cotizacion) => {
     const campo = (c) => hoja.querySelector(`[data-campo="${c}"]`);
 
-    campo('producto').textContent    = COTIZACION.producto;
-    campo('aseguradora').textContent = COTIZACION.aseguradora;
-    campo('razon').textContent       = COTIZACION.razon;
+    campo('producto').textContent    = cotizacion.producto;
+    campo('aseguradora').textContent = cotizacion.aseguradora;
+    campo('razon').textContent       = cotizacion.razon ?? '';
 
     campo('coberturas').replaceChildren(
-      ...COTIZACION.coberturas.map((t) => {
+      ...(cotizacion.coberturas ?? []).map((t) => {
         const li = document.createElement('li');
         li.textContent = t;
         return li;
@@ -438,58 +441,111 @@
 
     const mes = document.createElement('span');
     mes.textContent = ' /mes';
-    campo('precio').replaceChildren(pesos(COTIZACION.precioMensual), mes);
+    campo('precio').replaceChildren(pesos(cotizacion.precioMensual), mes);
 
-    btnPagar.textContent = `Pagar ${pesos(COTIZACION.precioMensual)} y quedar asegurado`;
+    btnPagar.textContent = `Pagar ${pesos(cotizacion.precioMensual)} y quedar asegurado`;
   };
 
-  const pausarVoz = () => { clearInterval(demo); demo = null; };
-
-  const abrirResumen = () => {
-    pausarVoz();                 // el agente no habla encima de quien lee
+  const abrirResumen = (cotizacion) => {
     setEstado('resumen');
-    pintarResumen();
+    pintarResumen(cotizacion);
     hoja.showModal();
-    // Real: el agente además la lee en voz alta — no puede ser solo visual.
+    // El agente sigue hablando por su cuenta si decide leer el resumen en voz —
+    // esta hoja es un refuerzo visual, no le quita el turno.
   };
 
-  // Demo: alterna estados y a los 3 turnos "cotiza".
-  // Real: function calling a QuotingService (plan 17 §6).
-  const arrancarDemo = () => {
-    arrancarReloj();
-    setEstado('escuchando');
-    let turno = 0;
-    demo = setInterval(() => {
-      turno++;
-      if (turno === 3 && !yaMostroResumen) {
-        yaMostroResumen = true;
-        abrirResumen();
-        return;
+  const decoder = new TextDecoder();
+  const alRecibirDatos = (payload) => {
+    try {
+      const mensaje = JSON.parse(decoder.decode(payload));
+      if (mensaje.tipo === 'cotizacion' && mensaje.encontrado) {
+        abrirResumen(mensaje);
       }
-      setEstado(turno % 2 ? 'hablando' : 'escuchando');
-    }, 3800);
+    } catch (err) {
+      console.warn('Mensaje del agente no reconocido:', err);
+    }
+  };
+
+  // ── Conexión real a LiveKit ─────────────────────────────
+  const conectar = async () => {
+    setEstado('conectando');
+
+    let sesion;
+    try {
+      const res = await fetch(`${API_URL}/voice/session`, { method: 'POST' });
+      if (!res.ok) throw new Error(`voice/session respondió ${res.status}`);
+      sesion = await res.json();
+    } catch (err) {
+      console.error('No se pudo obtener la sesión de voz:', err);
+      setEstado('error');
+      return;
+    }
+
+    room = new Room();
+
+    room.on(RoomEvent.Connected, () => {
+      arrancarReloj();
+      setEstado('escuchando');
+    });
+
+    room.on(RoomEvent.TrackSubscribed, (track) => {
+      // La voz del agente llega como pista de audio remota — nunca hay video en
+      // esta sesión, así que cualquier pista de audio suscrita es Asegura hablando.
+      if (track.kind === 'audio') {
+        const el = track.attach();
+        el.autoplay = true;
+        el.style.display = 'none';
+        document.body.appendChild(el);
+      }
+    });
+
+    room.on(RoomEvent.ActiveSpeakersChanged, (hablantes) => {
+      if (cuerpo.dataset.estado === 'resumen' || cuerpo.dataset.estado === 'pagando') return;
+      const agenteHablando = hablantes.some((p) => !p.isLocal);
+      setEstado(agenteHablando ? 'hablando' : 'escuchando');
+    });
+
+    room.on(RoomEvent.DataReceived, alRecibirDatos);
+
+    room.on(RoomEvent.Disconnected, () => {
+      clearInterval(cronometro);
+      cronometro = null;
+      setEstado('terminado');
+    });
+
+    try {
+      await room.connect(sesion.url, sesion.token);
+      await room.localParticipant.setMicrophoneEnabled(true);
+    } catch (err) {
+      // Plan 17 §2: el navegador in-app de WhatsApp puede simplemente no dar acceso
+      // al micrófono — este es exactamente el caso que ese test de 30 min cubre.
+      console.error('No se pudo activar el micrófono:', err);
+      setEstado('error', 'No pudimos acceder a tu micrófono. Revisa los permisos e intenta de nuevo.');
+      room.disconnect();
+      room = null;
+    }
   };
 
   orbe.addEventListener('click', () => {
-    if (cuerpo.dataset.estado === 'terminado') return;
-    if (!demo) { arrancarDemo(); return; }
-    setEstado(cuerpo.dataset.estado === 'hablando' ? 'escuchando' : 'hablando');
+    const actual = cuerpo.dataset.estado;
+    if (actual === 'inactivo' || actual === 'error' || actual === 'terminado') {
+      conectar();
+    }
   });
 
-  // Idempotente: el guardia de 'resumen' solo restaura si se salió por duda/Esc/backdrop.
+  // Idempotente: el guardia de 'resumen' no reconecta solo — el usuario sigue en
+  // la misma sesión de voz, que nunca se pausó (a diferencia de la demo anterior).
   const cerrarResumen = () => {
     if (hoja.open) hoja.close();
-    if (cuerpo.dataset.estado === 'resumen') arrancarDemo();
+    if (cuerpo.dataset.estado === 'resumen') setEstado('escuchando');
   };
 
-  // El botón restaura solo: no todo motor despacha 'close' y el orbe quedaría
-  // apagado con la sesión viva. close/cancel son la red para Esc y backdrop.
   btnDuda.addEventListener('click', cerrarResumen);
   hoja.addEventListener('close',  cerrarResumen);
   hoja.addEventListener('cancel', cerrarResumen);
 
   btnPagar.addEventListener('click', () => {
-    setEstado('pagando');        // antes de cerrar: si no, 'close' lo lee como "seguir preguntando"
+    setEstado('pagando');
     hoja.close();
     // Real: Payment Link de Wompi con redirect_url. Plan 17 §5:
     //   · pago confirmado SOLO por webhook firmado, nunca por redirect
@@ -497,11 +553,9 @@
   });
 
   btnFin.addEventListener('click', () => {
-    clearInterval(demo); clearInterval(cronometro);
-    demo = cronometro = null;
-    setEstado('terminado');
+    if (room) { room.disconnect(); room = null; }
+    else { setEstado('terminado'); }
     if (hoja.open) hoja.close();
-    // Real: cerrar la sesión de voz y devolver al chat (ver plan 17, §4).
   });
 })();
 </script>
