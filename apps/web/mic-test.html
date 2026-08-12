@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Asegura — Test de micrófono</title>
+<style>
+  :root{--azul:#0067b1;--verde:#1a9c53;--rojo:#c0392b;--gris:#575756;--fondo:#fafafa}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    background:var(--fondo);color:var(--gris);min-height:100vh;
+    display:flex;flex-direction:column;align-items:center;
+    padding:max(24px,env(safe-area-inset-top)) 20px max(24px,env(safe-area-inset-bottom));
+    -webkit-font-smoothing:antialiased;
+  }
+  h1{font-size:22px;color:var(--azul);text-align:center;margin-bottom:4px}
+  .sub{font-size:13px;opacity:.7;text-align:center;margin-bottom:24px}
+  #btn{
+    width:180px;height:180px;border-radius:50%;border:none;cursor:pointer;
+    background:radial-gradient(circle at 35% 30%,#ffe561 0%,#ffd000 55%,#e6bb00 100%);
+    box-shadow:0 12px 32px rgba(255,208,0,.35);
+    font-size:16px;font-weight:700;color:#000;margin:12px 0 24px;
+    transition:transform .15s ease;
+  }
+  #btn:active{transform:scale(.96)}
+  #resultado{
+    width:100%;max-width:420px;border-radius:14px;padding:16px 18px;
+    font-size:14.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;
+    display:none;
+  }
+  #resultado.ok{display:block;background:rgba(26,156,83,.1);border:1px solid var(--verde);color:#0d5c32}
+  #resultado.fail{display:block;background:rgba(192,57,43,.08);border:1px solid var(--rojo);color:var(--rojo)}
+  .icono{font-size:28px;display:block;margin-bottom:6px}
+  #diagnostico{
+    width:100%;max-width:420px;margin-top:20px;font-size:11.5px;color:var(--gris);
+    opacity:.75;background:#fff;border-radius:10px;padding:12px 14px;line-height:1.6;
+  }
+  #diagnostico b{color:var(--azul)}
+  .aviso{font-size:12px;opacity:.65;text-align:center;margin-top:20px;max-width:380px;line-height:1.5}
+</style>
+</head>
+<body>
+  <h1>🎤 Test de micrófono</h1>
+  <p class="sub">Asegura · Fase 0 — plan AseguraWeb voz</p>
+
+  <button id="btn">Toca para probar el micrófono</button>
+
+  <div id="resultado"></div>
+
+  <div id="diagnostico"></div>
+
+  <p class="aviso">
+    Abre este link desde el chat de WhatsApp o Telegram (no desde Safari/Chrome directo)
+    y toca el botón. Envía una captura de pantalla del resultado.
+  </p>
+
+<script>
+(() => {
+  const btn = document.getElementById('btn');
+  const resultado = document.getElementById('resultado');
+  const diag = document.getElementById('diagnostico');
+
+  // Info visible ANTES de tocar el botón — algunos navegadores in-app ni siquiera
+  // exponen mediaDevices, y eso ya es una respuesta útil sin necesitar el permiso.
+  const info = [
+    `<b>Contexto seguro (HTTPS)</b>: ${window.isSecureContext ? 'sí' : 'NO'}`,
+    `<b>navigator.mediaDevices existe</b>: ${!!navigator.mediaDevices}`,
+    `<b>getUserMedia existe</b>: ${!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)}`,
+    `<b>User agent</b>: ${navigator.userAgent}`,
+  ];
+  diag.innerHTML = info.join('<br>');
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Probando…';
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      resultado.className = 'fail';
+      resultado.textContent = '❌ Este navegador no expone getUserMedia en absoluto.\n\nEsto ya es una respuesta: no hay ni siquiera la API disponible aquí.';
+      btn.textContent = 'Toca para probar el micrófono';
+      btn.disabled = false;
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Solo probamos acceso — no necesitamos mantener el micrófono abierto.
+      stream.getTracks().forEach((t) => t.stop());
+      resultado.className = 'ok';
+      resultado.textContent = '✅ Micrófono concedido correctamente.\n\nEste navegador in-app SÍ permite getUserMedia.';
+    } catch (err) {
+      resultado.className = 'fail';
+      resultado.textContent = `❌ Micrófono NO concedido.\n\nError: ${err.name}\nMensaje: ${err.message}`;
+    }
+
+    btn.textContent = 'Probar de nuevo';
+    btn.disabled = false;
+  });
+})();
+</script>
+</body>
+</html>
