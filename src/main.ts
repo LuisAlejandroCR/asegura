@@ -62,7 +62,7 @@ async function bootstrap() {
 
   if (telegram.instance) {
     telegram.instance.on('message', async (ctx) => {
-      await agent.handleMessage(ctx);
+      await agent.handleMessage(ctx, 'telegram');
     });
 
     const host = config.get<string>('PUBLIC_URL', '');

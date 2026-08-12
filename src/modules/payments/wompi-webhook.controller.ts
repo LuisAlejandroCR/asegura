@@ -8,7 +8,7 @@ import * as path from 'path';
 import { WompiService } from './wompi.service';
 import { PolicyService } from '../policy/policy.service';
 import { ConversationService } from '../agent/conversation.service';
-import { TelegramAdapter } from '../channel/telegram-adapter.service';
+import { ChannelRegistry } from '../channel/channel-registry.service';
 import { ReminderService } from '../channel/reminder.service';
 import { WompiWebhookEvent } from './types';
 import { Policy } from '../policy/types';
@@ -30,7 +30,7 @@ export class WompiWebhookController {
     private readonly wompi: WompiService,
     private readonly policy: PolicyService,
     private readonly conversations: ConversationService,
-    private readonly telegram: TelegramAdapter,
+    private readonly channels: ChannelRegistry,
     private readonly reminders: ReminderService,
   ) {}
 
@@ -96,6 +96,7 @@ export class WompiWebhookController {
     if (!first.conversation_id) return;
     const conversation = await this.conversations.findById(first.conversation_id);
     if (!conversation) return;
+    const adapter = this.channels.get(conversation.channel as 'telegram' | 'whatsapp');
 
     const newContext: ConversationContext = {
       ...conversation.context,
@@ -124,15 +125,15 @@ export class WompiWebhookController {
     // 2026-07-24 feedback: the real Wompi approval is the actual "successfully paid"
     // moment — gets the same branded success-checkmark video as the selfie and
     // Tarjeta Colsubsidio moments.
-    await this.telegram.sendAnimation(conversation.user_id, PAYMENT_ANIMATION_PATH);
-    await this.telegram.sendText(conversation.user_id, message);
+    await adapter.sendAnimation(conversation.user_id, PAYMENT_ANIMATION_PATH);
+    await adapter.sendText(conversation.user_id, message);
 
     // This is the only PDF the user ever receives — the draft PDF before payment was
     // removed in an earlier fix, so each policy must send unconditionally on approval.
     for (const policy of policies) {
       const pdfBuffer = await this.policy.generateFinalPdf(policy);
       if (pdfBuffer) {
-        await this.telegram.sendDocument(conversation.user_id, pdfBuffer, `poliza-${policy.id.slice(0, 8)}.pdf`);
+        await adapter.sendDocument(conversation.user_id, pdfBuffer, `poliza-${policy.id.slice(0, 8)}.pdf`);
       }
     }
 
@@ -144,7 +145,7 @@ export class WompiWebhookController {
     const crossSellText = pendingCategory
       ? `¿Seguimos con el seguro de *${pendingCategory}* que mencionaste? Cuéntame y te cotizo.`
       : '¿Quieres proteger algo más? Tengo seguros de vida, accidentes, asistencia médica y mascotas.';
-    await this.telegram.sendText(conversation.user_id, crossSellText);
+    await adapter.sendText(conversation.user_id, crossSellText);
 
     const followUpContext: ConversationContext = {
       cedula: newContext.cedula,
@@ -189,7 +190,8 @@ export class WompiWebhookController {
     const newContext: ConversationContext = { ...conversation.context, checkoutUrl: undefined };
     await this.conversations.saveState(conversation.id, ConversationState.PAYMENT, newContext);
 
-    await this.telegram.sendText(
+    const adapter = this.channels.get(conversation.channel as 'telegram' | 'whatsapp');
+    await adapter.sendText(
       conversation.user_id,
       'Tu pago no se pudo completar. Si quieres intentar de nuevo, escríbeme *"sí"* y te genero un nuevo link de pago.',
     );

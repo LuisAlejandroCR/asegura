@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import * as path from 'path';
 import { INlpProvider, InsuranceIntent } from '../nlp/types';
 import { TelegramAdapter } from '../channel/telegram-adapter.service';
+import { ChannelRegistry } from '../channel/channel-registry.service';
 import { ReminderService } from '../channel/reminder.service';
 import { NormalizedMessage } from '../channel/types';
 import { ConversationService } from './conversation.service';
@@ -88,7 +89,11 @@ export class AgentService {
   constructor(
     @Inject('INlpProvider')
     private readonly nlp: INlpProvider,
+    // Admin escalation/lead notifications (below) are deliberately hardcoded to
+    // Telegram, not resolved via `channels` — ops always monitors there regardless of
+    // which channel the customer used.
     private readonly telegram: TelegramAdapter,
+    private readonly channels: ChannelRegistry,
     private readonly conversations: ConversationService,
     private readonly quoting: QuotingService,
     private readonly policy: PolicyService,
@@ -183,14 +188,21 @@ export class AgentService {
   }
 
 
-  async handleMessage(raw: unknown): Promise<void> {
-    const msg: NormalizedMessage = await this.telegram.normalize(raw);
+  // `channel` picks which adapter normalizes the raw payload and sends the reply — the
+  // Telegram/Twilio webhook controllers each know which one they are, so it's passed in
+  // rather than guessed from the payload shape. Admin notifications below (escalation,
+  // leads) stay hardcoded to Telegram regardless — ops always monitors there.
+  // Default 'telegram' keeps every existing `handleMessage(raw)` call in the spec files
+  // working unchanged — Telegram was the only channel before this parameter existed.
+  async handleMessage(raw: unknown, channel: 'telegram' | 'whatsapp' = 'telegram'): Promise<void> {
+    const adapter = this.channels.get(channel);
+    const msg: NormalizedMessage = await adapter.normalize(raw);
 
     if (msg.unsupportedInput) {
       const text = msg.unsupportedInput === 'audio_too_long'
         ? 'Solo puedo procesar audios cortos. Intenta de nuevo.'
         : 'No puedo leer imágenes, solo audio o texto. Intenta de nuevo.';
-      await this.telegram.sendText(msg.userId, text);
+      await adapter.sendText(msg.userId, text);
       return;
     }
 
@@ -244,27 +256,27 @@ export class AgentService {
     }
 
     if (result.document) {
-      await this.telegram.sendDocument(msg.userId, result.document.buffer, result.document.filename);
+      await adapter.sendDocument(msg.userId, result.document.buffer, result.document.filename);
     }
 
     if (result.animation) {
-      await this.telegram.sendAnimation(msg.userId, result.animation);
+      await adapter.sendAnimation(msg.userId, result.animation);
     }
 
     if (result.reaction && msg.messageId !== undefined) {
-      await this.telegram.reactToMessage(msg.userId, msg.messageId, result.reaction, result.reactionBig);
+      await adapter.reactToMessage(msg.userId, msg.messageId, result.reaction, result.reactionBig);
     }
 
     if (result.requestContact && result.text) {
-      await this.telegram.sendContactRequest(msg.userId, result.text);
+      await adapter.sendContactRequest(msg.userId, result.text);
     } else if (result.choices?.length && result.text) {
-      await this.telegram.sendChoices(msg.userId, result.text, result.choices);
+      await adapter.sendChoices(msg.userId, result.text, result.choices);
     } else if (result.texts?.length) {
       for (const t of result.texts) {
-        await this.telegram.sendText(msg.userId, t);
+        await adapter.sendText(msg.userId, t);
       }
     } else if (result.text) {
-      await this.telegram.sendText(msg.userId, result.text);
+      await adapter.sendText(msg.userId, result.text);
     }
 
     // Arm the "come back to chat" reminder for whatever state the conversation is in now

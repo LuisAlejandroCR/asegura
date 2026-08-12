@@ -57,6 +57,11 @@ function buildService(overrides: {
     sendAnimation: jest.fn().mockResolvedValue(undefined),
     sendChoices: jest.fn().mockResolvedValue(undefined),
   };
+  // Every existing spec calls handleMessage() with no channel arg, defaulting to
+  // 'telegram' — the registry just needs to resolve back to the same mock adapter above.
+  const channels = {
+    get: jest.fn().mockReturnValue(telegram),
+  };
   const conversations = {
     getOrCreate: jest.fn().mockResolvedValue(makeConversation(state, context)),
     saveState: jest.fn().mockResolvedValue(undefined),
@@ -91,12 +96,12 @@ function buildService(overrides: {
     get: jest.fn().mockReturnValue(undefined),
   };
   const service = new AgentService(
-    nlp as any, telegram as any, conversations as any,
+    nlp as any, telegram as any, channels as any, conversations as any,
     quoting as any, policy as any, wompi as any, reminders as any, affiliateLookup as any,
     config as any,
   );
 
-  return { service, nlp, telegram, conversations, quoting, policy, wompi, reminders, affiliateLookup, config };
+  return { service, nlp, telegram, channels, conversations, quoting, policy, wompi, reminders, affiliateLookup, config };
 }
 
 export { makeMessage, makeIntent, extractPetResolutionMock, makeConversation, buildService };

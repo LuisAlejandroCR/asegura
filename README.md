@@ -80,11 +80,11 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 | NLP | Groq (llama-3.1-8b-instant) + Whisper (voz) |
 | Base de datos | Supabase (Postgres) |
 | Canal MVP | Telegram |
-| Canal futuro | WhatsApp Business API |
+| Canal WhatsApp | Twilio WhatsApp Sandbox (pruebas internas) |
 | Pagos | Wompi — Payment Links (sandbox) |
 | Deploy | Railway (API) + Vercel (pitch web) |
 | Dashboard | Metabase |
-| Tests | 912 (unit + fuzz + invariant) |
+| Tests | 935 (unit + fuzz + invariant) |
 
 ---
 

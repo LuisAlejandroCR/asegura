@@ -86,16 +86,21 @@ function buildController(overrides: { policies?: Policy[] } = {}) {
     sendDocument: jest.fn().mockResolvedValue(undefined),
     sendAnimation: jest.fn().mockResolvedValue(undefined),
   };
+  // The fixture conversation's channel is 'telegram' (see makeConversation above), so
+  // resolving through the registry returns this same mock every existing assertion expects.
+  const channels = {
+    get: jest.fn().mockReturnValue(telegram),
+  };
   const reminders = {
     schedule: jest.fn(),
     cancel: jest.fn(),
   };
 
   const controller = new WompiWebhookController(
-    wompi as any, policyService as any, conversations as any, telegram as any, reminders as any,
+    wompi as any, policyService as any, conversations as any, channels as any, reminders as any,
   );
 
-  return { controller, wompi, policyService, conversations, telegram, reminders };
+  return { controller, wompi, policyService, conversations, telegram, channels, reminders };
 }
 
 describe('WompiWebhookController — signature validation', () => {

@@ -64,6 +64,18 @@ class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  TWILIO_ACCOUNT_SID: string;
+
+  @IsString()
+  @IsOptional()
+  TWILIO_AUTH_TOKEN: string;
+
+  @IsString()
+  @IsOptional()
+  TWILIO_WHATSAPP_NUMBER: string;
+
+  @IsString()
+  @IsOptional()
   WOMPI_ENVIRONMENT: string;
 
   @IsString()
@@ -117,6 +129,7 @@ class EnvironmentVariables {
 // a typo'd Railway var name) used to boot successfully and only fail at the first real
 // request, at runtime, instead of at startup where an operator would actually notice.
 const ALL_OR_NOTHING_GROUPS: { label: string; keys: (keyof EnvironmentVariables)[] }[] = [
+  { label: 'Twilio WhatsApp', keys: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_WHATSAPP_NUMBER'] },
   { label: 'Wompi', keys: ['WOMPI_ENVIRONMENT', 'WOMPI_PRIVATE_KEY', 'WOMPI_EVENTS_SECRET'] },
   { label: 'Celo', keys: ['CELO_RPC_URL', 'OPERATOR_PRIVATE_KEY', 'POLICY_LEDGER_ADDRESS'] },
 ];
