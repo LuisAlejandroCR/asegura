@@ -26,13 +26,10 @@ export class GroqNlpService implements INlpProvider {
     }
   }
 
-  // 2026-07-26 live-test bug: a real Groq free-tier TPM rate limit (429) hit mid-
-  // conversation degraded that turn straight to fallbackIntent() — the weaker keyword-
-  // only matcher — with zero attempt to recover, even though Groq's own error body says
-  // "Please try again in 2.1s". One short, fixed retry (not a full backoff library —
-  // this is a real-time chat, latency matters) recovers most of these momentary blips
-  // before giving up. Any OTHER error (network, 5xx, malformed JSON) still falls
-  // straight to the fallback on the first attempt, unchanged.
+  // Live bug: a Groq 429 mid-conversation degraded straight to the weaker fallbackIntent()
+  // with zero retry, even though Groq's own error says "try again in 2.1s". One short
+  // fixed retry (not a backoff library — latency matters in real-time chat) recovers most
+  // blips. Any other error still falls straight to fallback, unchanged.
   private static readonly RATE_LIMIT_RETRY_DELAY_MS = 2_500;
 
   async extractIntent(text: string, history?: Array<{ role: string; text: string }>): Promise<InsuranceIntent> {
@@ -158,41 +155,30 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
 
   private postProcess(intent: InsuranceIntent, text: string): InsuranceIntent {
     const lower = text.toLowerCase();
-    // Real live-test bug (2026-07-26): "no tengo gatos" (a live correction, DENYING a
-    // pet) matched the exact same substring check as actually having one — every
-    // keyword test below was blind to a preceding negation. Strip explicit denial
-    // phrases ("no tengo/tenía X", "sin X", "ningún/ninguna X") before any keyword
-    // check in this method, so a correction no longer reads as a confirmation.
+    // Live bug: "no tengo gatos" (denying a pet) matched the same substring check as
+    // having one — every keyword test was blind to a preceding negation. Strip denial
+    // phrases before any keyword check so a correction doesn't read as confirmation.
     const safeLower = GroqNlpService.stripDeniedPets(lower);
-    // "gatica"/"gatita"/"minino" were only recognized a few lines below (hasCatExt, for
-    // petResolution) — missing here silently overrode a correct mixto classification back
-    // to a single species, dropping a pet entirely from a multi-pet quote (real bug).
+    // "gatica"/"minino" missing here silently overrode a correct mixto classification.
     const hasCat = safeLower.includes('gato') || safeLower.includes('gata') || safeLower.includes('gatic') || safeLower.includes('michi') || safeLower.includes('felino') || safeLower.includes('minino');
-    // "perrit" covers perrito/perrita/perritos/perritas — the extremely common
-    // affectionate diminutive for dogs, especially in casual voice messages. Real
-    // live-test bug: "Somos dos perritos, una gata y yo." matched no dog keyword at all
-    // (not a substring of "perro"), silently classifying a mixed household as cats-only.
+    // "perrit" covers perrito/perrita — the common diminutive. Live bug: "dos perritos"
+    // matched no dog keyword (not a substring of "perro"), classifying a mixed household as cats-only.
     const hasDog = safeLower.includes('perro') || safeLower.includes('perra') || safeLower.includes('canino') || safeLower.includes('perrit');
 
-    // petType from keywords: runs when Groq already classified this as mascotas, OR when
-    // Groq returned productCategory=null (ambiguous) and the text itself names a pet.
-    // Regression: previously gated strictly on productCategory === 'mascotas', so a message
-    // like "Tengo un gato, dos perros y yo solo." with Groq returning productCategory=null
-    // left petType stuck at null — the mixto clarification never fired and the conversation
-    // looped on the generic DISCOVERY question. Skip entirely when Groq set an unrelated,
-    // explicit category (e.g. 'vida') — a passing mention of pets shouldn't hijack that.
+    // petType from keywords: runs when Groq classified mascotas, OR returned null
+    // (ambiguous) and the text names a pet. Regression: gating strictly on
+    // productCategory === 'mascotas' left petType stuck at null when Groq returned null,
+    // looping on the generic DISCOVERY question. Skipped when Groq set an unrelated
+    // explicit category — a passing mention of pets shouldn't hijack that.
     const hasAll = safeLower.includes('todos') || safeLower.includes('ambos')
       || safeLower.includes('los dos') || safeLower.includes('las dos') || safeLower.includes('para todos');
     if (intent.productCategory === 'mascotas' || intent.productCategory == null) {
       if (hasCat && hasDog) intent.petType = 'mixto';
       else if (hasCat) intent.petType = 'gato';
       else if (hasDog) intent.petType = 'perro';
-      // 2026-07-26 live-test bug: "Ambos" has no cat/dog keywords (hasCat=false,
-      // hasDog=false) so the mixto-nullification above would silently drop Groq's
-      // correct petType='mixto' — re-asking the question in a loop. "Ambos" (and
-      // "todos", "los dos", "las dos", "para todos") all mean "both types", so
-      // mixto is the right answer; only nullify when the LLM hallucinated a
-      // mixto without textual support.
+      // Live bug: "Ambos" has no cat/dog keywords, so the nullification below would drop
+      // Groq's correct petType='mixto' and re-ask in a loop. "Ambos"/"todos"/"los dos" all
+      // mean "both types" — only nullify when the LLM hallucinated mixto with no support.
       else if (intent.petType === 'mixto' && !hasAll) intent.petType = null;
     }
     const hasCatExt = hasCat || safeLower.includes('gatita') || safeLower.includes('minino');
@@ -209,93 +195,56 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       if (intent.petType || hasCat || hasDog || hasAll || safeLower.includes('mascota')) {
         intent.productCategory = 'mascotas';
       } else {
-        // Real live-test bug (2026-07-26): this guardrail only ever covered mascotas —
-        // an F01 button tap ("❤️ Mi familia", "🏥 Mi salud", "🤕 Accidentes") that Groq
-        // itself failed to classify (no prompt example for these short emoji labels) had
-        // no floor to fall back on for vida/asistencia/accidentes, silently falling
-        // through to the generic "no logré entender" loop. Same shared keyword map
-        // fallbackIntent already uses (and the F01 button label invariant test already
-        // proves correct) — never trusted twice by two different implementations.
+        // Live bug: this guardrail only ever covered mascotas — an F01 button tap Groq
+        // failed to classify had no floor for vida/asistencia/accidentes, falling through
+        // to the generic loop. Same shared keyword map fallbackIntent already uses.
         intent.productCategory = GroqNlpService.matchCategoryKeyword(safeLower);
       }
     }
 
-    // Guardrail: a message containing a question mark is usually asking something, not
-    // confirming. Substring keyword matching (e.g. "me interesan" contains "me interesa")
-    // can make the LLM or fallback classify a genuine follow-up question as
-    // isAffirmative=true, fast-forwarding straight to purchase confirmation when the user
-    // hadn't actually confirmed anything.
-    //
-    // Real live-test bug (2026-07-24): this blanket rule also caught "¿Sí está bien?" and
-    // "sí?" during a pet-details correction loop — Spanish routinely tags a confirmation
-    // with a question mark ("sí?", "¿verdad?"), and this isn't the same thing as an
-    // open-ended follow-up question. A message with its own standalone "sí"/"si" word is
-    // exempted; "me interesan" still gets caught because "si" only appears as a substring
-    // of "interesan", never as its own word.
+    // Guardrail: a question mark usually means asking, not confirming. Substring matching
+    // ("me interesan" contains "me interesa") can make isAffirmative=true fast-forward to
+    // confirmation on a genuine question.
+    // Live bug: this blanket rule also caught "sí?" during a correction loop — Spanish
+    // routinely tags a confirmation with "?". A standalone "sí"/"si" word is exempted;
+    // "me interesan" still gets caught since "si" only appears as a substring there.
     if (intent.isAffirmative && (text.includes('?') || text.includes('¿')) && !GroqNlpService.hasStandaloneSi(text)) {
       intent.isAffirmative = false;
     }
 
-    // Real live-test bug: "Tengo dos mascotas y yo." was quoted and charged for 3
-    // mascotas — petCount had no deterministic cross-check, unlike petType/petResolution
-    // above, so an 8B model's miscount went straight through to the price
-    // (computeTotalPremium multiplies basePremium by petCount). An explicit, unambiguous
-    // count in the raw text always wins over whatever the LLM returned, same override
-    // policy as petType/petResolution.
+    // Live bug: "Tengo dos mascotas y yo." was quoted and charged for 3 — petCount had no
+    // deterministic cross-check, so an 8B model's miscount went straight to the price.
+    // An explicit count in the raw text always wins, same override policy as petType.
     const explicitPetCount = this.extractPetCountFromText(lower);
     if (explicitPetCount !== null) intent.petCount = explicitPetCount;
 
-    // Real live-test bug: a 3-pet message ("Bruna, 10 años, criollo. Ramón, 3 años,
-    // cocker. Pancha, 10 años, doberman.") came back from Groq with only 2 pets — Bruna
-    // silently dropped by the LLM on a compound sentence. The corrupted list made it all
-    // the way to the paid, issued policy. Same override policy as petCount above: only
-    // ever wins when it found strictly MORE structured pets than Groq did, so it never
-    // clobbers a correct LLM extraction of a shape this regex parser can't itself parse
-    // (e.g. "Rocky tiene 5 años y es labrador" has no comma-triple clauses at all).
-    //
-    // Real regression this override itself caused: Groq's own prompt tells it to use the
-    // singular petName/petAge/petBreed fields (not pets[]) for a message describing ONE
-    // pet — pets: [] is the CORRECT shape there, not an undercount. Requiring more than
-    // 1 deterministic pet keeps this override scoped to genuine multi-pet detections
-    // (period-separated clauses); a single-pet message never gets its good Groq data
-    // replaced by this parser's weaker single-clause read (which doesn't understand
-    // Spanish word-form ages like "tres años", among other gaps).
+    // Live bug: a 3-pet message came back from Groq with only 2 — corrupting the issued
+    // policy. Only overrides when it found strictly MORE structured pets than Groq, and
+    // requires >1 (Groq's singular petName/petAge/petBreed is correct for ONE pet).
     const deterministicPets = this.extractPetsFromText(text);
     if (deterministicPets.length > 1 && deterministicPets.length > (intent.pets?.length ?? 0)) {
       intent.pets = deterministicPets;
     }
 
-    // Real live-test bug (2026-07-25): Groq classified "Otra opción." as
-    // isAffirmative=true instead of wantsAlternative — the conversation jumped straight
-    // to phone verification/purchase confirmation for the product the user was actually
-    // trying to switch away from. Unlike petType/petCount/pets above, wantsAlternative had
-    // no deterministic cross-check at all in this (primary) path — only fallbackIntent
-    // did. The two are mutually exclusive by definition, so an explicit alternative-
-    // request phrase always wins over the LLM's isAffirmative guess.
+    // Live bug: Groq classified "Otra opción." as isAffirmative=true instead of
+    // wantsAlternative, jumping to purchase confirmation for the product being switched
+    // away from. Only fallbackIntent cross-checked this before; primary path now does too.
     if (this.wantsAlternativeText(lower)) {
       intent.wantsAlternative = true;
       intent.isAffirmative = false;
     }
 
-    // Real live-test bug (2026-07-26): a negated "no quiero"/"no me interesa" — an
-    // explicit decline — was still occasionally left as isAffirmative=true (Groq
-    // misclassification, or a bare 'quiero'/'me interesa' substring match with no
-    // question mark to trigger the guard above). A deterministic decline always wins,
-    // same override policy as wantsAlternativeText just above.
+    // Live bug: "no quiero"/"no me interesa" was still occasionally left isAffirmative=true
+    // (a bare 'quiero' substring match with no '?' to trigger the guard above).
     if (this.deniesDesireText(lower)) {
       intent.isAffirmative = false;
       intent.isNegative = true;
     }
 
-    // Real live-test bug (2026-07-26): every override above only ever turns
-    // isAffirmative OFF — there was nothing to turn it back ON when Groq's own
-    // classification simply misses a clear, unambiguous confirmation ("Quiero ese.", no
-    // question mark), leaving a genuine "yes" stuck at false and the conversation
-    // silently re-showing the same quote instead of advancing. fallbackIntent already
-    // trusts isAffirmativeText as its primary signal; the primary (Groq) path deserves
-    // the same deterministic floor, respecting every negation guard already computed
-    // above (question mark, wantsAlternative, denied desire) so this can never
-    // re-introduce one of those bugs.
+    // Live bug: every override above only turns isAffirmative OFF — nothing turned it
+    // back ON when Groq simply misses a clear "Quiero ese." fallbackIntent already trusts
+    // isAffirmativeText; the primary path deserves the same floor, respecting every
+    // negation guard already computed above.
     if (
       !intent.isAffirmative
       && this.isAffirmativeText(lower)
@@ -306,16 +255,10 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       intent.isAffirmative = true;
     }
 
-    // Real live-test bug (2026-07-26): the floor above still missed "Quiero ese." (no
-    // question mark) — Groq itself occasionally classifies this as wantsAlternative
-    // instead (its own few-shot example for wantsAlternative includes the phrase "no
-    // ese, otro", which plausibly confuses the model into reading "ese" as wanting a
-    // DIFFERENT option rather than confirming the one just shown), and the floor's own
-    // `!intent.wantsAlternative` guard then blocks it from ever correcting course. This
-    // always wins, overriding wantsAlternative too — but unlike a standalone "sí?", it is
-    // NOT exempt from the question-mark rule: "¿Quiero ese?" stays a genuine question
-    // (existing, deliberate behavior — see the test right below this comment's sibling in
-    // the spec file), and "no quiero ese" stays an explicit decline, never a confirmation.
+    // Live bug: the floor above still missed "Quiero ese." — Groq's own wantsAlternative
+    // example ("no ese, otro") plausibly confuses it into reading "ese" as wanting a
+    // DIFFERENT option, and the floor's `!wantsAlternative` guard blocked correction.
+    // This wins, overriding wantsAlternative too, but "¿Quiero ese?" stays a real question.
     if (
       this.isDeicticConfirmationText(text)
       && !text.includes('?') && !text.includes('¿')
@@ -332,10 +275,9 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     return intent;
   }
 
-  // Sums every "<number> mascota(s)/perro(s)/gato(s)" phrase found — "un gato y dos
-  // perros" must total 3, not just match the first phrase found (see Groq's own JSON
-  // schema example in the system prompt above). Returns null when no explicit count
-  // phrase is present at all, so callers can tell "no signal" apart from "zero pets".
+  // Sums every "<number> mascota(s)/perro(s)/gato(s)" phrase — "un gato y dos perros"
+  // totals 3. Returns null with no phrase present, so callers can tell "no signal" apart
+  // from "zero pets".
   private static readonly PET_NUMBER_WORDS: Record<string, number> = {
     un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5,
     seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10,
@@ -354,12 +296,9 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     return /(^|[^a-záéíóúñ])s[íi]($|[^a-záéíóúñ])/i.test(text);
   }
 
-  // Real live-test bug (2026-07-26): "No, pero no tengo gatos. No sé por qué pensaste
-  // que tenía gatos..." — an explicit correction — kept getting read as CONFIRMING a
-  // cat, because every pet-keyword check in this file was a bare substring test with no
-  // awareness of a preceding negation. Strips "no tengo/tenía X", "sin X", and
-  // "ningún/ninguna X" (X = a pet species word) before any keyword match runs, so a
-  // denial no longer contains the species word for those checks to find.
+  // Live bug: "No, pero no tengo gatos..." — an explicit correction — kept getting read
+  // as CONFIRMING a cat, since every keyword check was a bare substring test. Strips
+  // denial phrases before any keyword match runs.
   private static readonly DENIAL_PATTERN =
     /\b(?:no\s+ten(?:go|ía|ia)|sin|ning[uú]n|ninguna)\s+(?:un\s+|una\s+)?(?:gatos?|gatas?|perros?|perras?|mascotas?|caninos?|felinos?)\b/gi;
 
@@ -367,17 +306,10 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     return text.replace(GroqNlpService.DENIAL_PATTERN, ' ');
   }
 
-  // Real live-test bug (2026-07-26): tapping the F01 "❤️ Mi familia" button got "No
-  // logré entender bien eso." plus the same DISCOVERY question repeated verbatim,
-  // instead of proceeding with productCategory='vida'. Root cause: this exact
-  // keyword→category map already existed, but ONLY inside fallbackIntent — proven
-  // correct by the "F01 button label invariant" test (Step 4), which is the whole
-  // reason these labels are trusted as a NLP-recognizable promise at all. postProcess
-  // (the PRIMARY Groq path, actually exercised whenever Groq is up) never consulted it —
-  // Groq's own system prompt has zero examples for these short emoji-prefixed labels, so
-  // an "❤️ Mi familia" tap that Groq itself fails to classify had no deterministic floor
-  // to fall back on, unlike mascotas (which already had one). Extracted here so BOTH
-  // paths share the exact same mapping and can never drift apart again.
+  // Live bug: tapping "❤️ Mi familia" got "No logré entender" instead of vida. This
+  // keyword→category map already existed but only inside fallbackIntent — postProcess
+  // (the primary Groq path) never consulted it, so a tap Groq itself failed to classify
+  // had no floor to fall back on. Extracted here so both paths share the same mapping.
   private static readonly CATEGORY_KEYWORDS: readonly [string, NonNullable<InsuranceIntent['productCategory']>][] = [
     ['vida', 'vida'], ['hogar', 'hogar'], ['casa', 'hogar'],
     ['accidente', 'accidentes'], ['asistencia', 'asistencia'],
@@ -398,40 +330,27 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     return null;
   }
 
-  // Real live-test bug (2026-07-26): "No, no quiero Ezequial porque ya tengo. Explícame de
-  // qué se trata." has no '?'/'¿' (ASR drops it), so the existing question-mark guard
-  // below doesn't save it, and it names no alternative-product phrase, so
-  // wantsAlternativeText's override doesn't fire either. isAffirmativeText treats bare
-  // 'quiero'/'me interesa' as confirmations with no negation guard — unlike every other
-  // keyword trap already fixed in this file — so this explicit decline could leave
-  // isAffirmative=true and route straight to phone-verification/KYC for the very product
-  // just declined. Same override policy as wantsAlternativeText: a deterministic decline
-  // phrase always wins over a bare substring match or an occasional Groq misclassification.
+  // Live bug: "No, no quiero Ezequial..." has no '?' (ASR drops it), so the question-mark
+  // guard doesn't save it. isAffirmativeText treats bare 'quiero'/'me interesa' as
+  // confirmations with no negation guard, so this decline could leave isAffirmative=true
+  // and route to KYC for the product just declined. Deterministic decline always wins.
   private static readonly DENIED_DESIRE_PATTERN = /\bno\s+(?:quiero|deseo|me\s+interesa)\b/i;
 
   private deniesDesireText(lower: string): boolean {
     return GroqNlpService.DENIED_DESIRE_PATTERN.test(lower);
   }
 
-  // Real live-test bug (2026-07-26): "Quiero ese." / "¿Quiero ese?" — a common Colombian
-  // way to confirm the option just shown — got the quote card re-shown instead of
-  // advancing, same family as "dame ese"/"deme ese" (already covered by
-  // isAffirmativeText's substring list in the fallback path) but not reliably enough in
-  // the primary Groq path, where the model can misclassify it as wantsAlternative
-  // instead (see the override in postProcess for why). Matched on raw, case-preserved
-  // text (not lowercased) since callers already pass either — `\b` word boundaries mean
-  // case doesn't change what matches, only the `i` flag does.
+  // Live bug: "Quiero ese." — a common Colombian confirmation — got the quote re-shown
+  // instead of advancing; Groq can misclassify it as wantsAlternative (see postProcess).
+  // Matched on raw text since `\b` boundaries don't need lowercasing, only the `i` flag does.
   private static readonly DEICTIC_CONFIRMATION_PATTERN = /\b(?:dame|deme|quiero)\s+es[ae]\b/i;
 
   private isDeicticConfirmationText(text: string): boolean {
     return GroqNlpService.DEICTIC_CONFIRMATION_PATTERN.test(text);
   }
 
-  // 2026-07-26 — deterministic answer extraction for the new DISCOVERY "¿cuántas
-  // personas dependen de ti?" question (Step 3). Not in Groq's JSON schema at all (the
-  // system prompt above was never extended for it), so this is the ONLY source for the
-  // field in both the primary and fallback paths — same never-trust-the-model-alone
-  // policy as petCount/petType, just with no LLM half to override in this case.
+  // Deterministic extraction for Step 3's "¿cuántas personas dependen de ti?". Not in
+  // Groq's JSON schema, so this is the ONLY source in both paths — no LLM half to override.
   private static readonly ZERO_DEPENDENTS_PATTERN =
     /\b(vivo\s+solo|vivo\s+sola|no\s+tengo\s+hijos|no\s+tengo\s+hijas|sin\s+hijos|ning[uú]n\s+hijo|ninguna\s+hija|nadie\s+depende|no\s+depende\s+nadie)\b/i;
 
@@ -456,11 +375,8 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     return null;
   }
 
-  // Real live-test bug (2026-07-24): "Somos dos perritos, una gata y yo." matched
-  // nothing — the noun alternation only covered the masculine/canonical "perro(s)" and
-  // "gato(s)" forms, missing the feminine ("perra", "gata") and the extremely common
-  // diminutives ("perrito", "gatico"/"gatica" — a Colombian variant). This exact message
-  // got no deterministic count at all, falling back fully to the LLM's unvalidated guess.
+  // Live bug: "Somos dos perritos, una gata y yo." matched nothing — the noun alternation
+  // only covered masculine/canonical forms, missing feminine and diminutives.
   private extractPetCountFromText(lower: string): number | null {
     const pattern = /\b(\d+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+(mascotas?|perr(?:os?|itos?|itas?|as?)|gat(?:os?|itos?|itas?|icos?|icas?|as?))\b/g;
     let total = 0;
@@ -491,18 +407,11 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       else if (hasDog) petType = 'perro';
     }
 
-    // Real live-test bug (2026-07-26): isAffirmativeText's bare 'quiero'/'me interesa'
-    // substrings have no negation guard, unlike every other keyword trap in this file —
-    // "no quiero Ezequial, explícame de qué se trata" has no '?' to trigger the guard
-    // below, so it could leave isAffirmative=true on an explicit decline. Deterministic
-    // override always wins, same policy as the DENIAL_PATTERN pet-species fix above.
+    // isAffirmativeText's bare 'quiero'/'me interesa' has no negation guard — an explicit
+    // decline with no '?' could leave isAffirmative=true. Deterministic override wins.
     const deniesDesire = this.deniesDesireText(lower);
-    // "Quiero ese"/"dame ese"/"deme ese" always wins — see the fuller comment on
-    // isDeicticConfirmationText/postProcess for why this needs its own override even
-    // though 'quiero'/'dame'/'deme' are already plain isAffirmativeText keywords: it also
-    // forces wantsAlternative/isNegative off. Same two exclusions as postProcess: NOT
-    // exempt from the question-mark rule ("¿Quiero ese?" stays a genuine question), and
-    // never fires on an explicit decline ("no quiero ese").
+    // "Quiero ese" always wins even though it's already an isAffirmativeText keyword: it
+    // also forces wantsAlternative/isNegative off. Same exclusions as postProcess.
     const isDeicticConfirmation = this.isDeicticConfirmationText(text)
       && !text.includes('?') && !text.includes('¿')
       && !deniesDesire;
@@ -529,35 +438,23 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
       // Breed recognition needs real NLP (no fixed breed dictionary here) — left null in
       // the fallback path; the primary Groq path extracts it directly from context.
       petBreed: null,
-      // Real live-test bug: a 3-pet message ("Bruna, 10 años, criollo. Ramón, 3 años,
-      // cocker. Pancha, 10 años, doberman.") uses a completely different shape than "se
-      // llama X" — a period-separated list of "Name, age, breed" clauses. Falls back to
-      // the single "se llama X" pattern above when nothing in that shape is found.
+      // A 3-pet message uses a different shape than "se llama X" — period-separated
+      // "Name, age, breed" clauses. Falls back to the single pattern when none found.
       pets: this.extractPetsFromText(text).length > 0
         ? this.extractPetsFromText(text)
         : (this.extractPetName(text) ? [{ name: this.extractPetName(text), age: this.extractPetAge(lower), breed: null }] : []),
     };
   }
 
-  // Splits on periods into one clause per pet ("Bruna, 10 años, criollo. Ramón, 3 años,
-  // cocker." → 2 clauses) and, within each clause, on commas ("Bruna" / "10 años" /
-  // "criollo") — the exact shape used when a user rattles off several pets by voice in
-  // one message. A leading capitalized word is the name; an "N años/meses" fragment is
-  // the age; everything else left over is the breed. Real live-test bug: this shape
-  // wasn't recognized at all before (extractPetName only matched "se llama X"), so a
-  // 3-pet message silently lost one pet with no deterministic cross-check, unlike
-  // petCount/petType above.
-  // Real live-test bug (2026-07-26): "Bruna, 10 años, criollo. Solo es Bruna." (the user
-  // clarifying "it's only Bruna" — i.e. there's just ONE pet, not two) produced a phantom
-  // SECOND pet named "Solo" — the trailing clause "Solo es Bruna" has no comma, so
-  // `parts` was a single element, and the leading capitalized word of any clause ("Solo")
-  // was accepted as a name with zero shape check beyond capitalization. This parser's own
-  // documented shape is a comma-separated "name, age, breed" triple — a clause with fewer
-  // than 2 comma-separated parts was never actually describing a pet in that shape at all,
-  // it's a side remark. Requiring at least 2 parts rejects "Solo es Bruna" (1 part) while
-  // still accepting "Bruna, 10 años, criollo" (3 parts) and a minimal "Max, labrador" (2
-  // parts) — a lone name with no elaboration is already covered by extractPetName's
-  // separate "se llama X" fallback, not this function.
+  // Splits on periods into one clause per pet, and within each clause on commas
+  // ("Bruna" / "10 años" / "criollo") — the shape used when rattling off several pets by
+  // voice. Leading capitalized word is the name, "N años/meses" is the age, the rest is
+  // the breed. Live bug: this shape wasn't recognized before, so a 3-pet message lost one
+  // pet with no cross-check.
+  // Live bug: "Bruna, 10 años, criollo. Solo es Bruna." produced a phantom second pet
+  // named "Solo" — a comma-less trailing clause was accepted as a name with zero shape
+  // check. Requiring ≥2 comma-separated parts rejects "Solo es Bruna" while still
+  // accepting real triples; a lone name is covered by extractPetName's own fallback.
   private extractPetsFromText(text: string): { name: string; age: string | null; breed: string | null }[] {
     const clauses = text.split(/\.+/).map((c) => c.trim()).filter(Boolean);
     const pets: { name: string; age: string | null; breed: string | null }[] = [];
@@ -607,14 +504,9 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     return affirmatives.some((a) => lower.includes(a));
   }
 
-  // A deliberate, explicit signal to leave/stop the WHOLE conversation — real live-test
-  // bug (2026-07-24): this used to be any message merely containing the substring "no"
-  // ANYWHERE (matching "no lo sé, qué me ofreces?" — a request for help — "Bruno", and
-  // any other unrelated text), which immediately ended the conversation via
-  // processMessage's abandonIntent check, before the user ever got to say what they
-  // wanted. Rejecting one specific product already has its own signal (isNegative /
-  // wantsAlternative, handled per-state to show the next alternative) — abandonIntent
-  // must be reserved for an unambiguous "I'm done", not overload plain "no".
+  // A deliberate signal to leave the WHOLE conversation. Live bug: this used to match any
+  // message containing "no" ANYWHERE ("no lo sé, qué me ofreces?", "Bruno"), ending the
+  // conversation before the user said what they wanted. Reserved for an unambiguous "I'm done".
   private isAbandonText(lower: string): boolean {
     const exitPhrases = [
       'cancelar', 'olvídalo', 'olvidalo', 'ya no quiero', 'no quiero más', 'no quiero mas',

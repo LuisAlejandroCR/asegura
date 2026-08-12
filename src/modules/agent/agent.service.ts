@@ -497,19 +497,11 @@ export class AgentService {
         return this.handlePayment(convId, context, text, intent);
 
       default:
-        // Real live-test bug (screenshot, 2026-07-26): ReminderService's auto-close
-        // message explicitly promises "cuando quieras continuar, aquí estoy — 24/7" —
-        // but ABANDONED/REJECTED only restarted on an EXACT hola/ayuda/inicio/start
-        // match. Any real follow-up ("De todos los que me sugieres, ¿cuál es mejor?")
-        // fell through to the static STATE_RESPONSES[currentState] text below with no
-        // nextState returned, so the conversation stayed stuck on that same terminal
-        // row forever — every later message got the identical canned reply. Restart
-        // unconditionally here so the "aquí estoy" promise is actually true.
-        //
-        // COMPLETED is deliberately excluded: those conversations already hold real KYC
-        // data (cédula/nombre/correo, hasCompletedPurchase) — blindly resetting context
-        // would force a paying customer to redo verification. Left on the keyword-only
-        // path; a proper "resume as returning customer" flow is separate future scope.
+        // Live bug: ReminderService's auto-close promises "aquí estoy — 24/7", but
+        // ABANDONED/REJECTED only restarted on an exact hola/ayuda/inicio match — any
+        // real follow-up got stuck on the same terminal reply forever. Restart
+        // unconditionally here. COMPLETED excluded: those hold real KYC data and blindly
+        // resetting would force a paying customer to redo verification.
         if (currentState === ConversationState.ABANDONED || currentState === ConversationState.REJECTED) {
           // Persistent memory: carries forward durable profile facts instead of wiping to
           // {}. Session-scoped state still resets for a fresh inquiry.
@@ -523,11 +515,9 @@ export class AgentService {
             context: remembered,
           };
         }
-        // Checked BEFORE the hola/ayuda keyword restart below — "necesito ayuda con mi
-        // póliza" is a real question about an existing purchase, not a request to start
-        // over. Gated on purchasedProductIds (not policyId/policyIds, already cleared by
-        // wompi-webhook.controller.ts for whatever purchase comes next in this
-        // conversation) — see the field comment in types.ts.
+        // Checked before the hola/ayuda restart below — "necesito ayuda con mi póliza" is
+        // about an existing purchase, not a restart. Gated on purchasedProductIds, not
+        // policyId/policyIds (already cleared for the next purchase) — see types.ts.
         if (
           currentState === ConversationState.COMPLETED &&
           context.purchasedProductIds?.length &&
@@ -582,10 +572,8 @@ export class AgentService {
 
       if (this.affiliateLookup.isEnabled()) {
         const record = this.affiliateLookup.findBySerie(serie);
-        // 2026-07-26 feature request: "capture the complete row... so the agent will
-        // know all about the registered user" — any match at all (not just one with
-        // rangoSalarial/dependents) is enriched now; affiliateProfile carries the FULL
-        // row forward (see types.ts), even the fields nothing else reads yet.
+        // Any match enriches now, not just one with rangoSalarial/dependents;
+        // affiliateProfile carries the FULL row forward (types.ts), even unread fields.
         if (record) {
           const enriched: ConversationContext = {
             ...baseContext,
@@ -595,12 +583,9 @@ export class AgentService {
             affiliateProfile: record,
             ...(record.segmentoGrupoFamiliar !== undefined ? { segmentoGrupoFamiliar: record.segmentoGrupoFamiliar } : {}),
             ...(record.rangoSalarial !== undefined ? { rangoSalarial: record.rangoSalarial } : {}),
-            // 2026-07-26: pre-fill dependents with askedDependents=true only for the
-            // confidently-mapped known-zero case (AFILLIADO SIN GRUPO_FAMILIAR → 0 is
-            // a precise signal from Colsubsidio's registration system). For family-segment
-            // minimums (FAMILIA MONOPARENTAL → 1, FAMILIA NUCLEAR INTEGRAL → 1), the
-            // value lives in affiliateProfile.dependents as a conservative fallback — the
-            // live question is still asked so a real user answer wins when available.
+            // Pre-fills dependents+askedDependents only for the confidently-known-zero
+            // case. Family-segment minimums stay in affiliateProfile.dependents as a
+            // fallback — the live question is still asked so a real answer wins.
             ...(record.segmentoGrupoFamiliar === 'AFILLIADO SIN GRUPO_FAMILIAR' && baseContext.dependents === undefined
               ? { dependents: 0, askedDependents: true }
               : {}),
@@ -635,32 +620,20 @@ export class AgentService {
   ): ProcessResult {
     const newContext: ConversationContext = { ...context };
 
-    // Real live-test bug: after a purchase, wompi-webhook.controller.ts asks "¿Quieres
-    // proteger algo más?" and resets to DISCOVERY — a decline ("No, está bien así.") fell
-    // through to DISCOVERY's generic "no entendí" acknowledgment below, reading as the
-    // agent ignoring a clear, polite "I'm done" right after a purchase. Only fires when
-    // the reply is a genuine decline with no new category named in the same breath (e.g.
-    // "no, quiero vida" still proceeds to quote vida, not end the conversation) — always
-    // clears the flag either way so it can never linger and hijack an unrelated later "no".
+    // After a purchase, the cross-sell "¿Quieres proteger algo más?" resets to DISCOVERY —
+    // a decline used to fall through to the generic "no entendí" acknowledgment. Only
+    // fires on a genuine decline with no new category in the same breath ("no, quiero
+    // vida" still quotes vida); always clears the flag so it can't hijack a later "no".
     if (context.awaitingCrossSellResponse) {
-      // Real live-test bug: Groq's isNegative classification has no prompt example
-      // covering elliptical negations ("No, ningún otro. Gracias.", "No, no estoy
-      // interesado en ningún.") — both were misclassified as isNegative=false, so the
-      // decline went unrecognized, the one-shot flag was consumed anyway, and the
-      // conversation kept cycling instead of ending on the very first "no". A message
-      // that starts with the standalone word "no" is an unambiguous decline regardless
-      // of what the LLM extracted.
+      // Live bug: Groq's isNegative had no example for elliptical negations ("No, ningún
+      // otro."), misclassifying them as false. A message starting with standalone "no" is
+      // an unambiguous decline regardless of what the LLM extracted.
       const clearlyDeclines = intent.isNegative || /^no\b/i.test(text.trim());
-      // Real live-test bug (2026-07-26): this used to trust `intent.productCategory`
-      // directly — but Groq occasionally hallucinates SOME category from a decline that
-      // names no product at all ("No, la póliza está mal." has zero category words).
-      // That silently defeated the decline check, cleared the one-shot flag, and let the
-      // conversation fall through into a fresh quote for the stale `quoteProductId` still
-      // sitting in context — which is how a customer who said their policy was WRONG
-      // ended up with a second Wompi payment link for the exact same product. Requiring
-      // real textual evidence (the same deterministic check handleQuotation's own
-      // cross-sell trigger already uses) means only an actual "no, quiero vida" — not a
-      // guess with no textual basis — can override the decline.
+      // Live bug: trusting intent.productCategory directly let Groq hallucinate a category
+      // from a decline naming no product ("No, la póliza está mal."), silently defeating
+      // the decline check and re-quoting the stale product — a customer who said their
+      // policy was WRONG got a second payment link for the same product. Requires real
+      // textual evidence, same check handleQuotation's cross-sell trigger already uses.
       const mentionsRealCategory = this.detectAllMentionedCategories(text).length > 0;
       const declining = clearlyDeclines && !mentionsRealCategory;
       if (declining) {
@@ -673,12 +646,9 @@ export class AgentService {
       newContext.awaitingCrossSellResponse = undefined;
     }
 
-    // Real live-test bug: a user answering plain "no" to the opening question ("¿Tienes
-    // familia o personas que dependen de ti?...") got the exact same question repeated
-    // verbatim (the generic "no logré entender" fallback below) instead of a warm pivot —
-    // "no dependents" is a valid, common answer, not unclear input that needs re-asking.
-    // Scoped to early/fresh DISCOVERY only (nothing gathered yet, and not the post-purchase
-    // cross-sell path handled above) so it never hijacks a later "no" mid-conversation.
+    // Live bug: a plain "no" to "¿Tienes familia...?" got the same question repeated
+    // verbatim — "no dependents" is a valid answer, not unclear input. Scoped to
+    // early/fresh DISCOVERY only, so it never hijacks a later "no" mid-conversation.
     if (
       !context.awaitingCrossSellResponse &&
       intent.isNegative &&
@@ -693,16 +663,9 @@ export class AgentService {
       };
     }
 
-    // Real live-test bug (2026-07-26): the symmetric case was missing — a user answering
-    // "Sí?" (or any other plain affirmative) to "¿Tienes familia o personas que dependen
-    // de ti?" got no acknowledgment at all: "yes" alone names no category, so it fell
-    // through everything below to the generic "No logré entender bien eso." fallback,
-    // which then just repeats the ENTIRE compound question verbatim — reading as the
-    // agent ignoring a clear answer. A follow-up free-text reply (e.g. "1 millón",
-    // mistaking "tu ingreso" — a category to protect — for a request to state an income
-    // figure) carries no category either, so the loop could repeat indefinitely with no
-    // acknowledgment and no clearer ask. Same scoping as the negative pivot above: only
-    // fresh/early DISCOVERY, never mid-conversation.
+    // Symmetric case: "Sí?" alone to "¿Tienes familia...?" names no category, so it fell
+    // through to the generic fallback repeating the whole compound question verbatim.
+    // Same scoping as the negative pivot above: only fresh/early DISCOVERY.
     if (
       !context.awaitingCrossSellResponse &&
       intent.isAffirmative &&
@@ -717,11 +680,8 @@ export class AgentService {
       };
     }
 
-    // Real live-test bug (2026-07-26, screenshot): a button tap must never be silently
-    // misclassified — see F01_CATEGORY_MAP's own comment for the full story. Checked
-    // BEFORE the normal "fill in if empty" assignment below so a fresh, deliberate tap
-    // always wins, even over an already-set productCategory (which could be stale or
-    // wrong from an earlier, more ambiguous turn).
+    // A button tap must never be silently misclassified — see F01_CATEGORY_MAP's comment.
+    // Checked before the normal fill-in-if-empty assignment so a deliberate tap always wins.
     const f01Category = F01_CATEGORY_MAP[text];
     if (f01Category) {
       newContext.productCategory = f01Category;
@@ -741,22 +701,12 @@ export class AgentService {
         };
       }
 
-      // 2026-07-26: when answering a count question ("¿cuántos perros tienes?"), the
-      // species mentioned in the answer often ALSO sets petResolution — but naming a
-      // species while stating its count is not the same as deliberately choosing "solo
-      // esa especie". Real live-test bug (2026-07-26, screenshot): "Una gata y dos
-      // perros." (both counts in ONE message, answering "¿cuántos gatos y cuántos
-      // perros tienes?") got petResolution misread as 'perro' — the narrow original
-      // guard here only cleared it for a PARTIAL count still missing one species; once
-      // BOTH counts are merged into `newContext.petSpeciesCounts` (whether given
-      // together in one message or completed across two), any single-species
-      // petResolution is spurious and must be cleared the same way — reaching "both
-      // counts known" while still in this mixto-clarification loop always means the
-      // user wants BOTH insured. (Without this, the household silently lost the OTHER
-      // pet from the quote entirely: 1 gato + 2 perros in, only "medicina-prepagada-
-      // perros" ×2 out, no ask, no combined quote.) A genuine deliberate narrowing
-      // ("solo perros") is a different, later step — handled once a combined quote is
-      // already on screen, by handleQuotation's own "solo perros"/"solo gatos" guard.
+      // Live bug: "Una gata y dos perros." (both counts in one message) got petResolution
+      // misread as 'perro' — naming a species while stating its count isn't the same as
+      // choosing "solo esa especie". Once BOTH counts are known, any single-species
+      // petResolution is spurious and must be cleared — otherwise the household silently
+      // lost one species from the quote entirely. Deliberate narrowing ("solo perros") is
+      // a later step, handled by handleQuotation's own guard once a quote is on screen.
       const p = newContext.petSpeciesCounts;
       if (p?.gato && p?.perro && (intent.petResolution === 'gato' || intent.petResolution === 'perro')) {
         intent.petResolution = null;
@@ -771,12 +721,9 @@ export class AgentService {
       } else if (intent.petType && intent.petType !== 'mixto') {
         newContext.petType = intent.petType;
       } else if (newContext.petSpeciesCounts?.gato && newContext.petSpeciesCounts?.perro) {
-        // 2026-07-26 correction: once both counts are known, ask whether the user wants
-        // insurance individually per species ("los gatos"/"los perros") or combined for
-        // both ("para todos") — this is the flow that worked this morning; a same-day
-        // attempt to skip straight to the combined quote here was itself a regression,
-        // reverted. The user's answer is then handled by the petResolution branches
-        // above (gato/perro/all) on the NEXT turn.
+        // Once both counts are known, ask individual vs. combined ("para todos") — skipping
+        // straight to a combined quote here was a regression, reverted. Answer handled by
+        // the petResolution branches above on the next turn.
         return {
           text: `Entendido, tienes ${newContext.petSpeciesCounts.gato} gato${newContext.petSpeciesCounts.gato !== 1 ? 's' : ''} y ${newContext.petSpeciesCounts.perro} perro${newContext.petSpeciesCounts.perro !== 1 ? 's' : ''}. ¿Quieres el seguro para los gatos, los perros, o para todos?`,
           context: newContext,
@@ -836,11 +783,9 @@ export class AgentService {
           newContext.petType = intent.petType;
         }
       }
-      // Real live-test bug: "Tengo dos perros, una gata y yo." quoted a SINGLE product
-      // (whichever won bestQuote's tie-break) multiplied by the TOTAL pet count, charging
-      // the dogs at the cat rate. Capture the per-species breakdown right now, while the
-      // original message naming both species is still available — it's gone by the time
-      // "para todos" answers the clarification question below.
+      // Live bug: "Tengo dos perros, una gata y yo." quoted a single product multiplied by
+      // the TOTAL pet count, charging dogs at the cat rate. Capture the per-species
+      // breakdown now, before the original message naming both species is gone.
       if (newContext.petType === 'mixto') {
         const counts = this.extractSpeciesCounts(text);
         if (counts.gato > 0 || counts.perro > 0) newContext.petSpeciesCounts = counts;
@@ -861,26 +806,17 @@ export class AgentService {
     // still captured, not treated as "never asked".
     if (newContext.dependents === undefined && intent.dependents !== null && intent.dependents !== undefined) {
       newContext.dependents = intent.dependents;
-      // Wakes the existing "Cubre a N personas" family reason (quoting.service.ts) too,
-      // without a separate beneficiaries question — the dependents answer already
-      // implies a household size. `<= 1` (not just falsy) because Groq's OWN JSON schema
-      // shows "beneficiaries": 1 as an example value the LLM often defaults to with no
-      // real signal (see the comment on this elsewhere in this file) — that spurious
-      // default must not block the real, deliberately-answered dependents signal from
-      // taking over. A genuinely-stated larger beneficiaries count (>1) is left alone.
+      // Wakes the "Cubre a N personas" family reason too, no separate beneficiaries
+      // question needed. `<= 1` not just falsy: Groq's schema shows beneficiaries:1 as an
+      // example the LLM often defaults to with no real signal — must not block dependents.
       if (intent.dependents > 0 && (!newContext.beneficiaries || newContext.beneficiaries <= 1)) {
         newContext.beneficiaries = intent.dependents + 1;
       }
     }
 
-    // 2026-07-26: CSV fallback when the dependents question was asked but the user
-    // didn't give a parseable answer. affiliateProfile.dependents carries a conservative
-    // minimum from the CSV's SEGMENTO_GRUPO_FAMILIAR (e.g. FAMILIA MONOPARENTAL → 1).
-    // Only fires when askedDependents === true (question was actually asked) — never
-    // for the AFILLIADO SIN GRUPO_FAMILIAR / dependents=0 case which already pre-filled
-    // above in handleAffiliateId. Also fires on user-provided 0 ("vivo solo") because
-    // the live answer of 0 IS parsed and captured at line 715 already — the fallback
-    // only activates when dependents is STILL undefined after probing.
+    // CSV fallback when the dependents question was asked but got no parseable answer.
+    // Only fires when askedDependents is true and dependents is still undefined after
+    // probing — the AFILLIADO SIN GRUPO_FAMILIAR / dependents=0 case is already pre-filled.
     if (newContext.dependents === undefined && newContext.askedDependents) {
       const fallback = newContext.affiliateProfile?.dependents;
       if (fallback !== undefined) {
@@ -908,13 +844,11 @@ export class AgentService {
       }
     }
 
-    // Catalog-honesty bridge (2026-07-26): "quiero asegurar mi carro" during DISCOVERY had
-    // no branch at all — no vehicular/empresa product exists, so it silently extracted no
-    // category and looped on the generic tier-1 question forever. QUOTE_PRESENTED already
-    // has this exact check (detectOutOfCatalogCategory); DISCOVERY never did. Guarded on
-    // productCategory still being unresolved so a real life story like "tengo dos hijos y
-    // una empresa" isn't hijacked by the 'empresa' keyword once vida/mascotas/etc. already
-    // matched something above.
+    // Catalog-honesty bridge: "quiero asegurar mi carro" had no branch in DISCOVERY — no
+    // such product exists, so it looped on the generic question forever.
+    // detectOutOfCatalogCategory already existed for QUOTE_PRESENTED; DISCOVERY didn't have
+    // it. Guarded on productCategory unresolved so "tengo... una empresa" isn't hijacked
+    // once vida/mascotas already matched above.
     if (!newContext.productCategory) {
       const outOfCatalog = this.detectOutOfCatalogCategory(text);
       if (outOfCatalog) {
@@ -934,18 +868,11 @@ export class AgentService {
       };
     }
 
-    // Must know the species before quoting mascotas — the real catalog has cat-only and
-    // dog-only products (medicina-prepagada-gatos / medicina-prepagada-perros) alongside
-    // a generic one; quoting blind risks missing the more specific, better-matching
-    // product and skips exactly the per-profile personalization judges look for. Real
-    // live-test gap: "Tengo dos mascotas y yo." went straight to a quote without the
-    // agent ever learning cat/dog/mixed.
-    //
-    // Gated on `!newContext.coverage?.length` too, reusing the same "coverage already set
-    // means pet resolution already happened" signal used elsewhere in this method — the
-    // mixto clarification's "para todos" answer deliberately resolves petType back to
-    // null (quote generically, don't filter by species) and always sets coverage, so
-    // this must not re-ask in that case or after the coverage-survived-a-restart path.
+    // Must know the species before quoting mascotas — the catalog has cat-only and
+    // dog-only products, quoting blind risks missing the better match. Live gap: "Tengo
+    // dos mascotas y yo." went straight to a quote without learning cat/dog/mixed.
+    // Gated on !coverage?.length too — "para todos" resolves petType to null and always
+    // sets coverage, so this must not re-ask in that case.
     if (newContext.productCategory === 'mascotas' && !newContext.petType && !newContext.coverage?.length) {
       return {
         text: '¿Tus mascotas son gatos, perros, o tienes de ambos? Así te muestro la cobertura correcta.',
@@ -953,14 +880,10 @@ export class AgentService {
       };
     }
 
-    // Step 3 (2026-07-26 hiperperfilamiento subset): ask about dependents ONCE, only in
-    // the new hybrid-filter flow (`discoveryFilter` — see AUTHORIZATION), and only when
-    // it could actually change the recommendation. Dependents don't affect a mascotas
-    // recommendation (spec Principle #3: "formular únicamente preguntas que cambien la
-    // recomendación"), so that category is excluded here. `askedDependents` is set in
-    // THIS SAME return, so the next turn always proceeds to quote regardless of whether
-    // the answer parsed — the same never-loop-forever contract every KYC gate in this
-    // file already carries.
+    // Step 3: ask about dependents ONCE, only in the discoveryFilter flow, and only when it
+    // could change the recommendation — mascotas is excluded (Principle #3: only ask
+    // questions that change the recommendation). askedDependents set in this same return,
+    // so the next turn always proceeds regardless of whether the answer parsed.
     if (
       newContext.discoveryFilter &&
       !newContext.askedDependents &&
@@ -974,31 +897,19 @@ export class AgentService {
       };
     }
 
-    // coverage is NOT required to score a product — QuotingService.evaluateProduct only
-    // needs productCategory to return a matchScore > 0; coverage is a bonus there, not a
-    // gate. Requiring it here used to strand every non-mascota quote in an infinite
-    // DISCOVERY loop whenever GroqNlpService.fallbackIntent() ran (it never fills
-    // coverage at all — real live-test bug, e.g. "vida, accidentes y asistencia médica").
+    // coverage is NOT required to score — QuotingService only needs productCategory for a
+    // matchScore > 0. Requiring it here stranded every quote in an infinite loop whenever
+    // fallbackIntent() ran (it never fills coverage).
     const hasEnoughInfo = !!newContext.productCategory;
 
-    // Dead-end guard: STATE_RESPONSES[DISCOVERY]'s third tier ("¿Cuántas personas son en
-    // tu familia o grupo familiar?", originally "¿En qué rango de edades están?") — no
-    // field in the NLP intent schema captures a human beneficiary's age or count for
-    // THIS tier (only petAge, for pets), and nothing anywhere reads an answer to it;
-    // Step 3's `dependents` question is the real, functional replacement. If
-    // productCategory still never got extracted by this point, that text is permanently
-    // unanswerable — every reply loops back to it forever.
+    // Dead-end guard: DISCOVERY's third tier text is permanently unanswerable — no NLP
+    // field captures it, Step 3's `dependents` is the real replacement. If productCategory
+    // never got extracted, every reply loops back to it forever.
     //
-    // Real live-test bug (2026-07-26): this guard originally also required
-    // `newContext.beneficiaries` to be truthy before attempting a best-effort quote —
-    // matching the OLD text's own trigger condition before the 2026-07-26 cleanup that
-    // replaced its copy but left this guard's condition untouched. Coverage getting set
-    // (e.g. from a vague "proteger a mi familia" message Groq turned into coverage
-    // keywords) WITHOUT beneficiaries also being set fell through this gap straight to
-    // the dead text — confirmed live: a user tapping "❤️ Mi familia" right after seeing
-    // it still got a real quote, but only because the button tap itself supplied
-    // productCategory that turn; the text itself was shown for nothing. Dropped the
-    // `beneficiaries` requirement — coverage alone is enough to attempt a real quote.
+    // Live bug: this guard also required `beneficiaries` truthy before a best-effort quote
+    // (stale condition left behind after the text itself was rewritten). Coverage set
+    // without beneficiaries fell through to the dead text. Dropped that requirement —
+    // coverage alone is enough to attempt a real quote.
     const stuckWithoutCategory = !hasEnoughInfo && !!newContext.coverage?.length;
 
     if (hasEnoughInfo || stuckWithoutCategory) {
@@ -1021,11 +932,8 @@ export class AgentService {
       };
     }
 
-    // No new signal extracted this turn (e.g. unclear/short voice transcription) —
-    // acknowledge instead of silently repeating the exact same question, which reads
-    // as the agent ignoring the user. `beneficiaries` is excluded: Groq's JSON schema
-    // shows "beneficiaries": 1 as an example value, so the LLM often defaults to 1
-    // even when the message carries no real signal — it's not a reliable progress marker.
+    // No new signal this turn — acknowledge instead of silently repeating the question.
+    // `beneficiaries` excluded: Groq's schema shows it defaulting to 1 with no real signal.
     const madeProgress =
       newContext.productCategory !== context.productCategory ||
       newContext.petType !== context.petType ||
@@ -1037,9 +945,8 @@ export class AgentService {
     return {
       text: madeProgress ? question : `No logré entender bien eso. ${question}`,
       context: newContext,
-      // Only the genuinely-stuck branch counts toward the escalation circuit breaker —
-      // `madeProgress` means real signal WAS extracted this turn, just not enough to quote
-      // yet, which is normal conversation flow, not confusion.
+      // Only the genuinely-stuck branch counts toward escalation — madeProgress means real
+      // signal was extracted, just not enough to quote yet, which is normal, not confusion.
       unclearReply: !madeProgress,
     };
   }
@@ -1047,13 +954,10 @@ export class AgentService {
   // Quotation
 
   private handleQuotation(context: ConversationContext, text: string, intent: InsuranceIntent): ProcessResult {
-    // Real bug (2026-07-26): this flag is set below when a category's alternatives run
-    // out, but the conversation stays anchored in QUOTE_PRESENTED/QUOTING (no nextState
-    // change) — so the reply to "¿te interesa?" is processed back through THIS same
-    // method, not through AUTHORIZATION. A previous version checked this flag inside
-    // `case ConversationState.AUTHORIZATION` in processMessage, which is unreachable from
-    // here — dead code that never actually fired, leaving the waitlist offer with no
-    // working answer path at all. Checked first, before anything else in this method.
+    // This flag is set when a category's alternatives run out, but the conversation stays
+    // anchored in QUOTE_PRESENTED — so the reply is processed here, not through
+    // AUTHORIZATION. A previous version checked it in AUTHORIZATION, which was
+    // unreachable dead code that left the waitlist offer with no working answer path.
     if (context.awaitingContactConsent) {
       if (intent.isAffirmative) {
         return this.beginLeadCapture(context);
@@ -1074,12 +978,9 @@ export class AgentService {
 
     const currentProduct = this.catalog.getProduct(context.quoteProductId);
 
-    // Real live-test bug (screenshot, 2026-07-25): "salir" then "terminar", sent right
-    // after a quote was shown, got the IDENTICAL quote card re-shown verbatim both times
-    // — no branch below ever checked intent.abandonIntent. The top-level check in
-    // processMessage explicitly excludes QUOTE_PRESENTED (it has its own richer
-    // isAffirmative/isNegative/wantsAlternative branching), so an unambiguous exit word
-    // fell through everything to the neutral catch-all, which just re-shows the quote.
+    // Live bug: "salir" then "terminar" right after a quote got the identical card
+    // re-shown both times — no branch here checked intent.abandonIntent, and
+    // processMessage's top-level check excludes QUOTE_PRESENTED on purpose.
     if (intent.abandonIntent) {
       const terminalState = context.hasCompletedPurchase
         ? ConversationState.COMPLETED
@@ -1090,15 +991,10 @@ export class AgentService {
       };
     }
 
-    // Real live-test bug (screenshot, 2026-07-25/26): "No, pero no tengo gatos. No sé
-    // por qué pensaste que tenía gatos..." while a gato-specific quote was showing got
-    // the IDENTICAL quote re-shown verbatim — this multi-clause correction didn't trip
-    // Groq's own isNegative/isAffirmative/wantsAlternative classification (none of the
-    // branches below fired), so it fell through to the generic re-show at the bottom.
-    // An explicit "no tengo <the exact species just quoted>" is unambiguous regardless
-    // of what the LLM extracted — same override policy as abandonIntent above. Resets
-    // petType/coverage/the quote itself so DISCOVERY re-asks cleanly instead of
-    // insisting on an assumption the user just corrected.
+    // Live bug: "No, pero no tengo gatos..." while a gato quote was showing got the
+    // identical quote re-shown — the multi-clause correction didn't trip Groq's
+    // classification. An explicit "no tengo <species just quoted>" is unambiguous
+    // regardless of what the LLM extracted; resets petType/coverage/quote for a clean re-ask.
     if (currentProduct?.category === 'mascotas' && context.petType && this.deniesCurrentPetType(text, context.petType)) {
       return {
         text: '¡Perdón por la confusión! Cuéntame — ¿qué mascota tienes entonces?',
@@ -1114,16 +1010,10 @@ export class AgentService {
       };
     }
 
-    // Switch between species (or back to both) in a genuinely mixed household — "solo
-    // perros"/"solo gatos" after the combined quote, but ALSO switching again later
-    // ("solo gato" after already narrowing to perros, or "todos"/"ambos" to see the
-    // combined quote again). Real live-test bug (2026-07-26): this used to gate on
-    // `context.selectedProductIds.length > 1` — true only for the ORIGINAL combined
-    // quote, so once narrowed to a single species (selectedProductIds.length becomes 1),
-    // saying the OTHER species' name again just fell through and re-showed the SAME
-    // narrowed quote, with no way back to the other species or to "todos". Gating on
-    // `petSpeciesCounts` having BOTH species known — a fact that doesn't change when the
-    // user narrows — lets switching work at any point, not just from the very first turn.
+    // Switch between species (or back to both) in a mixed household. Live bug: gating on
+    // `selectedProductIds.length > 1` only worked for the ORIGINAL combined quote — once
+    // narrowed to one species, naming the other fell through with no way back. Gating on
+    // `petSpeciesCounts` having both species known (unchanged by narrowing) fixes it.
     if (context.petSpeciesCounts?.gato && context.petSpeciesCounts?.perro) {
       if (intent.petResolution === 'all') {
         return this.buildMixedSpeciesQuote(context);
@@ -1148,14 +1038,11 @@ export class AgentService {
       }
     }
 
-    // 2026-07-24 "restore the flow": a quote in progress is never interrupted by a
-    // mention of a DIFFERENT category anymore — it's deferred until after this purchase
-    // is fully paid and the policy is issued (see wompi-webhook.controller.ts
-    // notifyPoliciesIssued, which reads context.pendingCrossSell). Real live-test bug:
-    // "para mí, qué hay" / naming a different category mid-quote used to immediately
-    // replace the current quote, so an unconfirmed mascotas purchase was silently
-    // abandoned before ever reaching payment — "continue offering products when I
-    // already chose". Close one deal at a time, then offer the next.
+    // "Restore the flow": a quote in progress is never interrupted by a different
+    // category — it's deferred until after this purchase is paid (notifyPoliciesIssued
+    // reads context.pendingCrossSell). Live bug: naming a different category mid-quote
+    // used to replace it immediately, silently abandoning an unconfirmed purchase. Close
+    // one deal at a time.
     if (currentProduct?.category === 'mascotas' && this.mentionsPersonalCoverage(text)) {
       const deferred = (intent.productCategory && intent.productCategory !== 'mascotas')
         ? intent.productCategory
@@ -1172,13 +1059,10 @@ export class AgentService {
       return this.deferCrossSell(context, currentProduct, intent.productCategory);
     }
 
-    // Real live-test bug (2026-07-26): "Prefiero la anterior.", "Quiero la primera opción
-    // que me ofreciste.", "la que vale 16.800" all reference a SPECIFIC already-shown
-    // product — checked before isAffirmative so "quiero la que vale 16.800" can't get
-    // matched as a blind confirmation of whatever DIFFERENTLY-priced product happens to
-    // be on screen (the real live-test bug: a customer naming the $16.800 option ended up
-    // confirming a $20.000 purchase instead). Only fires when the reference resolves to a
-    // DIFFERENT product than what's already showing — otherwise falls through normally.
+    // Live bug: "la primera opción", "la que vale 16.800" reference a SPECIFIC shown
+    // product — checked before isAffirmative so it can't get matched as a blind
+    // confirmation of a differently-priced product on screen (a customer naming $16.800
+    // ended up confirming a $20.000 purchase). Only fires when it resolves to a different product.
     const referenced = this.resolveProductReference(text, context);
     if (referenced && referenced.product.id !== context.quoteProductId) {
       const shown = context.shownProductIds ?? (context.quoteProductId ? [context.quoteProductId] : []);
@@ -1190,10 +1074,9 @@ export class AgentService {
     }
 
     if (intent.isAffirmative) {
-      // 2026-07-24 KYC feedback: "know the user is real" before collecting cédula/nombre/
-      // correo — Telegram's native request_contact button verifies the phone in one tap,
-      // no separate SMS/Twilio provider. Fires once per conversation; a returning customer
-      // on a second purchase (phoneVerified already true) skips straight to the real prompt.
+      // KYC: verify the phone via Telegram's native request_contact before collecting
+      // cédula/nombre/correo, no separate SMS provider. Once per conversation — a
+      // returning customer (phoneVerified already true) skips straight to the real prompt.
       if (!context.phoneVerified) {
         return {
           text: 'Antes de continuar, confirmemos que eres tú — toca el botón para compartir tu número de Telegram (ya verificado, no necesitas escribir nada) 👇',
@@ -1209,15 +1092,11 @@ export class AgentService {
     }
 
     if (intent.wantsAlternative) {
-      // Real live-test bug (2026-07-26): "otro" during an active mixed-species purchase
-      // (context.selectedProductIds has BOTH medicina-prepagada products, from
-      // buildMixedSpeciesQuote) used to search for a totally unrelated THIRD product
-      // (e.g. asistencia-veterinaria) and price it against the raw cross-species
-      // petCount — a wildly wrong total, AND a real consent mismatch: saying "sí" right
-      // after would have confirmed the ORIGINAL 2-product purchase (this branch never
-      // touched selectedProductIds), not the different product just shown. There's no
-      // single "next best" alternative to a combined multi-species quote, so just
-      // re-anchor on the one already active instead of hunting for a swap-in.
+      // Live bug: "otro" during an active mixed-species purchase used to search for an
+      // unrelated THIRD product priced against the raw cross-species petCount — wrong
+      // total, plus a consent mismatch (a following "sí" confirmed the original 2-product
+      // purchase, not the product just shown). No single "next best" exists for a combined
+      // quote, so just re-anchor on the one already active.
       if (context.selectedProductIds && context.selectedProductIds.length > 1) {
         return { text: this.formatMixedSpeciesQuote(context) };
       }
@@ -1237,41 +1116,26 @@ export class AgentService {
         }
       }
 
-      // Real live-test bug (2026-07-26): this used to reset productCategory to undefined
-      // and transition to DISCOVERY — the NEXT message (often something vague like
-      // "quiero la primera opción que me ofreciste", naming no real category at all)
-      // could then get a HALLUCINATED productCategory from the LLM and silently start a
-      // brand-new, unrelated quote (an "asistencia" shopper ended up with "vida" this
-      // way). Staying anchored in QUOTE_PRESENTED means resolveProductReference above and
-      // the cross-sell-defer check both keep working on the next turn — a genuine new
-      // category still switches correctly (it requires a real keyword match via
-      // detectAllMentionedCategories), but an ambiguous non-answer can no longer hijack
-      // the conversation into a different category.
+      // Live bug: this used to reset productCategory and transition to DISCOVERY — a vague
+      // next message could then get a HALLUCINATED category (an "asistencia" shopper ended
+      // up with "vida"). Staying in QUOTE_PRESENTED keeps resolveProductReference and the
+      // cross-sell-defer check working; a genuine new category still switches via a real
+      // keyword match.
       //
-      // Live-test feedback (2026-07-26): once every product in a category has been
-      // shown, offer to capture contact info (name/email/phone — see `awaitingContact*`
-      // above) instead of just asking to search a different category — a real lead, not
-      // a dead end. Applies to any category, not only mascotas (this used to be scoped
-      // to `context.petType && productCategory === 'mascotas'` only, leaving every other
-      // exhausted category with no lead-capture offer at all).
+      // Once every product in a category is shown, offer contact capture instead of a dead
+      // end — a real lead. Applies to any category, not just the mascotas-only scope it used to have.
       return {
         text: 'No tenemos más oferta en el momento. Si nos compartes tus datos te voy a avisar cuando la oferta aumente. ¿Te interesa?',
         context: { ...context, awaitingContactConsent: true },
       };
     }
 
-    // Real live-test bug: a PLAIN decline ("No, está bien.") — no explicit request to see
-    // another option — was treated exactly like wantsAlternative, cycling through every
-    // remaining product in the category instead of ever letting the user go. AGENTS.md's
-    // own UX rule ("respetar y ofrecer alternativa O cierre educado") always had a polite
-    // close as a valid response to "no" — only the alternative half was ever built. A bare
-    // decline now ends the conversation politely instead of pushing another product.
+    // Live bug: a plain decline ("No, está bien.") was treated like wantsAlternative,
+    // cycling through every remaining product instead of letting the user go. A bare
+    // decline now ends the conversation politely.
     if (intent.isNegative && !intent.isAffirmative) {
-      // 2026-07-25 live-test bug: same class as the top-level abandonIntent check's
-      // hasCompletedPurchase branch above — but that check explicitly skips
-      // QUOTE_PRESENTED, so it never covered THIS branch. A customer who already has an
-      // active, paid policy and simply declines a post-purchase cross-sell quote was
-      // still getting the conversation marked ABANDONED instead of staying COMPLETED.
+      // Live bug: the top-level abandonIntent check skips QUOTE_PRESENTED, so a customer
+      // with an active paid policy declining a cross-sell still got marked ABANDONED.
       const terminalState = context.hasCompletedPurchase
         ? ConversationState.COMPLETED
         : ConversationState.ABANDONED;
@@ -1281,22 +1145,15 @@ export class AgentService {
       };
     }
 
-    // Real live-test bug (2026-07-26): "¿Cuál es mejor?" / "Me interesan todos, cuéntame
-    // más de ellos" / "Explícame de qué se trata" had no branch at all — none of these
-    // carry an isAffirmative/isNegative/wantsAlternative signal, so they fell through to
-    // the neutral re-show below, which is always the SAME single product (bestQuote only
-    // ever returns the top-scored one) — read by the user as "va como por el más
-    // completo" no matter what was actually asked. Answer with the real product detail
-    // (full coverage list + persuasive reason) instead of a silent re-show.
+    // Live bug: "¿Cuál es mejor?"/"cuéntame más" carried no isAffirmative/isNegative/
+    // wantsAlternative signal, falling through to the neutral re-show of the same product.
+    // Answer with the real product detail instead.
     if (currentProduct && AgentService.MORE_INFO_PATTERN.test(text)) {
       return { text: this.formatProductDetail(currentProduct, context) };
     }
 
-    // Real bug found 2026-07-24 (confirmed independently by a live test session and a
-    // teammate's findings report): asking for a category we don't sell ("vehicular",
-    // "seguro vehicular") silently re-showed the unrelated, already-quoted product
-    // verbatim, identically, twice — the agent never acknowledged the request was for
-    // something else entirely. Must check this BEFORE falling through to the
+    // Live bug: asking for a category we don't sell silently re-showed the unrelated
+    // already-quoted product verbatim, never acknowledging the request. Checked before the
     // neutral-message re-show below.
     const outOfCatalog = this.detectOutOfCatalogCategory(text);
     if (outOfCatalog && !this.mentionsAlreadyCoveredTopic(text, context)) {
@@ -1305,21 +1162,12 @@ export class AgentService {
       };
     }
 
-    // Neutral/unclear message (e.g. a follow-up question) — re-show the actual quoted
-    // product instead of the generic STATE_RESPONSES placeholder, which has no real
-    // product name or price and reads as a broken response.
-    //
-    // Real live-test bug: a genuinely unparseable message ("2+2", sent live by two
-    // different users) silently got this same quote card re-shown with zero
-    // acknowledgment — indistinguishable from a legitimate follow-up question like "¿Ese
-    // es el único plan?". Only prefix a clarification when the raw text has NO letters at
-    // all — a real Spanish question always has plenty of them and must keep getting the
-    // plain, unprefixed re-show.
-    // Real live-test bug (2026-07-26): an unclear turn during an active mixed-species
-    // purchase re-showed the single currentProduct (context.quoteProductId — arbitrarily
-    // just ONE of the two active products) priced against the raw cross-species
-    // petCount, instead of the actual combined 2-product quote the user was looking at.
-    // Checked before the single-product branch below so it takes priority.
+    // Neutral/unclear message — re-show the actual quoted product instead of the generic
+    // placeholder, which has no real name/price. Live bug: "2+2" got re-shown with zero
+    // acknowledgment; only prefix a clarification when the raw text has NO letters at all
+    // — a real question always has plenty.
+    // Live bug: an unclear turn during a mixed-species purchase re-showed just ONE of the
+    // two active products priced against the cross-species petCount. Checked first here.
     if (context.selectedProductIds && context.selectedProductIds.length > 1) {
       const quoteText = this.formatMixedSpeciesQuote(context);
       const noRealWords = !/[a-zA-ZÀ-ÖØ-öø-ÿ]/.test(text);
@@ -1336,9 +1184,8 @@ export class AgentService {
         context,
       );
       const noRealWords = !/[a-zA-ZÀ-ÖØ-öø-ÿ]/.test(text);
-      // Counts toward the stuck-loop circuit breaker either way — a plain re-show, with
-      // or without the clarification prefix, means none of the branches above understood
-      // what was actually being asked.
+      // Counts toward the stuck-loop breaker either way — a plain re-show means none of
+      // the branches above understood what was actually being asked.
       return {
         text: noRealWords ? `No entendí ese mensaje, ¿puedes intentarlo de nuevo?\n\n${quoteText}` : quoteText,
         unclearReply: true,
@@ -1356,22 +1203,17 @@ export class AgentService {
     return personalPhrases.some((p) => text.includes(p)) || humanCategories.some((c) => text.includes(c));
   }
 
-  // "no tengo gatos" (or perros) explicitly denies the species the CURRENT quote
-  // assumes — checked against whichever species that actually is, not a fixed list, so
-  // it only fires when it's actually relevant to what's on screen right now. `text` is
-  // already lowercased (handleMessage passes lowerText in), so no case-folding needed.
+  // "no tengo gatos" (or perros) denies the species the CURRENT quote assumes — checked
+  // against whichever species that is, so it only fires when relevant to what's on screen.
   private deniesCurrentPetType(text: string, petType: 'gato' | 'perro' | 'mixto'): boolean {
     if (petType === 'mixto') return false;
     const words = petType === 'gato' ? ['gato', 'gatos', 'gata', 'gatas'] : ['perro', 'perros', 'perra', 'perras'];
     return text.includes('no tengo') && words.some((w) => text.includes(w));
   }
 
-  // Scans the raw text for EVERY category keyword group present, not just the first
-  // match (unlike GroqNlpService.fallbackIntent, which breaks on the first hit) — needed
-  // to detect messages naming two products at once, e.g. "mascotas y vida". Mascota
-  // keywords are checked first and "asistencia veterinaria" is stripped before the
-  // asistencia check so a pet-related "asistencia" doesn't also register as the
-  // unrelated personal "asistencia médica" category.
+  // Scans for EVERY category keyword present, not just the first (unlike
+  // GroqNlpService.fallbackIntent) — needed for "mascotas y vida". "asistencia
+  // veterinaria" is stripped first so it doesn't also register as "asistencia médica".
   private detectAllMentionedCategories(text: string): NonNullable<InsuranceIntent['productCategory']>[] {
     const categories: NonNullable<InsuranceIntent['productCategory']>[] = [];
     if (['mascota', 'perro', 'canino', 'gato', 'gata', 'gatic', 'michi', 'minino', 'veterinar'].some((k) => text.includes(k))) {
@@ -1386,10 +1228,8 @@ export class AgentService {
   }
 
   // Real catalog covers vida, accidentes, asistencia, mascotas (hogar cross-sells into
-  // asistencia — see QuotingService.isRelatedCategory). Vehículos and empresas are NOT
-  // in the real Colsubsidio catalog this hackathon uses (AGENTS.md rule 12: only real
-  // colsubsidio.com/seguros prices) — a mention of one must get an honest "we don't
-  // offer that" instead of silently reusing whatever was quoted before.
+  // asistencia). Vehículos and empresas aren't real products (rule #12) — must get an
+  // honest "we don't offer that", not a reused quote.
   private static readonly OUT_OF_CATALOG_KEYWORDS: Record<string, string> = {
     vehicular: 'vehículos', vehiculo: 'vehículos', vehículo: 'vehículos',
     carro: 'vehículos', moto: 'vehículos', motocicleta: 'vehículos',
@@ -1403,13 +1243,10 @@ export class AgentService {
     return null;
   }
 
-  // Real live-test bug: asistencias-multiples genuinely covers "Asistencia vehículo" —
-  // a question about THAT coverage while it's already on screen ("¿la asistencia también
-  // cubre mi carro?") got the same "no tengo seguros de vehículos" denial as someone
-  // asking for a dedicated car-insurance policy that genuinely doesn't exist. Checked
-  // against every product actually in this purchase (selectedProductIds, or the single
-  // quoteProductId) — coverage text only ever comes from the real catalog (rule #12), so
-  // this can never manufacture a false "yes we cover that."
+  // Live bug: asistencias-multiples covers "Asistencia vehículo" — asking about that
+  // coverage got the same "no vendemos vehículos" denial as a real car-policy request.
+  // Checked against every product in this purchase; coverage text comes from the real
+  // catalog (rule #12), so this can't manufacture a false "yes we cover that."
   private mentionsAlreadyCoveredTopic(text: string, context: ConversationContext): boolean {
     const productIds = context.selectedProductIds?.length ? context.selectedProductIds : (context.quoteProductId ? [context.quoteProductId] : []);
     const coverageText = productIds
@@ -1421,11 +1258,9 @@ export class AgentService {
     return Object.keys(AgentService.OUT_OF_CATALOG_KEYWORDS).some((keyword) => text.includes(keyword) && coverageText.includes(keyword));
   }
 
-  // buildMultiQuote (removed 2026-07-24) used to set productCategory to the FIRST
-  // selected product's category, so a strict `productCategory === 'mascotas'` check
-  // would skip per-pet data collection whenever mascotas isn't first. Kept general in
-  // case selectedProductIds is ever populated by something other than the live agent
-  // flow (e.g. directly via DB) — the multi-policy/one-payment backend still works.
+  // A strict productCategory === 'mascotas' check would skip per-pet data collection
+  // whenever mascotas isn't the first selected product. Kept general in case
+  // selectedProductIds is populated outside the live agent flow.
   private isPetSelected(context: ConversationContext): boolean {
     if (context.productCategory === 'mascotas') return true;
     if (!context.selectedProductIds?.length) return false;
@@ -1455,30 +1290,22 @@ export class AgentService {
   // response to the bot's OWN previous message — never a real person's full name.
   private static readonly FILLER_WORDS = ['gracias', 'ok', 'okay', 'vale', 'listo', 'dale', 'bueno', 'ya'];
 
-  // A human/pet name is letters only (incl. Spanish accents/ñ), one or more words
-  // separated by spaces, apostrophes or hyphens — never digits or other symbols. Real
-  // bug: a saved conversation context showed "nombre": "2+2" accepted as a valid full
-  // name, since the field was previously stored verbatim with zero shape validation.
+  // A name is letters only (incl. ñ/accents), words separated by spaces/apostrophes/
+  // hyphens — never digits. Live bug: "nombre": "2+2" was previously accepted verbatim.
   private static readonly NAME_REGEX = /^[a-zA-ZÀ-ÖØ-öø-ÿ]+(?:['’\-][a-zA-ZÀ-ÖØ-öø-ÿ]+|\s+[a-zA-ZÀ-ÖØ-öø-ÿ]+)*$/;
 
-  // Real bug confirmed live in the production Supabase policies table: a policy's
-  // nombre column literally contained "Mi nombre es Michelle Gómez Gómez" — NAME_REGEX
-  // allows it (it's all letters/spaces, no digits/symbols) so the whole phrase passed
-  // validation and was stored verbatim. A user answering "¿Cuál es tu nombre completo?"
-  // naturally often restates the question as a lead-in — strip it before validating.
+  // Live bug (production Supabase): nombre literally contained "Mi nombre es Michelle
+  // Gómez Gómez" — NAME_REGEX allows it (all letters/spaces), so the lead-in restating
+  // the question passed validation verbatim. Strip it before validating.
   private static readonly NAME_PREAMBLE_REGEX = /^(mi nombre completo es|mi nombre es|me llamo|yo soy|soy)\s*/i;
 
   private stripNamePreamble(text: string): string {
     return text.trim().replace(AgentService.NAME_PREAMBLE_REGEX, '').trim();
   }
 
-  // Real live-test bug: dictating a cédula digit-by-digit by voice ("uno, dos, tres...")
-  // gets transcribed with a comma between each individual digit ("1, 2, 3, 4, 5, 6, 7,
-  // 8, 9") — the cédula regex needs a CONTIGUOUS \d{6,10} run, so this never matched at
-  // all. Only join when EVERY comma-separated token is a single lone digit (6+ of them)
-  // — a typed, intentionally-formatted number like "12.345.678" (period-separated
-  // multi-digit groups) or "1234 5678" (space-separated groups) must still be rejected
-  // as before; those aren't voice-digit dictation and have no commas at all.
+  // Live bug: dictating a cédula digit-by-digit by voice transcribes as "1, 2, 3..." — the
+  // regex needs a contiguous \d{6,10} run, so it never matched. Only joins when EVERY
+  // comma-separated token is a single digit; "12.345.678" (typed) still rejects normally.
   private joinSpokenDigits(text: string): string {
     const tokens = text.split(',').map((t) => t.trim());
     if (tokens.length >= 6 && tokens.every((t) => /^\d$/.test(t))) {
@@ -1517,37 +1344,26 @@ export class AgentService {
   private petCountForProduct(context: ConversationContext, product: InsuranceProduct): number | null | undefined {
     if (context.petSpeciesCounts && product.eligibility.pet === 'gato') return context.petSpeciesCounts.gato ?? context.petCount;
     if (context.petSpeciesCounts && product.eligibility.pet === 'perro') return context.petSpeciesCounts.perro ?? context.petCount;
-    // Real live-test bug (2026-07-26): a mixto household ("1 gato + 1 perro") that then
-    // narrows to "solo gato" sets context.petType to the single species, but leaves
-    // context.petCount at the OLD combined total (2) — correctly bypassed above for a
-    // gato/perro-restricted product via petSpeciesCounts, but a product with
-    // eligibility.pet === 'any' (e.g. asistencia veterinaria) matched neither branch above
-    // and fell through to the stale combined petCount, pricing "solo gato" (1 pet) as if
-    // it were still both pets (2). An 'any' product must respect the same narrowing.
+    // Live bug: narrowing a mixto household to "solo gato" leaves petCount at the OLD
+    // combined total. Bypassed above for species-restricted products, but an 'any'
+    // product (e.g. asistencia veterinaria) fell through to the stale total. Must respect
+    // the same narrowing.
     if (context.petSpeciesCounts && (context.petType === 'gato' || context.petType === 'perro')) {
       return context.petSpeciesCounts[context.petType] ?? context.petCount;
     }
     return context.petCount;
   }
 
-  // Real live-test bug (2026-07-26): the per-pet NAME/age/breed collection loop
-  // (firstDataCaptureQuestion, handleDataCapture below) used the raw combined
-  // `context.petCount` as "how many pets to collect" — same bug class as
-  // petCountForProduct above, but for pet name collection instead of pricing. After
-  // narrowing a mixed household ("1 gata + 2 perros") down to "solo perros" (a
-  // dogs-only purchase, selectedProductIds=['medicina-prepagada-perros']),
-  // context.petCount stayed at the stale combined total (3) — so the loop asked for 3
-  // pets' details instead of 2, sweeping the cat into a dogs-only policy's pet list.
-  // Sums petCountForProduct across every product actually in THIS purchase (both, for a
-  // genuine combined quote; just the one, once narrowed) instead of trusting the raw total.
+  // Same bug class as petCountForProduct, for name collection instead of pricing:
+  // narrowing to "solo perros" left petCount at the stale combined total, so the loop
+  // asked for 3 pets' details instead of 2, sweeping the cat in. Sums per-product instead
+  // of trusting the raw total.
   private totalPetsForPurchase(context: ConversationContext): number {
     const productIds = context.selectedProductIds?.length
       ? context.selectedProductIds
       : (context.quoteProductId ? [context.quoteProductId] : []);
-    // Only the mascotas product(s) in this purchase need pet details — a cross-sell
-    // combo (e.g. vida + asistencia-veterinaria) must not count the non-pet product
-    // toward "how many pets to collect" (petCountForProduct's own petCount fallback
-    // would otherwise add a phantom pet for every non-pet product in the purchase).
+    // Only the mascotas product(s) need pet details — a cross-sell combo (vida +
+    // asistencia-veterinaria) must not count the non-pet product toward the total.
     const products = productIds
       .map((id) => this.catalog.getProduct(id))
       .filter((p): p is InsuranceProduct => !!p && p.category === 'mascotas');
@@ -1561,17 +1377,10 @@ export class AgentService {
     return trimmed.length >= 2 && trimmed.length <= 80 && AgentService.NAME_REGEX.test(trimmed);
   }
 
-  // Voice dictation of an email in Spanish spells out the symbols as words ("arroba" for
-  // @, "punto" for .) instead of saying them literally — a message like "Juan arroba
-  // gmail punto com" has neither symbol and fails any @/. shape check as-is.
-  //
-  // Real live-test bug (2026-07-26): the original `\s+arroba\s+`/`\s+punto\s+` patterns
-  // required LITERAL whitespace on both sides — Whisper's punctuation model routinely
-  // inserts a comma right after a spoken filler word ("arroba," instead of clean
-  // trailing whitespace), which broke the match entirely and left "arroba" un-converted.
-  // The user had to repeat the email 4 times in a row with the exact same failure.
-  // `[\s,]*` (zero or more spaces/commas, not `\s+` requiring at least one literal
-  // space) absorbs that stray comma the same way it absorbs plain whitespace.
+  // Voice dictation spells out email symbols as words ("arroba" for @, "punto" for .).
+  // Live bug: `\s+arroba\s+` required literal whitespace, but Whisper often inserts a
+  // comma right after ("arroba,"), breaking the match — user had to repeat 4 times.
+  // `[\s,]*` absorbs the stray comma the same way it absorbs whitespace.
   private normalizeSpokenEmail(text: string): string {
     return text
       .replace(/[\s,]*\barroba\b[\s,]*/gi, '@')
@@ -1588,12 +1397,9 @@ export class AgentService {
     return productIds.some((id) => this.catalog.getProduct(id)?.requiresUnderwriting);
   }
 
-  // 2026-07-24 clarification: the generic "edad, enfermedad, historial clínico" question
-  // only fully fits a HUMAN product (vida) — a human's age is never captured anywhere
-  // else in the flow. A PET product (medicina-prepagada-gatos/perros) already has the
-  // pet's age from the Step-0 per-pet loop by the time this gate is reached, so re-asking
-  // it is redundant, and there's no "historial clínico" concept for a pet — only whether
-  // it has a preexisting illness. Must name the actual pet(s), not speak generically.
+  // The generic "edad, enfermedad, historial clínico" question only fits a HUMAN product
+  // (vida). A pet product already has the pet's age from the per-pet loop, and there's no
+  // "historial clínico" for a pet — only whether it has a preexisting illness.
   private buildUnderwritingQuestion(context: ConversationContext): string {
     if (this.isPetSelected(context) && context.pets?.length) {
       const names = formatNameList(context.pets.map((p) => p.name));
@@ -1714,18 +1520,11 @@ export class AgentService {
       return this.finalizeLead({ ...context, contactPhone: phone, awaitingContactPhone: undefined });
     }
 
-    // Step -1 — identity verification (2026-07-24 KYC feedback). Set up by
-    // handleQuotation's isAffirmative branch, which shows the contact-share button
-    // exactly once. A contact share marks the phone verified and moves on to the
-    // cosmetic selfie step below.
-    //
-    // Real bug found 2026-07-24 (confirmed independently by a live test session and a
-    // teammate's findings report): this used to re-show the same "toca el botón" prompt
-    // forever for ANY typed reply — a genuine demo-killing infinite loop with zero
-    // escape route ("no me interesa" / random text / anything got the identical
-    // response, permanently). This is a cosmetic KYC step and must never be allowed to
-    // block a real sale — if the user's very next message still isn't a contact-share,
-    // treat it as declined and move on immediately instead of asking again.
+    // Step -1 — identity verification. Set up by handleQuotation's isAffirmative branch,
+    // which shows the contact-share button once. Live bug: this used to re-show "toca el
+    // botón" forever for ANY typed reply — a demo-killing infinite loop with no escape.
+    // Cosmetic KYC must never block a sale: any non-contact-share reply is treated as
+    // declined and moves on immediately.
     if (context.awaitingPhoneVerification && !context.phoneVerified) {
       if (contact) {
         const verifiedContext: ConversationContext = {
@@ -1738,12 +1537,9 @@ export class AgentService {
         return {
           text: 'Identidad verificada ✅\n\n📸 Por último, toca el clip 📎 y envíame una selfie ahora mismo para confirmar tu identidad.',
           context: verifiedContext,
-          // 2026-07-24 feedback: a "big" reaction (Telegram's is_big flag, a much larger
-          // animated burst) on the shared-contact message itself. '✅' is NOT one of
-          // Telegram's allowed reaction emoji (grammy's ReactionTypeEmoji union — see
-          // telegram-adapter.service.ts's reactToMessage) — using it silently failed with
-          // `REACTION_INVALID` in production (confirmed via the .catch() logging added
-          // 2026-07-24). '🤝' is in the allowed set and fits "verified/connected" here.
+          // '✅' is NOT one of Telegram's allowed reaction emoji (grammy's
+          // ReactionTypeEmoji union) — silently failed with REACTION_INVALID in
+          // production. '🤝' is allowed and fits "verified/connected".
           reaction: '🤝',
           reactionBig: true,
         };
@@ -1760,13 +1556,10 @@ export class AgentService {
       };
     }
 
-    // Step -0.5 — cosmetic selfie confirmation (2026-07-24 feedback). This is a
-    // SIMULATION, not a real identity check — no face matching, no liveness detection,
-    // any photo received counts as "confirmed". It's a placeholder to demonstrate the
-    // concept; a real deployment would swap this for an actual third-party
-    // identity-verification provider to guard against a false identity. Same
-    // never-loop-forever fix as phone verification above — skips and moves on if the
-    // very next message isn't a photo.
+    // Step -0.5 — cosmetic selfie confirmation. A SIMULATION, not a real identity check —
+    // no face matching, no liveness detection, any photo counts as "confirmed". A real
+    // deployment would swap this for a third-party provider. Same never-loop-forever fix
+    // as phone verification above.
     if (context.awaitingSelfie && !context.selfieProvided) {
       if (photo) {
         // 2026-07-24 feedback: "confirm the image is a selfie, is ok if is not high
@@ -1819,12 +1612,9 @@ export class AgentService {
 
         if (extracted.length > 0) {
           const updatedPets = [...pets];
-          // Real live-test bug: the NLP extraction dropped a pet from a 3-pet message
-          // (fixed separately in groq-nlp.service.ts), and the user's next message —
-          // believing all 3 were already given — re-stated an already-collected pet
-          // instead of the actually-missing one. That got pushed as a literal duplicate,
-          // corrupting the final paid, issued policy. Second line of defense: an exact
-          // name match against an already-collected pet is never pushed again.
+          // Live bug: NLP dropped a pet from a 3-pet message, and the user's next message
+          // re-stated an already-collected pet, pushed as a literal duplicate, corrupting
+          // the issued policy. Second line of defense: exact name match is never re-pushed.
           let duplicateName: string | null = null;
           for (const p of extracted) {
             if (updatedPets.length >= totalPets) break;
@@ -1888,14 +1678,10 @@ export class AgentService {
       const pets = context.pets ?? [];
       let targetIndex = -1;
 
-      // Real live-test bug (2026-07-24): a 3-pet message came back with one name
-      // duplicated and another pet dropped entirely. Every correction attempt by name
-      // always matched the FIRST occurrence, silently editing the wrong entry, and an
-      // explicit positional reference ("el tercero es...") was not understood at all —
-      // the corrupted pets list made it all the way into the final, paid, issued policy.
-      // An ordinal reference is checked FIRST and wins outright: it's unambiguous by
-      // construction, whereas the name it's paired with (e.g. "Ramón") may also
-      // legitimately match a different, already-correct pet elsewhere in the list.
+      // Live bug: a 3-pet message came back with a duplicated name and a dropped pet.
+      // Correcting by name always matched the FIRST occurrence, silently editing the
+      // wrong entry, and "el tercero es..." wasn't understood at all — the corrupted list
+      // reached the issued policy. Ordinal reference is checked FIRST and wins outright.
       const ordinalIndex = this.extractOrdinalIndex(rawText);
       if (hasUpdateData && ordinalIndex !== null && ordinalIndex < pets.length) {
         targetIndex = ordinalIndex;
@@ -1992,29 +1778,23 @@ export class AgentService {
       };
     }
 
-    // Step 3 — collect email. Requires a basic email shape (user@domain.tld) — accepting
-    // any text unconditionally previously let an unrelated phrase (e.g. a name captured
-    // here after nombre was wrongly filled by a filler word) silently become the "email".
-    // Real live-test bug: a voice message dictating an email says "arroba" for @ and
-    // "punto" for . (standard Spanish spoken-email convention) — normalize those to the
-    // literal symbols before validating, or a perfectly clear spoken email never passes.
+    // Step 3 — collect email. Requires a basic shape — accepting any text let an
+    // unrelated phrase silently become the "email". Voice dictation says "arroba"/"punto"
+    // — normalize before validating, or a clear spoken email never passes.
     if (!context.email) {
       const normalizedEmail = this.normalizeSpokenEmail(rawText);
       if (!/\S+@\S+\.\S+/.test(normalizedEmail)) {
-        // Real live-test bug (2026-07-26): a user dictated an email by voice WITHOUT
-        // ever saying "arroba" ("juan gmail punto com") — normalizeSpokenEmail can't
-        // invent an @ that was never said, so this failed 3 times in a row with no hint
-        // as to why. Only shown when there's no @ at all (a genuine missing-symbol case,
-        // not just a malformed one) so a real typo doesn't get a confusing generic tip.
+        // Live bug: dictating without ever saying "arroba" ("juan gmail punto com") can't
+        // be fixed — normalizeSpokenEmail can't invent a symbol never said. Hint shown
+        // only when there's no @ at all, not for a genuine typo.
         const hint = normalizedEmail.includes('@')
           ? ''
           : ' Si lo dictas por voz, recuerda decir *"arroba"* donde va el @ (ej: "juan arroba gmail punto com").';
         return { text: `¿Cuál es tu correo electrónico? Ahí recibirás la póliza.${hint}` };
       }
       newContext.email = normalizedEmail;
-      // 2026-07-24 business feedback: vida and medicina-prepagada-gatos/perros need
-      // conditional underwriting info before the final confirmation — everything else
-      // is direct-sell and goes straight to it.
+      // vida and medicina-prepagada-gatos/perros need underwriting info first;
+      // everything else is direct-sell.
       if (this.requiresUnderwritingInfo(newContext) && !newContext.medicalInfoProvided) {
         return {
           text: this.buildUnderwritingQuestion(newContext),
@@ -2058,16 +1838,11 @@ export class AgentService {
       };
     }
 
-    // Step 4.5 — payment method choice (2026-07-24 feedback). "Tarjeta Colsubsidio" and
-    // "link de pago" route to the exact SAME real Wompi checkout link (Wompi already
-    // accepts card payments) — this is a wording/framing choice, not a second payment
-    // rail, and createPaymentLinkFlow reads context.paymentMethodChoice to theme the
-    // copy. Deliberately never claims the payment already succeeded before it has.
-    //
-    // Real bug found 2026-07-24, same root cause as the KYC infinite-loop fixes above:
-    // an unrecognized answer used to re-ask this question forever. Defaults to the
-    // plain link de pago (always unambiguous) instead — a payment-method preference
-    // must never be allowed to strand an otherwise-ready purchase.
+    // Step 4.5 — payment method choice. "Tarjeta Colsubsidio" and "link de pago" route to
+    // the exact SAME Wompi checkout link (a wording/framing choice, not a second rail);
+    // createPaymentLinkFlow reads paymentMethodChoice to theme the copy.
+    // Live bug: an unrecognized answer used to re-ask forever. Defaults to link de pago
+    // instead — a payment-method preference must never strand a ready purchase.
     if (context.awaitingPaymentMethodChoice) {
       const lower = text.toLowerCase();
       const choice: ConversationContext['paymentMethodChoice'] =
@@ -2080,12 +1855,9 @@ export class AgentService {
       });
     }
 
-    // Step 4 — confirmation ("sí" → create pending policy record, ask how the user wants
-    // to pay). No extra "¿listo para generar tu link?" re-confirmation — the user already
-    // confirmed by saying "sí" here — but the payment-method question below is a
-    // genuine, distinct choice, not the same redundant friction. No PDF is sent here —
-    // the only PDF the user receives is generated and sent by
-    // wompi-webhook.controller.ts once Wompi reports the transaction as APPROVED.
+    // Step 4 — confirmation ("sí" → create pending policy, ask payment method). No PDF
+    // sent here — the only PDF is generated by wompi-webhook.controller.ts once Wompi
+    // reports APPROVED.
     if (intent.isAffirmative) {
       // Multi-product purchase — issue one policy per selected product; they'll share a
       // single combined Wompi payment link, created next in createPaymentLinkFlow.
@@ -2096,10 +1868,8 @@ export class AgentService {
 
       const policyIds: string[] = [];
       for (const productId of productIds) {
-        // A mixto household's species-restricted products must each be issued against
-        // their OWN per-species count (petCountForProduct), not the combined total —
-        // otherwise both policies store/charge the wrong pet_count (real bug: 2 dogs + 1
-        // cat both stored as petCount 3).
+        // Each species-restricted product must be issued against its OWN per-species
+        // count — live bug: 2 dogs + 1 cat both stored as petCount 3.
         const product = this.catalog.getProduct(productId);
         const petCountOverride = product ? this.petCountForProduct(newContext, product) : newContext.petCount;
         const { policyId } = await this.policy.issue(convId, { ...newContext, quoteProductId: productId, petCount: petCountOverride });
@@ -2187,13 +1957,9 @@ export class AgentService {
       .filter((p): p is InsuranceProduct => !!p);
 
     if (products.length === 0) {
-      // Real gap found in a hardcoded-values audit: this used to silently fall back to
-      // charging an arbitrary flat $20.000 COP via Wompi when no product could be
-      // resolved (e.g. a stale/invalid quoteProductId) — a real customer could be
-      // charged an amount unrelated to anything they were ever quoted. Abort instead: no
-      // policy is issued in this state either, so there is nothing legitimate to charge
-      // for. Reset back to DISCOVERY so the user can restart cleanly rather than getting
-      // stuck confirming a purchase that no longer resolves to anything.
+      // Real gap: this used to silently fall back to a flat $20.000 COP charge when no
+      // product resolved — a customer could be charged for nothing they were quoted.
+      // Abort instead and reset to DISCOVERY so the user can restart cleanly.
       this.logger.error(`createPaymentLinkFlow: no resolvable product for conversation ${convId} — aborting payment link creation`);
       return {
         text: 'Tuve un problema retomando tu cotización. Escríbeme de nuevo qué seguro te interesa y lo resolvemos.',
@@ -2202,10 +1968,8 @@ export class AgentService {
       };
     }
 
-    // Real bug: a mixto household's species-restricted products were both charged
-    // against the COMBINED pet count (2 dogs + 1 cat both billed as 3) — the real Wompi
-    // charge amount itself was wrong, not just the on-screen quote. Each product bills
-    // against its own per-species count (petCountForProduct) when known.
+    // Live bug: species-restricted products were both charged against the COMBINED pet
+    // count — the real Wompi amount was wrong, not just the on-screen quote.
     const amountCOP = products.reduce((sum, p) => sum + computeTotalPremium(p, this.petCountForProduct(context, p)), 0);
     const productName = products.length > 1
       ? `${products.length} seguros Colsubsidio`
@@ -2321,12 +2085,9 @@ export class AgentService {
     const cov = product.coverages.slice(0, 3).map((c) => `✅ ${c}`).join('\n');
     const reason = score.reasons[0] ?? 'se ajusta a lo que buscas';
     const isPet = product.category === 'mascotas';
-    // Real live-test bug (2026-07-26): a mixed household (e.g. 1 gato + 2 perros) got a
-    // re-shown single product priced against the RAW cross-species context.petCount (3),
-    // not its own species' count — e.g. medicina-prepagada-gatos × 3 instead of × 1. Uses
-    // the same species-aware helper buildMixedSpeciesQuote already relies on, so ANY call
-    // site (fallback re-show, back-reference, this one) prices a species-restricted
-    // product correctly even outside the dedicated mixed-species flow.
+    // Live bug: a mixed household got a re-shown product priced against the RAW
+    // cross-species petCount, not its own species' count. Uses the same species-aware
+    // helper buildMixedSpeciesQuote relies on, so any call site prices correctly.
     const effectivePetCount = context ? this.petCountForProduct(context, product) : context?.petCount;
     const petCount = (isPet && effectivePetCount && effectivePetCount > 0) ? effectivePetCount : null;
     const pricePerUnit = product.basePremium;
@@ -2357,12 +2118,9 @@ export class AgentService {
     );
   }
 
-  // 2026-07-26 live-test bug: answers a follow-up meta-question ("¿cuál es mejor?",
-  // "cuéntame más", "explícame de qué se trata") with the FULL coverage list (formatQuote
-  // truncates to top-3) plus the persuasive reason, instead of the same truncated card
-  // being silently re-shown. When more than one product was already shown this turn,
-  // names the other(s) so the user can ask to switch — no invented data, only fields
-  // already in products.data.ts (rule #12).
+  // Answers a follow-up meta-question with the FULL coverage list (formatQuote truncates
+  // to top-3) instead of the same truncated card re-shown. Names other shown products so
+  // the user can switch — no invented data (rule #12).
   private formatProductDetail(product: InsuranceProduct, context: ConversationContext): string {
     const cov = product.coverages.map((c) => `✅ ${c}`).join('\n');
     const scored = this.quoting.score(context as AffiliateSignals).find((s) => s.productId === product.id);
@@ -2384,12 +2142,9 @@ export class AgentService {
     );
   }
 
-  // 2026-07-26 feature request: answers a COMPLETED customer's question about their OWN,
-  // already-purchased policy — never a sales pitch (no "¿te interesa?", no persuasive
-  // "reason" — that would read as re-selling something already bought). Falls back to
-  // the generic COMPLETED text if none of the recorded ids still resolve to a real
-  // product (shouldn't happen, but products.data.ts is hand-edited — rule #12 means
-  // never fabricate a detail card for a product that no longer exists).
+  // Answers a COMPLETED customer's question about their OWN policy — never a sales pitch
+  // (no "¿te interesa?"). Falls back to the generic COMPLETED text if no recorded id
+  // still resolves (rule #12: never fabricate a card for a product that no longer exists).
   private answerPolicyInquiry(context: ConversationContext): ProcessResult {
     const products = (context.purchasedProductIds ?? [])
       .map((id) => this.catalog.getProduct(id))
@@ -2410,11 +2165,8 @@ export class AgentService {
     );
   }
 
-  // Extracted from buildMixedSpeciesQuote (2026-07-26) so a RE-SHOW of an already-active
-  // mixed-species purchase (wantsAlternative "otro", an unclear neutral fallback) can
-  // reuse the exact same species-correct summary instead of falling through to a
-  // single-product re-show priced against the raw cross-species petCount. Pure text
-  // builder — never mutates context, since a re-show must not touch the purchase state.
+  // Extracted from buildMixedSpeciesQuote so a re-show of an already-active mixed-species
+  // purchase reuses the same species-correct summary. Pure text builder, never mutates context.
   private formatMixedSpeciesQuote(context: ConversationContext): string {
     const gatoProduct = this.catalog.getProduct('medicina-prepagada-gatos')!;
     const perroProduct = this.catalog.getProduct('medicina-prepagada-perros')!;
@@ -2439,12 +2191,9 @@ export class AgentService {
     );
   }
 
-  // Real live-test bug: a mixed household (e.g. 2 dogs + 1 cat) was quoted a SINGLE
-  // species-restricted product multiplied by the TOTAL pet count, silently charging the
-  // other species at the wrong rate. Quotes BOTH medicina-prepagada products together,
-  // each priced against its own species count — reuses the existing multi-product
-  // (selectedProductIds) purchase machinery, so confirmation/payment/policy issuance
-  // downstream needs no special-casing.
+  // Live bug: a mixed household was quoted a SINGLE species-restricted product multiplied
+  // by the TOTAL pet count, charging the other species at the wrong rate. Quotes BOTH
+  // products together, reusing the multi-product purchase machinery downstream.
   private buildMixedSpeciesQuote(context: ConversationContext): ProcessResult {
     const selectedProductIds = ['medicina-prepagada-gatos', 'medicina-prepagada-perros'];
     return {
