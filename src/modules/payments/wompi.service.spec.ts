@@ -260,6 +260,35 @@ describe('WompiService — createPaymentLink success shape', () => {
     expect(capturedBody.expires_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
     expect(capturedBody.expires_at).not.toContain(' ');
   });
+
+  it('sends redirect_url when provided — verified real Wompi Payment Links field (docs.wompi.co)', async () => {
+    let capturedBody: any;
+    global.fetch = jest.fn().mockImplementation((_url: string, opts: any) => {
+      capturedBody = JSON.parse(opts.body);
+      return Promise.resolve({ ok: true, json: async () => ({ data: { id: 'link-1', name: 'Test', active: true } }) });
+    }) as any;
+
+    const service = new WompiService(makeConfig());
+    await service.createPaymentLink({
+      policyId: 'pol-1', productName: 'Test', amountCOP: 20000,
+      redirectUrl: 'https://asegura-app.vercel.app/texto.html?token=abc',
+    });
+
+    expect(capturedBody.redirect_url).toBe('https://asegura-app.vercel.app/texto.html?token=abc');
+  });
+
+  it('omits redirect_url entirely when not provided — chat checkout links must stay unchanged', async () => {
+    let capturedBody: any;
+    global.fetch = jest.fn().mockImplementation((_url: string, opts: any) => {
+      capturedBody = JSON.parse(opts.body);
+      return Promise.resolve({ ok: true, json: async () => ({ data: { id: 'link-1', name: 'Test', active: true } }) });
+    }) as any;
+
+    const service = new WompiService(makeConfig());
+    await service.createPaymentLink({ policyId: 'pol-1', productName: 'Test', amountCOP: 20000 });
+
+    expect('redirect_url' in capturedBody).toBe(false);
+  });
 });
 
 describe('WompiService FUZZ — signature validation', () => {

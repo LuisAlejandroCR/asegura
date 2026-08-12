@@ -11,14 +11,17 @@ import { PolicyModule } from '../policy/policy.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { ConversationModule } from './conversation.module';
 import { AgentService } from './agent.service';
+import { WebSessionController } from './web-session.controller';
+import { WebSessionTokenService } from './web-session-token.service';
 
 @Module({
   imports: [ChannelModule, NlpModule, DatabaseModule, QuotingModule, PolicyModule, PaymentsModule, ConversationModule],
   // TwilioWebhookController registered here, not in ChannelModule — see the comment on
   // ChannelModule for why (it needs AgentService directly; ChannelModule can't import
-  // AgentModule back without a cycle).
-  controllers: [TwilioWebhookController],
-  providers: [AgentService],
+  // AgentModule back without a cycle). WebSessionController lives here for the same
+  // reason (it needs AgentService.handleWebMessage directly).
+  controllers: [TwilioWebhookController, WebSessionController],
+  providers: [AgentService, WebSessionTokenService],
   exports: [AgentService],
 })
 export class AgentModule {}

@@ -65,6 +65,7 @@ function buildService(overrides: {
   const conversations = {
     getOrCreate: jest.fn().mockResolvedValue(makeConversation(state, context)),
     saveState: jest.fn().mockResolvedValue(undefined),
+    findById: jest.fn().mockResolvedValue(makeConversation(state, context)),
   };
   const quoting = {
     score: jest.fn().mockReturnValue([]),
@@ -95,13 +96,21 @@ function buildService(overrides: {
   const config = {
     get: jest.fn().mockReturnValue(undefined),
   };
+  const documentCache = {
+    put: jest.fn().mockReturnValue('doc-token-1'),
+    get: jest.fn().mockReturnValue(null),
+  };
+  const webSessionTokens = {
+    sign: jest.fn().mockReturnValue('signed-token-abc'),
+    verify: jest.fn().mockReturnValue(null),
+  };
   const service = new AgentService(
     nlp as any, telegram as any, channels as any, conversations as any,
     quoting as any, policy as any, wompi as any, reminders as any, affiliateLookup as any,
-    config as any,
+    config as any, documentCache as any, webSessionTokens as any,
   );
 
-  return { service, nlp, telegram, channels, conversations, quoting, policy, wompi, reminders, affiliateLookup, config };
+  return { service, nlp, telegram, channels, conversations, quoting, policy, wompi, reminders, affiliateLookup, config, documentCache, webSessionTokens };
 }
 
 export { makeMessage, makeIntent, extractPetResolutionMock, makeConversation, buildService };

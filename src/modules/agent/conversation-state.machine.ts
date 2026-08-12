@@ -41,6 +41,54 @@ export function formatNameList(names: string[]): string {
   return `${names.slice(0, -1).join(', ')} y ${names[names.length - 1]}`;
 }
 
+// progressFor — the AseguraWeb progress bar (plan-17 §15). A web session always starts
+// AFTER authorization (§11 mints the link once the user has already said "sí"), so the
+// bar's 0% is DISCOVERY, not GREETING — GREETING/AUTHORIZATION clamp to step 1 rather than
+// reporting 0 (nothing meaningful to show "0% done" for, and a 0 reads as broken, not
+// "not started"). Terminal states (COMPLETED/ABANDONED/REJECTED) clamp to the last real
+// step for the same reason — there's no future step to point at.
+const WEB_FLOW_STATES: ConversationState[] = [
+  ConversationState.DISCOVERY,
+  ConversationState.QUOTING,
+  ConversationState.QUOTE_PRESENTED,
+  ConversationState.DATA_CAPTURE,
+  ConversationState.PAYMENT,
+  ConversationState.POLICY_ISSUED,
+];
+
+const WEB_FLOW_LABELS: Record<ConversationState, string> = {
+  [ConversationState.GREETING]: 'Cuéntanos',
+  [ConversationState.AUTHORIZATION]: 'Cuéntanos',
+  [ConversationState.DISCOVERY]: 'Cuéntanos',
+  [ConversationState.QUOTING]: 'Cotizando',
+  [ConversationState.QUOTE_PRESENTED]: 'Tu oferta',
+  [ConversationState.DATA_CAPTURE]: 'Tus datos',
+  [ConversationState.PAYMENT]: 'Pago',
+  [ConversationState.POLICY_ISSUED]: '¡Listo!',
+  [ConversationState.COMPLETED]: '¡Listo!',
+  [ConversationState.ABANDONED]: '¡Listo!',
+  [ConversationState.REJECTED]: '¡Listo!',
+};
+
+export function progressFor(state: ConversationState): { step: number; totalSteps: number; label: string } {
+  const totalSteps = WEB_FLOW_STATES.length;
+  const index = WEB_FLOW_STATES.indexOf(state);
+
+  if (index !== -1) {
+    return { step: index + 1, totalSteps, label: WEB_FLOW_LABELS[state] };
+  }
+
+  // Not in the list: GREETING/AUTHORIZATION come BEFORE the web flow starts (clamp to
+  // step 1 — the earliest meaningful point to show, never 0); COMPLETED/ABANDONED/REJECTED
+  // come AFTER it (clamp to the last real step — there's no future step to point at).
+  const isBeforeFlow = state === ConversationState.GREETING || state === ConversationState.AUTHORIZATION;
+  return {
+    step: isBeforeFlow ? 1 : totalSteps,
+    totalSteps,
+    label: isBeforeFlow ? WEB_FLOW_LABELS[state] : WEB_FLOW_LABELS[ConversationState.POLICY_ISSUED],
+  };
+}
+
 export const STATE_RESPONSES: ResponsesMap = {
   // 2026-07-24 — greeting + authorization were two messages and read as a wall of text;
   // people bounced. Combined into one, Ley 1581 disclosure kept as a parenthetical.

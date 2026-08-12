@@ -51,6 +51,7 @@ export class WompiService {
       currency: 'COP',
       amount_in_cents: params.amountCOP * 100,
       ...(expiresAt && { expires_at: expiresAt }),
+      ...(params.redirectUrl && { redirect_url: params.redirectUrl }),
     };
 
     this.logger.log(`Creating payment link: ${params.policyId} - $${params.amountCOP} COP`);

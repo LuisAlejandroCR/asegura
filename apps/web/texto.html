@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Asegura — Escríbenos</title>
+<style>
+  /* Paleta oficial — idéntica a voz.html y pdf.service.ts */
+  :root{
+    --amarillo:#ffd000;
+    --azul:#0067b1;
+    --gris:#575756;
+    --gris-claro:#f2f2f2;
+    --negro:#000;
+    --blanco:#fff;
+    --fondo:#fafafa;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+
+  body{
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    background:var(--fondo);
+    color:var(--gris);
+    display:flex;
+    flex-direction:column;
+    height:100dvh;
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+
+  /* ── Encabezado + barra de progreso ──────────────────────── */
+  header{
+    text-align:center;
+    padding:max(14px,env(safe-area-inset-top)) 16px 10px;
+    flex:none;
+    background:var(--blanco);
+    border-bottom:1px solid var(--gris-claro);
+  }
+
+  h1{
+    font-size:20px;
+    font-weight:700;
+    color:var(--azul);
+    letter-spacing:-.02em;
+  }
+
+  .sub{font-size:12.5px;color:var(--gris);opacity:.75;margin-top:2px}
+
+  /* ── Transcripción ────────────────────────────────────────── */
+  main{
+    flex:1;
+    overflow-y:auto;
+    padding:16px 14px 8px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    max-width:560px;
+    width:100%;
+    margin:0 auto;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  .burbuja{
+    max-width:82%;
+    padding:11px 14px;
+    border-radius:16px;
+    font-size:14.5px;
+    line-height:1.48;
+    white-space:pre-wrap;
+    animation:aparecer .32s cubic-bezier(.32,.72,0,1) both;
+  }
+
+  @keyframes aparecer{
+    from{opacity:0;transform:translateY(10px) scale(.98)}
+    to{opacity:1;transform:translateY(0) scale(1)}
+  }
+
+  .burbuja.agente{
+    align-self:flex-start;
+    background:var(--blanco);
+    color:var(--negro);
+    border:1px solid var(--gris-claro);
+    border-bottom-left-radius:5px;
+    box-shadow:0 1px 3px rgba(0,0,0,.04);
+  }
+
+  .burbuja.usuario{
+    align-self:flex-end;
+    background:var(--azul);
+    color:var(--blanco);
+    border-bottom-right-radius:5px;
+  }
+
+  .burbuja a{color:inherit;text-decoration:underline}
+  .burbuja.agente a{color:var(--azul)}
+
+  .escribiendo{
+    align-self:flex-start;
+    display:flex;
+    gap:4px;
+    padding:13px 16px;
+    background:var(--blanco);
+    border:1px solid var(--gris-claro);
+    border-radius:16px;
+    border-bottom-left-radius:5px;
+  }
+  .escribiendo span{
+    width:6px;height:6px;border-radius:50%;background:var(--gris);opacity:.4;
+    animation:pulso 1.1s ease-in-out infinite;
+  }
+  .escribiendo span:nth-child(2){animation-delay:.15s}
+  .escribiendo span:nth-child(3){animation-delay:.3s}
+  @keyframes pulso{0%,60%,100%{opacity:.25;transform:scale(1)}30%{opacity:.8;transform:scale(1.25)}}
+
+  /* ── Tarjeta de cotización (embebida en el chat) ─────────── */
+  .tarjeta-cotizacion{
+    align-self:stretch;
+    background:var(--blanco);
+    border:1px solid var(--gris-claro);
+    border-radius:18px;
+    padding:16px 18px;
+    box-shadow:0 4px 18px rgba(0,0,0,.06);
+    animation:revelar .4s cubic-bezier(.2,.8,.2,1) both;
+  }
+
+  @keyframes revelar{
+    from{opacity:0;transform:translateY(14px) scale(.96)}
+    to{opacity:1;transform:translateY(0) scale(1)}
+  }
+
+  .tarjeta-cotizacion h2{font-size:17.5px;font-weight:700;color:var(--azul);letter-spacing:-.01em}
+  .tarjeta-cotizacion .aseguradora{font-size:12.5px;color:var(--gris);opacity:.75;margin-top:1px}
+
+  .tarjeta-cotizacion .razon{
+    background:rgba(0,103,177,.07);
+    border-left:3px solid var(--azul);
+    border-radius:0 8px 8px 0;
+    padding:9px 11px;
+    margin:12px 0;
+    font-size:13.5px;
+    line-height:1.45;
+    color:var(--negro);
+  }
+
+  .tarjeta-cotizacion ul{list-style:none;margin:0 0 12px}
+  .tarjeta-cotizacion li{
+    display:flex;align-items:flex-start;gap:8px;
+    font-size:14px;line-height:1.4;padding:3px 0;color:var(--negro);
+  }
+  .tarjeta-cotizacion li::before{
+    content:"";flex:none;width:15px;height:15px;margin-top:2px;border-radius:50%;
+    background:var(--amarillo) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center/9px no-repeat;
+  }
+
+  .tarjeta-cotizacion .precio{
+    display:flex;align-items:baseline;justify-content:space-between;
+    border-top:1px solid var(--gris-claro);padding-top:11px;
+  }
+  .tarjeta-cotizacion .precio dt{font-size:13px;color:var(--gris)}
+  .tarjeta-cotizacion .precio dd{font-size:22px;font-weight:800;color:var(--negro);letter-spacing:-.02em}
+  .tarjeta-cotizacion .precio dd span{font-size:13px;font-weight:600;color:var(--gris)}
+
+  /* ── Botón de pagar (aparece como burbuja especial) ──────── */
+  .btn-pagar{
+    align-self:stretch;
+    display:block;
+    width:100%;
+    min-height:52px;
+    border:none;
+    border-radius:14px;
+    background:var(--amarillo);
+    color:var(--negro);
+    font-family:inherit;
+    font-size:16px;
+    font-weight:700;
+    cursor:pointer;
+    transition:transform .12s ease, filter .15s ease;
+    animation:revelar .35s cubic-bezier(.2,.8,.2,1) both;
+  }
+  .btn-pagar:hover,.btn-pagar:focus-visible{filter:brightness(.95)}
+  .btn-pagar:active{transform:scale(.97)}
+
+  /* ── Chips de respuesta sugerida ──────────────────────────── */
+  #chips{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    padding:0 14px 8px;
+    max-width:560px;
+    width:100%;
+    margin:0 auto;
+    flex:none;
+  }
+  #chips:empty{display:none}
+
+  .chip{
+    border:1.5px solid var(--azul);
+    background:var(--blanco);
+    color:var(--azul);
+    font-family:inherit;
+    font-size:13.5px;
+    font-weight:600;
+    padding:8px 14px;
+    border-radius:999px;
+    cursor:pointer;
+    transition:transform .1s ease, background .15s ease;
+  }
+  .chip:hover,.chip:focus-visible{background:rgba(0,103,177,.08)}
+  .chip:active{transform:scale(.94)}
+
+  /* ── Pie: input de texto o selfie ─────────────────────────── */
+  footer{
+    flex:none;
+    padding:10px 14px max(10px,env(safe-area-inset-bottom));
+    background:var(--blanco);
+    border-top:1px solid var(--gris-claro);
+  }
+
+  .fila-input{
+    display:flex;
+    gap:8px;
+    max-width:560px;
+    margin:0 auto;
+  }
+
+  #texto{
+    flex:1;
+    min-height:46px;
+    max-height:120px;
+    padding:12px 16px;
+    border:1.5px solid var(--gris-claro);
+    border-radius:23px;
+    font-family:inherit;
+    font-size:15px;
+    color:var(--negro);
+    resize:none;
+    outline:none;
+    transition:border-color .15s ease;
+  }
+  #texto:focus{border-color:var(--azul)}
+
+  #btn-enviar{
+    flex:none;
+    width:46px;height:46px;
+    border:none;
+    border-radius:50%;
+    background:var(--azul);
+    color:var(--blanco);
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:transform .12s ease, opacity .15s ease;
+  }
+  #btn-enviar:active{transform:scale(.92)}
+  #btn-enviar:disabled{opacity:.4;cursor:default}
+  #btn-enviar svg{width:19px;height:19px}
+
+  .selfie-caja{
+    max-width:560px;
+    margin:0 auto;
+    text-align:center;
+  }
+
+  .selfie-caja label{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:8px;
+    padding:18px;
+    border:2px dashed var(--azul);
+    border-radius:16px;
+    background:rgba(0,103,177,.04);
+    cursor:pointer;
+    transition:background .15s ease;
+  }
+  .selfie-caja label:hover{background:rgba(0,103,177,.08)}
+  .selfie-caja svg{width:30px;height:30px;color:var(--azul)}
+  .selfie-caja span{font-size:13.5px;font-weight:600;color:var(--azul)}
+  .selfie-caja input{display:none}
+  .selfie-caja p{margin-top:8px;font-size:11.5px;color:var(--gris);opacity:.7}
+
+  /* ── Pantalla de error / sesión inválida ──────────────────── */
+  #errorScreen{
+    display:none;
+    flex:1;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:14px;
+    padding:32px;
+    text-align:center;
+  }
+  #errorScreen.activo{display:flex}
+  #errorScreen h2{font-size:19px;color:var(--azul)}
+  #errorScreen p{font-size:14.5px;color:var(--gris);max-width:320px;line-height:1.5}
+
+  /* ── Pantalla post-checkout ────────────────────────────────── */
+  #postCheckout{
+    display:none;
+    flex:1;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:16px;
+    padding:32px;
+    text-align:center;
+  }
+  #postCheckout.activo{display:flex}
+
+  .check-circulo{
+    width:74px;height:74px;
+    border-radius:50%;
+    background:var(--amarillo);
+    display:flex;align-items:center;justify-content:center;
+    animation:pop .5s cubic-bezier(.2,.9,.3,1.3) both;
+    position:relative;
+  }
+  .check-circulo svg{width:36px;height:36px}
+  @keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+
+  /* Confetti minimalista: unas cuantas partículas cayendo, CSS puro */
+  .confeti{position:absolute;inset:-40px auto auto -40px;width:160px;height:160px;pointer-events:none}
+  .confeti i{
+    position:absolute;width:6px;height:10px;top:50%;left:50%;
+    background:var(--azul);
+    animation:caer 1.1s ease-out forwards;
+    opacity:0;
+  }
+  .confeti i:nth-child(odd){background:var(--amarillo)}
+  @keyframes caer{
+    0%{opacity:1;transform:translate(0,0) rotate(0)}
+    100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(var(--rot))}
+  }
+
+  #postCheckout h2{font-size:20px;color:var(--negro);font-weight:700}
+  #postCheckout p{font-size:14px;color:var(--gris);max-width:300px;line-height:1.5}
+  #cuentaAtras{font-variant-numeric:tabular-nums;font-weight:700;color:var(--azul)}
+
+  .btn-volver{
+    min-height:50px;
+    padding:0 24px;
+    border:none;
+    border-radius:12px;
+    background:var(--azul);
+    color:var(--blanco);
+    font-family:inherit;
+    font-size:15px;
+    font-weight:700;
+    cursor:pointer;
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    .burbuja,.tarjeta-cotizacion,.btn-pagar,.check-circulo{animation:none!important}
+    .ap-fill{transition:none!important}
+    .confeti{display:none}
+  }
+</style>
+</head>
+<body>
+
+  <header>
+    <h1>Asegura</h1>
+    <p class="sub">Tu asesor de seguros · Colsubsidio</p>
+    <div id="progress" class="ap-progress" aria-label="Progreso de la solicitud"></div>
+  </header>
+
+  <main id="chat" role="log" aria-live="polite"></main>
+
+  <div id="chips" role="group" aria-label="Respuestas sugeridas"></div>
+
+  <div id="errorScreen">
+    <h2>Este enlace ya no es válido</h2>
+    <p>Vuelve al chat y pídeme que te comparta uno nuevo — con gusto te ayudo desde ahí también.</p>
+  </div>
+
+  <div id="postCheckout">
+    <div class="check-circulo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+      <div class="confeti" id="confeti"></div>
+    </div>
+    <h2 id="postTitulo">Confirmando tu pago…</h2>
+    <p id="postTexto">Esto puede tardar unos segundos. En cuanto se confirme, tu póliza llega al chat.</p>
+    <button class="btn-volver" id="btnVolver" hidden>Volver a WhatsApp</button>
+  </div>
+
+  <footer id="footer">
+    <div class="fila-input" id="filaTexto">
+      <textarea id="texto" rows="1" placeholder="Escribe tu mensaje…" aria-label="Tu mensaje"></textarea>
+      <button id="btn-enviar" aria-label="Enviar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="selfie-caja" id="filaSelfie" hidden>
+      <label for="selfieInput">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        <span>Toca para tomar tu selfie</span>
+      </label>
+      <input type="file" id="selfieInput" accept="image/*" capture="user">
+      <p>Solo para confirmar que hay una persona real del otro lado — nunca guardamos la foto.</p>
+    </div>
+  </footer>
+
+<script type="module">
+import { renderProgress, injectProgressStyles } from './progress-bar.js';
+
+const API_URL = import.meta.env.VITE_API_URL || '';
+const token = new URLSearchParams(location.search).get('token');
+
+const chat = document.getElementById('chat');
+const chipsEl = document.getElementById('chips');
+const progressEl = document.getElementById('progress');
+const errorScreen = document.getElementById('errorScreen');
+const postCheckout = document.getElementById('postCheckout');
+const postTitulo = document.getElementById('postTitulo');
+const postTexto = document.getElementById('postTexto');
+const btnVolver = document.getElementById('btnVolver');
+const footer = document.getElementById('footer');
+const filaTexto = document.getElementById('filaTexto');
+const filaSelfie = document.getElementById('filaSelfie');
+const textoEl = document.getElementById('texto');
+const btnEnviar = document.getElementById('btn-enviar');
+const selfieInput = document.getElementById('selfieInput');
+
+injectProgressStyles();
+
+const pesos = (n) => '$' + n.toLocaleString('es-CO');
+
+function addBubble(role, text) {
+  const div = document.createElement('div');
+  div.className = `burbuja ${role === 'user' ? 'usuario' : 'agente'}`;
+  // Agent text can carry a single markdown link — the only markdown AgentService ever
+  // emits ([label](url)) — rendered as a real anchor; everything else stays plain text.
+  div.innerHTML = escapeHtml(text).replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+let escribiendoEl = null;
+function showTyping() {
+  hideTyping();
+  escribiendoEl = document.createElement('div');
+  escribiendoEl.className = 'escribiendo';
+  escribiendoEl.innerHTML = '<span></span><span></span><span></span>';
+  chat.appendChild(escribiendoEl);
+  chat.scrollTop = chat.scrollHeight;
+}
+function hideTyping() {
+  if (escribiendoEl) { escribiendoEl.remove(); escribiendoEl = null; }
+}
+
+function addQuoteCard(quote) {
+  const card = document.createElement('div');
+  card.className = 'tarjeta-cotizacion';
+  card.innerHTML = `
+    <h2>${escapeHtml(quote.producto)}</h2>
+    <p class="aseguradora">${escapeHtml(quote.aseguradora)}</p>
+    ${quote.razon ? `<p class="razon">${escapeHtml(quote.razon)}</p>` : ''}
+    <ul>${(quote.coberturas ?? []).map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
+    <dl class="precio">
+      <dt>Tu prima mensual</dt>
+      <dd>${pesos(quote.precioMensual)}<span> /mes</span></dd>
+    </dl>
+  `;
+  chat.appendChild(card);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function addPayButton(checkoutUrl) {
+  const btn = document.createElement('button');
+  btn.className = 'btn-pagar';
+  btn.textContent = 'Pagar de forma segura con Wompi';
+  btn.addEventListener('click', () => { location.href = checkoutUrl; });
+  chat.appendChild(btn);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function renderChips(choices) {
+  chipsEl.replaceChildren();
+  for (const choice of choices ?? []) {
+    const btn = document.createElement('button');
+    btn.className = 'chip';
+    btn.textContent = choice;
+    btn.addEventListener('click', () => sendMessage(choice));
+    chipsEl.appendChild(btn);
+  }
+}
+
+function setExpectedInput(kind) {
+  const isSelfie = kind === 'selfie';
+  filaTexto.hidden = isSelfie;
+  filaSelfie.hidden = !isSelfie;
+}
+
+function showError() {
+  errorScreen.classList.add('activo');
+  chat.style.display = 'none';
+  chipsEl.style.display = 'none';
+  footer.style.display = 'none';
+}
+
+// ── Post-checkout: nunca confía en el redirect en sí — solo en que el estado real
+// (obtenido de GET /web-session/:token) haya avanzado a POLICY_ISSUED/COMPLETED. Wompi
+// redirige de vuelta apenas "termina el proceso de pago", que no es lo mismo que
+// "aprobado" — la confirmación real sigue siendo SOLO el webhook firmado.
+let pollTimer = null;
+function showPostCheckout(snapshot) {
+  chat.style.display = 'none';
+  chipsEl.style.display = 'none';
+  footer.style.display = 'none';
+  postCheckout.classList.add('activo');
+
+  const done = snapshot.state === 'policy_issued' || snapshot.state === 'completed';
+  if (done) {
+    postTitulo.textContent = '¡Listo! Ya quedaste asegurado 🎉';
+    postTexto.textContent = 'Tu póliza en PDF ya está en camino a tu chat.';
+    burstConfetti();
+    if (snapshot.returnUrl) {
+      startCountdown(snapshot.returnUrl);
+    } else {
+      btnVolver.hidden = false;
+      btnVolver.textContent = 'Ya puedes cerrar esta pestaña';
+      btnVolver.disabled = true;
+    }
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    return;
+  }
+
+  if (!pollTimer) {
+    let attempts = 0;
+    pollTimer = setInterval(async () => {
+      attempts++;
+      if (attempts > 40) { // ~2 minutos a 3s cada uno
+        clearInterval(pollTimer);
+        pollTimer = null;
+        postTexto.textContent = 'Sigue en proceso — apenas se confirme, tu póliza llega al chat automáticamente.';
+        return;
+      }
+      try {
+        const res = await fetch(`${API_URL}/web-session/${token}`);
+        if (!res.ok) return;
+        const fresh = await res.json();
+        if (fresh.state === 'policy_issued' || fresh.state === 'completed') {
+          showPostCheckout(fresh);
+        }
+      } catch { /* red intermitente: se reintenta en el próximo tick */ }
+    }, 3000);
+  }
+}
+
+function burstConfetti() {
+  const box = document.getElementById('confeti');
+  box.replaceChildren();
+  for (let i = 0; i < 14; i++) {
+    const p = document.createElement('i');
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 60 + Math.random() * 60;
+    p.style.setProperty('--dx', `${Math.cos(angle) * dist}px`);
+    p.style.setProperty('--dy', `${Math.sin(angle) * dist + 40}px`);
+    p.style.setProperty('--rot', `${(Math.random() - 0.5) * 480}deg`);
+    p.style.animationDelay = `${Math.random() * 120}ms`;
+    box.appendChild(p);
+  }
+}
+
+// WhatsApp only (plan-17 §12) — Telegram's in-app browser IS the chat, no redirect needed.
+function startCountdown(url) {
+  let n = 3;
+  postTexto.innerHTML = `Te llevamos de vuelta a WhatsApp en <span id="cuentaAtras">${n}</span>…`;
+  const el = () => document.getElementById('cuentaAtras');
+  const iv = setInterval(() => {
+    n--;
+    if (el()) el().textContent = String(Math.max(n, 0));
+    if (n <= 0) {
+      clearInterval(iv);
+      location.href = url;
+    }
+  }, 1000);
+  btnVolver.hidden = false;
+  btnVolver.textContent = 'Volver ahora';
+  btnVolver.disabled = false;
+  btnVolver.onclick = () => { clearInterval(iv); location.href = url; };
+}
+
+// ── Aplica una WebReply completa a la pantalla ─────────────────────────────
+function applyReply(reply) {
+  for (const t of reply.texts ?? []) addBubble('agent', t);
+  if (reply.quote) addQuoteCard(reply.quote);
+  if (reply.checkoutUrl) addPayButton(reply.checkoutUrl);
+  renderProgress(progressEl, reply.progress);
+  renderChips(reply.choices);
+  setExpectedInput(reply.expectedInput);
+
+  const paymentish = reply.state === 'payment' || reply.state === 'policy_issued' || reply.state === 'completed';
+  if (paymentish && reply.checkoutUrl === undefined) {
+    // Ya se generó el link de pago en un turno anterior y el usuario volvió — muestra la
+    // pantalla de confirmación en vez del chat normal.
+    showPostCheckout(reply);
+  }
+}
+
+async function sendMessage(text) {
+  if (!text.trim()) return;
+  addBubble('user', text);
+  textoEl.value = '';
+  chipsEl.replaceChildren();
+  showTyping();
+  btnEnviar.disabled = true;
+  try {
+    const res = await fetch(`${API_URL}/web-session/${token}/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    hideTyping();
+    if (res.status === 401) { showError(); return; }
+    if (!res.ok) throw new Error(`web-session respondió ${res.status}`);
+    applyReply(await res.json());
+  } catch (err) {
+    hideTyping();
+    console.error('No se pudo enviar el mensaje:', err);
+    addBubble('agent', 'No pude enviar tu mensaje. Revisa tu conexión e intenta de nuevo.');
+  } finally {
+    btnEnviar.disabled = false;
+    textoEl.focus();
+  }
+}
+
+async function sendSelfie(width, height) {
+  showTyping();
+  try {
+    const res = await fetch(`${API_URL}/web-session/${token}/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photo: { width, height } }),
+    });
+    hideTyping();
+    if (res.status === 401) { showError(); return; }
+    if (!res.ok) throw new Error(`web-session respondió ${res.status}`);
+    applyReply(await res.json());
+  } catch (err) {
+    hideTyping();
+    console.error('No se pudo enviar la selfie:', err);
+    addBubble('agent', 'No pude procesar tu foto. Intenta de nuevo.');
+  }
+}
+
+btnEnviar.addEventListener('click', () => sendMessage(textoEl.value));
+textoEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage(textoEl.value);
+  }
+});
+textoEl.addEventListener('input', () => {
+  textoEl.style.height = 'auto';
+  textoEl.style.height = Math.min(textoEl.scrollHeight, 120) + 'px';
+});
+
+// Nunca se sube la imagen — solo se leen sus dimensiones (mismo contrato que
+// NormalizedMessage.photo de Telegram: metadata, nunca los bytes de la foto).
+selfieInput.addEventListener('change', () => {
+  const file = selfieInput.files?.[0];
+  if (!file) return;
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+    sendSelfie(img.naturalWidth, img.naturalHeight);
+  };
+  img.src = url;
+});
+
+// ── Arranque ─────────────────────────────────────────────────────────────
+(async () => {
+  if (!token) { showError(); return; }
+
+  try {
+    const res = await fetch(`${API_URL}/web-session/${token}`);
+    if (res.status === 401) { showError(); return; }
+    if (!res.ok) throw new Error(`web-session respondió ${res.status}`);
+    const snapshot = await res.json();
+
+    renderProgress(progressEl, snapshot.progress);
+
+    const paymentish = snapshot.state === 'payment' || snapshot.state === 'policy_issued' || snapshot.state === 'completed';
+    if (paymentish) {
+      showPostCheckout(snapshot);
+      return;
+    }
+
+    for (const m of snapshot.transcript ?? []) addBubble(m.role, m.text);
+    textoEl.focus();
+  } catch (err) {
+    console.error('No se pudo cargar la sesión:', err);
+    showError();
+  }
+})();
+</script>
+</body>
+</html>

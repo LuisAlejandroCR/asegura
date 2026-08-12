@@ -315,6 +315,7 @@
   <header>
     <h1>Asegura <span id="timer">00:00</span></h1>
     <p class="sub">Tu asesor de seguros · Colsubsidio</p>
+    <div id="progress" class="ap-progress" aria-label="Progreso de la solicitud"></div>
   </header>
 
   <main>
@@ -371,11 +372,18 @@
 
 <script type="module">
 import { Room, RoomEvent } from 'livekit-client';
+import { renderProgress, injectProgressStyles } from './progress-bar.js';
 
 // Backend NestJS, no este sitio estático — mismo origen solo en local si se corren juntos.
 // Sin VITE_API_URL en producción, cae a same-origin (rompe si el backend vive en otro
 // dominio; Vercel/Railway necesitan la env var real).
 const API_URL = import.meta.env.VITE_API_URL || '';
+
+// Enlazado desde el chat (plan 17 §11) — identifica esta sesión de voz con la
+// conversación real de Telegram/WhatsApp. El worker de voz (proceso Node aparte, sin DI
+// de NestJS) todavía no lo consume — ver plan-17 §10 "fuera de alcance de este pase";
+// por ahora solo se guarda y se manda al backend para cuando se conecte esa pieza.
+const webToken = new URLSearchParams(location.search).get('token');
 
 (() => {
   const cuerpo   = document.body;
@@ -386,6 +394,13 @@ const API_URL = import.meta.env.VITE_API_URL || '';
   const hoja     = document.getElementById('resumen');
   const btnPagar = document.getElementById('btn-pagar');
   const btnDuda  = document.getElementById('btn-duda');
+  const progressEl = document.getElementById('progress');
+
+  injectProgressStyles();
+  // Estático por ahora — voz.html no recibe {state, progress} reales del backend todavía
+  // (esa pieza depende del worker de voz, fuera de alcance de este pase). Arranca en el
+  // primer paso del flujo web (DISCOVERY) para que la barra no aparezca vacía/rota.
+  renderProgress(progressEl, { step: 1, totalSteps: 6, label: 'Cuéntanos' });
 
   const MENSAJES = {
     inactivo:   'Toca el círculo para empezar a hablar',
@@ -472,7 +487,11 @@ const API_URL = import.meta.env.VITE_API_URL || '';
 
     let sesion;
     try {
-      const res = await fetch(`${API_URL}/voice/session`, { method: 'POST' });
+      const res = await fetch(`${API_URL}/voice/session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webToken }),
+      });
       if (!res.ok) throw new Error(`voice/session respondió ${res.status}`);
       sesion = await res.json();
     } catch (err) {

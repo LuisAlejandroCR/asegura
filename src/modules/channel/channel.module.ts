@@ -27,6 +27,6 @@ import { ConversationModule } from '../agent/conversation.module';
   imports: [ConversationModule],
   controllers: [TelegramWebhookController, DownloadsController],
   providers: [TelegramAdapter, TwilioWhatsAppAdapter, DocumentCacheService, ChannelRegistry, ReminderService],
-  exports: [TelegramAdapter, TwilioWhatsAppAdapter, ChannelRegistry, ReminderService],
+  exports: [TelegramAdapter, TwilioWhatsAppAdapter, ChannelRegistry, ReminderService, DocumentCacheService],
 })
 export class ChannelModule {}

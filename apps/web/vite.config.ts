@@ -12,6 +12,7 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         pitch: resolve(__dirname, 'pitch.html'),
         voz: resolve(__dirname, 'voz.html'),
+        texto: resolve(__dirname, 'texto.html'),
         micTest: resolve(__dirname, 'mic-test.html'),
       },
     },

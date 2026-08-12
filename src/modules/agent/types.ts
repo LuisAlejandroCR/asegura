@@ -127,6 +127,17 @@ interface ConversationContext {
   // so the `dependents` question never fires for them and a returning buyer isn't
   // re-interrogated.
   discoveryFilter?: boolean;
+  // 2026-08-12 (plan-17 §11) — set the moment DISCOVERY entry offers the AseguraWeb
+  // "¿hablar o escribir?" choice (only when WEB_APP_URL is configured). One-shot: the
+  // NEXT message is interpreted as answering it, whatever it says, then always cleared —
+  // an unrecognized reply falls through to the normal F01 category choices, never lost.
+  awaitingWebModalityChoice?: boolean;
+  // 2026-08-12 (plan-17 §12) — set once a texto.html/voz.html link was actually sent
+  // (resolveWebModalityChoice), never cleared. Lets createPaymentLinkFlow mint a FRESH
+  // web-session token and pass Wompi's real redirect_url param so checkout returns the
+  // browser to the SAME page instead of leaving it stranded on Wompi's own confirmation
+  // screen — only set for a session that's actually using AseguraWeb.
+  webModality?: 'voz' | 'texto';
   // Live-captured signal for QuotingService's hyper-personalization tier. 0 is a real
   // answer ("vivo solo"); undefined means never asked.
   dependents?: number;

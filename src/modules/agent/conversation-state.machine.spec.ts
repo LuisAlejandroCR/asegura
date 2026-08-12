@@ -1,12 +1,61 @@
 // conversation-state.machine.spec.ts: tests STATE_RESPONSES and isValidTransition —
 // the progressive DATA_CAPTURE prompts and the document-type regression.
 
-import { STATE_RESPONSES, isValidTransition, VALID_TRANSITIONS } from './conversation-state.machine';
+import { STATE_RESPONSES, isValidTransition, VALID_TRANSITIONS, progressFor } from './conversation-state.machine';
 import { ConversationState, ConversationContext } from './types';
 
 const empty: ConversationContext = {};
 
 // Unit tests — STATE_RESPONSES
+
+// Unit tests — progressFor (AseguraWeb progress bar, plan-17 §15)
+
+describe('progressFor', () => {
+  it('DISCOVERY is step 1 of the web flow (AseguraWeb starts post-authorization)', () => {
+    const p = progressFor(ConversationState.DISCOVERY);
+    expect(p.step).toBe(1);
+    expect(p.totalSteps).toBeGreaterThan(1);
+  });
+
+  it('step increases monotonically through the real flow order', () => {
+    const order = [
+      ConversationState.DISCOVERY,
+      ConversationState.QUOTING,
+      ConversationState.QUOTE_PRESENTED,
+      ConversationState.DATA_CAPTURE,
+      ConversationState.PAYMENT,
+      ConversationState.POLICY_ISSUED,
+    ];
+    const steps = order.map((s) => progressFor(s).step);
+    for (let i = 1; i < steps.length; i++) {
+      expect(steps[i]).toBeGreaterThan(steps[i - 1]);
+    }
+  });
+
+  it('POLICY_ISSUED is the last step (100%)', () => {
+    const p = progressFor(ConversationState.POLICY_ISSUED);
+    expect(p.step).toBe(p.totalSteps);
+  });
+
+  it.each([ConversationState.COMPLETED, ConversationState.ABANDONED, ConversationState.REJECTED])(
+    'terminal state %s clamps to the last real step instead of throwing',
+    (state) => {
+      const p = progressFor(state);
+      expect(p.step).toBe(p.totalSteps);
+    },
+  );
+
+  it('every state has a non-empty label', () => {
+    for (const state of Object.values(ConversationState)) {
+      expect(progressFor(state as ConversationState).label.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('GREETING/AUTHORIZATION (pre-web-handoff states) clamp to step 1, never 0 or negative', () => {
+    expect(progressFor(ConversationState.GREETING).step).toBe(1);
+    expect(progressFor(ConversationState.AUTHORIZATION).step).toBe(1);
+  });
+});
 
 describe('STATE_RESPONSES — all states return strings', () => {
   it.each(Object.values(ConversationState))('state %s returns a non-empty string', (state) => {

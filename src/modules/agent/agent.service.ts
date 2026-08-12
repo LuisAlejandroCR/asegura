@@ -3,17 +3,19 @@
 // decide product and price. Most comments below record a specific live-test bug and
 // why the fix is shaped the way it is; they are the reason the flow looks like this.
 
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as path from 'path';
 import { INlpProvider, InsuranceIntent } from '../nlp/types';
 import { TelegramAdapter } from '../channel/telegram-adapter.service';
 import { ChannelRegistry } from '../channel/channel-registry.service';
 import { ReminderService } from '../channel/reminder.service';
+import { DocumentCacheService } from '../channel/document-cache.service';
+import { WebSessionTokenService } from './web-session-token.service';
 import { NormalizedMessage } from '../channel/types';
 import { ConversationService } from './conversation.service';
-import { ConversationState, ConversationContext, PetDetail, DocumentType } from './types';
-import { STATE_RESPONSES, formatNameList } from './conversation-state.machine';
+import { ConversationState, ConversationContext, Conversation, PetDetail, DocumentType } from './types';
+import { STATE_RESPONSES, formatNameList, progressFor } from './conversation-state.machine';
 import { pickPersistentFields } from './persistent-context';
 import { QuotingService } from '../quoting/quoting.service';
 import { AffiliateLookupService } from '../quoting/affiliate-lookup.service';
@@ -23,6 +25,22 @@ import { AffiliateSignals, InsuranceProduct, InsuranceScore, IProductRepository 
 import { ProductCatalog } from '../quoting/product-catalog.service';
 import { computeTotalPremium } from '../quoting/pricing';
 import { matchBreed } from './breed-matcher';
+
+// The AseguraWeb (texto.html/voz.html) reply shape — handleWebMessage's return value,
+// mirrored 1:1 from ProcessResult's dispatch branches in handleMessage/computeReply, just
+// serialized instead of pushed through an IChannelAdapter. `quote` matches
+// src/voice-agent/cotizar-tool.ts's CotizarResult shape on purpose — same product/price/
+// reason data, same source (QuotingService), whether the session is voice or text.
+export interface WebReply {
+  texts: string[];
+  state: ConversationState;
+  progress: { step: number; totalSteps: number; label: string };
+  choices?: string[];
+  quote?: { producto: string; aseguradora: string; precioMensual: number; coberturas: string[]; razon: string };
+  document?: { filename: string; downloadUrl: string };
+  checkoutUrl?: string;
+  expectedInput: 'text' | 'selfie';
+}
 
 interface ProcessResult {
   text?: string;
@@ -101,6 +119,14 @@ export class AgentService {
     private readonly reminders: ReminderService,
     private readonly affiliateLookup: AffiliateLookupService,
     private readonly config: ConfigService,
+    // Reused as-is from the Twilio media-URL workaround (document-cache.service.ts) — a
+    // web-session reply needs a fetchable download link too, same reason Twilio does.
+    // Defaulted for the same test-helper convenience as `catalog` below.
+    private readonly documentCache: DocumentCacheService = new DocumentCacheService(),
+    // Mints the texto.html/voz.html links offered at DISCOVERY entry (plan-17 §11).
+    // Defaulted to a fresh instance built from the SAME config param above — matches the
+    // other optional-integration defaults in this constructor.
+    private readonly webSessionTokens: WebSessionTokenService = new WebSessionTokenService(config),
     // Default keeps buildService() in agent.service.test-helpers.ts working unchanged
     // when it doesn't pass one — Nest's DI still injects the real shared singleton.
     @Inject('IProductRepository')
@@ -213,6 +239,42 @@ export class AgentService {
 
     this.logger.log(`Message from ${msg.userId}: "${msg.text.slice(0, 80)}"`);
 
+    const { result } = await this.computeReply(msg);
+
+    if (result.document) {
+      await adapter.sendDocument(msg.userId, result.document.buffer, result.document.filename);
+    }
+
+    if (result.animation) {
+      await adapter.sendAnimation(msg.userId, result.animation);
+    }
+
+    if (result.reaction && msg.messageId !== undefined) {
+      await adapter.reactToMessage(msg.userId, msg.messageId, result.reaction, result.reactionBig);
+    }
+
+    if (result.requestContact && result.text) {
+      await adapter.sendContactRequest(msg.userId, result.text);
+    } else if (result.choices?.length && result.text) {
+      await adapter.sendChoices(msg.userId, result.text, result.choices);
+    } else if (result.texts?.length) {
+      for (const t of result.texts) {
+        await adapter.sendText(msg.userId, t);
+      }
+    } else if (result.text) {
+      await adapter.sendText(msg.userId, result.text);
+    }
+  }
+
+  // Shared core between handleMessage (Telegram/WhatsApp, dispatches the result through an
+  // IChannelAdapter above) and handleWebMessage (AseguraWeb, returns the result as JSON
+  // instead — see web-session.controller.ts). Both entry points build their own
+  // NormalizedMessage and call this; conversation identity is resolved purely from
+  // msg.userId + msg.channel, so a web-originated message carrying the ORIGINAL
+  // Telegram/WhatsApp userId+channel lands on the exact same conversation row
+  // (unique index on (user_id, channel)) — no separate "web channel" conversation ever
+  // gets created.
+  private async computeReply(msg: NormalizedMessage): Promise<{ conv: Conversation; result: ProcessResult }> {
     const conv = await this.conversations.getOrCreate(msg.userId, msg.channel);
     // 2026-07-25 feature request: any incoming message proves the user is still here —
     // cancel whatever "come back to chat" reminder was pending before scheduling a fresh
@@ -255,30 +317,6 @@ export class AgentService {
       );
     }
 
-    if (result.document) {
-      await adapter.sendDocument(msg.userId, result.document.buffer, result.document.filename);
-    }
-
-    if (result.animation) {
-      await adapter.sendAnimation(msg.userId, result.animation);
-    }
-
-    if (result.reaction && msg.messageId !== undefined) {
-      await adapter.reactToMessage(msg.userId, msg.messageId, result.reaction, result.reactionBig);
-    }
-
-    if (result.requestContact && result.text) {
-      await adapter.sendContactRequest(msg.userId, result.text);
-    } else if (result.choices?.length && result.text) {
-      await adapter.sendChoices(msg.userId, result.text, result.choices);
-    } else if (result.texts?.length) {
-      for (const t of result.texts) {
-        await adapter.sendText(msg.userId, t);
-      }
-    } else if (result.text) {
-      await adapter.sendText(msg.userId, result.text);
-    }
-
     // Arm the "come back to chat" reminder for whatever state the conversation is in now
     // — skipped once it's actually over, since nudging someone who already finished (or
     // was rejected/abandoned) has no point.
@@ -289,6 +327,90 @@ export class AgentService {
       const finalContext = result.context ?? conv.context;
       this.reminders.schedule(conv.id, msg.userId, !!finalContext?.checkoutUrl);
     }
+
+    return { conv, result };
+  }
+
+  // AseguraWeb (texto.html/voz.html) entry point — see web-session.controller.ts. The
+  // token only ever carries a conversationId (plan-17 §11); everything else (channel,
+  // userId) is resolved fresh from the DB here, never trusted from client input, so a
+  // web-originated message lands on the exact same conversation the chat link was minted
+  // from (computeReply's getOrCreate resolves by that SAME user_id+channel).
+  async handleWebMessage(
+    conversationId: string,
+    input: { text?: string; photo?: { width: number; height: number } },
+  ): Promise<WebReply> {
+    const existing = await this.conversations.findById(conversationId);
+    if (!existing) {
+      throw new NotFoundException('Web session no longer valid');
+    }
+
+    const conv = await this.conversations.getOrCreate(existing.user_id, existing.channel);
+
+    const msg: NormalizedMessage = {
+      channelId: conv.user_id,
+      channel: conv.channel as 'telegram' | 'whatsapp',
+      userId: conv.user_id,
+      text: input.text ?? '',
+      timestamp: new Date(),
+      // The signed token itself is proof of possession of the original chat identity —
+      // only that specific Telegram/WhatsApp conversation could have received the link.
+      // No browser equivalent of Telegram's request_contact button exists, so this
+      // mirrors twilio-whatsapp-adapter.service.ts's own pattern EXACTLY: attach `contact`
+      // unconditionally so AgentService's existing phoneVerified gate (built for
+      // Telegram's opt-in contact share, reused as-is by WhatsApp's WaId) is satisfied for
+      // free here too — no new special-casing in the DATA_CAPTURE handler itself.
+      contact: { phoneNumber: conv.user_id, firstName: '' },
+      ...(input.photo && { photo: input.photo }),
+    };
+
+    const { result } = await this.computeReply(msg);
+    return this.toWebReply(result, conv);
+  }
+
+  private toWebReply(result: ProcessResult, conv: Conversation): WebReply {
+    const finalState = result.nextState ?? conv.state;
+    const finalContext = result.context ?? conv.context;
+    const texts = result.texts?.length ? result.texts : (result.text ? [result.text] : []);
+
+    const reply: WebReply = {
+      texts,
+      state: finalState,
+      progress: progressFor(finalState),
+      expectedInput: finalContext.awaitingSelfie ? 'selfie' : 'text',
+    };
+
+    if (result.choices?.length) {
+      reply.choices = result.choices;
+    }
+
+    if (finalContext.checkoutUrl) {
+      reply.checkoutUrl = finalContext.checkoutUrl;
+    }
+
+    // Same shape/source as src/voice-agent/cotizar-tool.ts's CotizarResult — the resumen
+    // sheet reads structured data, never the markdown-formatted `.text` meant for chat.
+    if (finalState === ConversationState.QUOTE_PRESENTED && finalContext.quoteProductId) {
+      const product = this.catalog.getProduct(finalContext.quoteProductId);
+      if (product) {
+        const allScores = this.quoting.score(finalContext as AffiliateSignals);
+        const score = allScores.find((s) => s.productId === product.id);
+        reply.quote = {
+          producto: product.name,
+          aseguradora: product.insurer,
+          precioMensual: score?.monthlyPremium ?? computeTotalPremium(product, finalContext.petCount),
+          coberturas: product.coverages.slice(0, 3),
+          razon: score?.reasons?.[0] ?? '',
+        };
+      }
+    }
+
+    if (result.document) {
+      const token = this.documentCache.put(result.document.buffer, result.document.filename);
+      reply.document = { filename: result.document.filename, downloadUrl: `/downloads/${token}` };
+    }
+
+    return reply;
   }
 
   // Live-test feedback: escalate to a human instead of repeating "no logré entender"
@@ -465,12 +587,10 @@ export class AgentService {
           // so it's the one reliable signal here.
           if (context.serieId) {
             const knownContext: ConversationContext = { ...context, autorizado: true, discoveryFilter: true };
-            return {
-              text: `Ya te habías afiliado a Colsubsidio, así que ya tengo tu perfil.\n\n${STATE_RESPONSES[ConversationState.DISCOVERY](knownContext)}`,
-              nextState: ConversationState.DISCOVERY,
-              context: knownContext,
-              choices: F01_CHOICES,
-            };
+            return this.offerDiscoveryEntry(
+              'Ya te habías afiliado a Colsubsidio, así que ya tengo tu perfil.\n\n',
+              knownContext,
+            );
           }
           return {
             // 2026-07-26 (feedback): the "puedes responder por texto o audio" reassurance
@@ -496,7 +616,7 @@ export class AgentService {
         };
 
       case ConversationState.DISCOVERY:
-        return this.handleDiscovery(context, text, intent);
+        return this.handleDiscovery(convId, context, text, intent);
 
       case ConversationState.QUOTING:
       case ConversationState.QUOTE_PRESENTED:
@@ -605,31 +725,81 @@ export class AgentService {
               ? { petCount: record.petCount }
               : {}),
           };
-          return {
-            text: `¡Encontré tu perfil! Esto me ayuda a personalizar mejor tu cotización.\n\n${STATE_RESPONSES[ConversationState.DISCOVERY](enriched)}`,
-            nextState: ConversationState.DISCOVERY,
-            context: enriched,
-            choices: F01_CHOICES,
-          };
+          return this.offerDiscoveryEntry(
+            '¡Encontré tu perfil! Esto me ayuda a personalizar mejor tu cotización.\n\n',
+            enriched,
+          );
         }
       }
     }
 
+    return this.offerDiscoveryEntry('', baseContext);
+  }
+
+  // Sends F01's category buttons — or, if AseguraWeb is configured (WEB_APP_URL), asks
+  // "¿hablar o escribir?" first (plan-17 §11). `awaitingWebModalityChoice`'s gate at the
+  // top of handleDiscovery resolves that reply and falls back to these SAME F01 choices
+  // once it's answered (or unrecognized) — or immediately, if AseguraWeb isn't
+  // configured, which is today's exact behavior, byte-for-byte unchanged.
+  private offerDiscoveryEntry(prefix: string, context: ConversationContext): ProcessResult {
+    if (this.config.get<string>('WEB_APP_URL')) {
+      return {
+        text: `${prefix}¿Prefieres seguir aquí escribiendo, o te paso a una página donde puedes hablar o escribir con más calma?`,
+        nextState: ConversationState.DISCOVERY,
+        context: { ...context, awaitingWebModalityChoice: true },
+        choices: ['🗣️ Hablar', '⌨️ Escribir', '💬 Seguir aquí'],
+      };
+    }
     return {
-      text: STATE_RESPONSES[ConversationState.DISCOVERY](baseContext),
+      text: `${prefix}${STATE_RESPONSES[ConversationState.DISCOVERY](context)}`,
       nextState: ConversationState.DISCOVERY,
-      context: baseContext,
+      context,
       choices: F01_CHOICES,
     };
   }
 
   // Discovery
 
+  // Resolves the AseguraWeb "¿hablar o escribir?" reply set up by offerDiscoveryEntry
+  // above. Returns null when the reply doesn't clearly say either — the caller then
+  // clears the flag and lets the SAME message fall through to normal DISCOVERY handling
+  // (F01/free text), so a real answer typed instead of tapping a choice is never lost.
+  private resolveWebModalityChoice(convId: string, context: ConversationContext, text: string): ProcessResult | null {
+    const lower = text.toLowerCase();
+    const wantsVoice = /\b(hablar|voz|audio|llamar)\b/.test(lower);
+    const wantsText = /\b(escribir|texto|escrib|chat)\b/.test(lower);
+    if (!wantsVoice && !wantsText) return null;
+
+    const webAppUrl = this.config.get<string>('WEB_APP_URL');
+    const token = webAppUrl ? this.webSessionTokens.sign({ conversationId: convId }) : null;
+    // Shouldn't happen — the gate is only ever set when WEB_APP_URL is configured — but
+    // never crash on a misconfiguration; the caller clears the flag and continues normally.
+    if (!webAppUrl || !token) return null;
+
+    const modality: 'voz' | 'texto' = wantsVoice ? 'voz' : 'texto';
+    const verb = wantsVoice ? 'hablar' : 'escribir';
+    return {
+      text: `Perfecto, puedes ${verb} aquí: ${webAppUrl.replace(/\/$/, '')}/${modality}.html?token=${token}\n\n` +
+        'Cuando termines, vuelve al chat — o sigue escribiéndome aquí si prefieres.',
+      // webModality persists (never cleared here) — createPaymentLinkFlow reads it later
+      // to mint a fresh token and set Wompi's redirect_url (plan-17 §12), so checkout
+      // returns the browser to the same AseguraWeb page instead of Wompi's own screen.
+      context: { ...context, awaitingWebModalityChoice: undefined, webModality: modality },
+    };
+  }
+
   private handleDiscovery(
+    convId: string,
     context: ConversationContext,
     text: string,
     intent: InsuranceIntent,
   ): ProcessResult {
+    if (context.awaitingWebModalityChoice) {
+      const resolved = this.resolveWebModalityChoice(convId, context, text);
+      if (resolved) return resolved;
+      context = { ...context, awaitingWebModalityChoice: undefined };
+    }
+
     const newContext: ConversationContext = { ...context };
 
     // After a purchase, the cross-sell "¿Quieres proteger algo más?" resets to DISCOVERY —
@@ -1987,12 +2157,26 @@ export class AgentService {
       ? `${products.length} seguros Colsubsidio`
       : (products[0]?.name ?? 'Seguro Colsubsidio');
 
+    // Plan-17 §12 — a session actively using AseguraWeb gets a FRESH token (never reused
+    // from the original hablar/escribir link, which may be long expired by checkout time)
+    // so Wompi's real redirect_url param brings the browser back to the SAME page instead
+    // of stranding it on Wompi's own confirmation screen. Chat-only conversations
+    // (webModality unset) get no redirect_url — unchanged behavior.
+    const webAppUrl = this.config.get<string>('WEB_APP_URL');
+    const redirectUrl = context.webModality && webAppUrl
+      ? (() => {
+          const token = this.webSessionTokens.sign({ conversationId: convId });
+          return token ? `${webAppUrl.replace(/\/$/, '')}/${context.webModality}.html?token=${token}` : undefined;
+        })()
+      : undefined;
+
     try {
       const { checkoutUrl, paymentLinkId } = await this.wompi.createPaymentLink({
         policyId: context.policyId ?? convId,
         productName,
         amountCOP,
         expiresInMinutes: AgentService.PAYMENT_LINK_EXPIRY_MINUTES,
+        ...(redirectUrl && { redirectUrl }),
       });
 
       // Persist immediately on EVERY policy in this purchase — the webhook can only find

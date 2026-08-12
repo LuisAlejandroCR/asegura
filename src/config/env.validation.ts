@@ -130,6 +130,15 @@ class EnvironmentVariables {
   @IsOptional()
   JWT_SECRET: string;
 
+  // 2026-08-12 — AseguraWeb's own base URL (apps/web, e.g. https://asegura-app.vercel.app),
+  // used to build the texto.html/voz.html links sent from chat (plan-17 §11) and Wompi's
+  // redirect_url for the web-session checkout path. Unset: the chat-side modality question
+  // is skipped entirely and behavior is identical to today — same graceful-degrade
+  // convention as every other optional integration in this file.
+  @IsString()
+  @IsOptional()
+  WEB_APP_URL: string;
+
   @IsString()
   @IsOptional()
   ADMIN_CHAT_ID: string;

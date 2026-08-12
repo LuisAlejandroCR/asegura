@@ -6,6 +6,11 @@ interface CreatePaymentLinkParams {
   productName: string;
   amountCOP: number;
   expiresInMinutes?: number;
+  // 2026-08-12 (plan-17 §12) — verified real Wompi Payment Links field (docs.wompi.co):
+  // "URL donde será redirigido el cliente una vez termine el proceso de pago". Only the
+  // AseguraWeb checkout path sets this (createPaymentLinkFlow, agent.service.ts) — chat
+  // checkout links (Telegram/WhatsApp) never set it, since there's no page to return to.
+  redirectUrl?: string;
 }
 
 // Wompi's Payment Links API has no "reference" create-parameter — the transaction's
