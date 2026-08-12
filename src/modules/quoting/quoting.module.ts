@@ -9,6 +9,6 @@ import { ProductCatalog } from './product-catalog.service';
     AffiliateLookupService,
     { provide: 'IProductRepository', useClass: ProductCatalog },
   ],
-  exports: [QuotingService, AffiliateLookupService],
+  exports: [QuotingService, AffiliateLookupService, 'IProductRepository'],
 })
 export class QuotingModule {}

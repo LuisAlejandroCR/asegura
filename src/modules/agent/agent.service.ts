@@ -18,8 +18,8 @@ import { QuotingService } from '../quoting/quoting.service';
 import { AffiliateLookupService } from '../quoting/affiliate-lookup.service';
 import { PolicyService } from '../policy/policy.service';
 import { WompiService } from '../payments/wompi.service';
-import { AffiliateSignals, InsuranceProduct, InsuranceScore } from '../quoting/types';
-import { PRODUCTS } from '../quoting/products.data';
+import { AffiliateSignals, InsuranceProduct, InsuranceScore, IProductRepository } from '../quoting/types';
+import { ProductCatalog } from '../quoting/product-catalog.service';
 import { computeTotalPremium } from '../quoting/pricing';
 import { matchBreed } from './breed-matcher';
 
@@ -63,28 +63,17 @@ interface ProcessResult {
 const IDENTITY_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'identity-confirmed.mp4');
 const PAYMENT_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'payment-received.mp4');
 
-// 2026-07-26 Step 4 — F01 hybrid-filter buttons, presented once at AUTHORIZATION→
-// isAffirmative. Only categories the real catalog can actually sell (rule #12): no
-// vehículo/viaje/patrimonio/hogar product exists, so those spec categories are
-// deliberately not offered as buttons (free text can still ask about them — see
-// detectOutOfCatalogCategory's honest decline). Exported (not just a class constant) so
-// the label→parser invariant test (groq-nlp.service.spec.ts) shares this exact array as
-// its single source of truth — a label is a promise the parser must actually honor.
+// 2026-07-26 Step 4 — F01 buttons at AUTHORIZATION→isAffirmative. Only categories the
+// catalog can sell (rule #12) — no vehículo/viaje/patrimonio/hogar product exists, so free
+// text can still ask about them (detectOutOfCatalogCategory), but no button offers them.
+// Exported so the label→parser invariant test shares this exact array as its source of truth.
 export const F01_CHOICES = ['❤️ Mi familia', '🏥 Mi salud', '🐾 Mi mascota', '🤕 Accidentes', '🤔 No estoy seguro'];
 
-// Real live-test bug (2026-07-26, screenshot): tapping "❤️ Mi familia" returned a
-// completely different category's product ("Asistencias médicas familiares", GEA) as
-// the FIRST quote. Investigated exhaustively against the real QuotingService — no
-// realistic dependents/budget/coverage combination ever lets a related category
-// outscore an exact match under the current scoring weights, so this isn't a scoring
-// bug. The more likely cause: Groq's own classification of a short emoji-prefixed
-// button label can be simply WRONG (not just null) — the existing productCategory
-// guardrail (groq-nlp.service.ts's matchCategoryKeyword, Sesión 72) only ever fills in
-// a NULL, it never corrects a confident-but-wrong answer. A button tap is a UI element
-// with an EXACT, KNOWN string and zero ambiguity — unlike free text, there is no
-// legitimate reading of "❤️ Mi familia" other than "vida". Keyed by the SAME lowercased
-// form `handleDiscovery` already receives (`text`, computed once in `handleMessage`).
-// "🤔 No estoy seguro" is deliberately absent — no button forces a category by design.
+// Live bug (2026-07-26): tapping "❤️ Mi familia" quoted a wrong category first. Not a
+// scoring bug — no realistic input lets a related category outscore an exact match.
+// Cause: Groq can misclassify a short emoji label, and the existing null-only guardrail
+// never corrects a confident wrong answer. A button tap has zero ambiguity, so it's keyed
+// deterministically here instead. "🤔 No estoy seguro" is absent on purpose — no forcing.
 const F01_CATEGORY_MAP: Record<string, NonNullable<InsuranceIntent['productCategory']>> = {
   '❤️ mi familia': 'vida',
   '🏥 mi salud': 'asistencia',
@@ -107,6 +96,10 @@ export class AgentService {
     private readonly reminders: ReminderService,
     private readonly affiliateLookup: AffiliateLookupService,
     private readonly config: ConfigService,
+    // Default keeps buildService() in agent.service.test-helpers.ts working unchanged
+    // when it doesn't pass one — Nest's DI still injects the real shared singleton.
+    @Inject('IProductRepository')
+    private readonly catalog: IProductRepository = new ProductCatalog(),
   ) {}
 
   private static readonly TERMINAL_STATES = new Set([
@@ -115,32 +108,23 @@ export class AgentService {
     ConversationState.REJECTED,
   ]);
 
-  // 2026-07-26 live-test bug: a meta-question about the quote already shown ("¿cuál es
-  // mejor?", "cuéntame más de ellos", "explícame de qué se trata", "beneficios") carries
-  // no affirmative/negative/alternative signal, so it used to fall through to a silent
-  // re-show of the same product. Deterministic on purpose — this is a request for MORE
-  // detail on what's already on screen, not a new category/product signal for the NLP
-  // layer to classify.
+  // Live bug: "¿cuál es mejor?"/"cuéntame más"/"beneficios" carry no yes/no/alternative
+  // signal and used to fall through to a silent re-show. Deterministic: it's a request for
+  // more detail on the current product, not a new category for the NLP to classify.
   private static readonly MORE_INFO_PATTERN =
     /\b(cu[eé]ntame\s+m[aá]s|expl[ií]came|de\s+qu[eé]\s+se\s+trata|beneficios|cu[aá]l(?:\s+de\s+todos)?\s+es\s+mejor|mejor\s+para\s+m[ií])\b/i;
 
-  // 2026-07-26 feature request: a COMPLETED customer asking about their OWN,
-  // already-purchased policy ("¿qué cubre mi seguro de vida?", "cuéntame de mi póliza")
-  // used to get the exact same generic "¡Todo listo!" text no matter what was actually
-  // asked. Checked only in COMPLETED (processMessage's default: branch) — never confused
-  // with MORE_INFO_PATTERN above, which answers about a product still being SHOPPED for.
+  // A COMPLETED customer asking about their OWN policy used to get the generic "¡Todo
+  // listo!" no matter what they asked. Only checked in COMPLETED — never confused with
+  // MORE_INFO_PATTERN above, which answers about a product still being shopped for.
   private static readonly POLICY_INQUIRY_PATTERN =
     /\b(mi p[oó]liza|mi seguro|lo que compr[eé]|lo que ya tengo|qu[eé]\s+cubre|c[oó]mo funciona mi|mi cobertura)\b/i;
 
-  // 2026-07-26 live-test bug: "Prefiero la anterior.", "Quiero la primera opción que me
-  // ofreciste.", "la que vale 16.800", "¿alguna más económica?" all reference a SPECIFIC
-  // product already shown this conversation (or a cheaper one among them) — none of
-  // these had a handler, so they either fell through to a blind re-show of the CURRENT
-  // product, or worse, got matched as isAffirmative (confirming the wrong one — a bare
-  // "quiero" substring match doesn't care that the price mentioned doesn't match what's
-  // on screen). Checked deterministically, before isAffirmative/wantsAlternative, so an
-  // explicit reference always wins over a probabilistic LLM guess — same override
-  // philosophy as every other keyword trap already fixed in this file.
+  // Live bug: "la primera opción", "la anterior", "¿alguna más económica?" reference a
+  // SPECIFIC already-shown product but had no handler — fell through to a blind re-show,
+  // or worse got matched as isAffirmative (confirming the wrong one). Checked
+  // deterministically before isAffirmative/wantsAlternative: an explicit reference always
+  // wins over a probabilistic LLM guess.
   private static readonly FIRST_OPTION_PATTERN = /\b(la primera(?:\s+opci[oó]n)?|el primero|primera opci[oó]n)\b/i;
   private static readonly PREVIOUS_OPTION_PATTERN = /\b(la anterior|el anterior|la de antes)\b/i;
   private static readonly CHEAPER_OPTION_PATTERN = /\b(m[aá]s econ[oó]mic\w*|m[aá]s barat\w*|m[aá]s accesible\w*|menos costos?)\b/i;
@@ -166,7 +150,7 @@ export class AgentService {
   ): { product: InsuranceProduct; score: InsuranceScore } | null {
     const shownIds = context.shownProductIds ?? (context.quoteProductId ? [context.quoteProductId] : []);
     const shownProducts = shownIds
-      .map((id) => PRODUCTS.find((p) => p.id === id))
+      .map((id) => this.catalog.getProduct(id))
       .filter((p): p is InsuranceProduct => !!p);
     if (shownProducts.length === 0) return null;
 
@@ -184,7 +168,7 @@ export class AgentService {
         resolved = shownProducts.find((p) => Math.abs(p.basePremium - amount) <= 1000) ?? null;
       }
       if (!resolved && AgentService.CHEAPER_OPTION_PATTERN.test(text)) {
-        const current = PRODUCTS.find((p) => p.id === context.quoteProductId);
+        const current = this.catalog.getProduct(context.quoteProductId);
         resolved = shownProducts
           .filter((p) => !current || p.basePremium < current.basePremium)
           .sort((a, b) => a.basePremium - b.basePremium)[0] ?? null;
@@ -295,12 +279,9 @@ export class AgentService {
     }
   }
 
-  // 2026-07-26 live-test feedback: "if the agent doesn't have the info about the insurance
-  // asked, redirect the chat to a human" — instead of repeating a variant of "no logré
-  // entender" indefinitely. Counts ONLY turns a state handler explicitly flagged as
-  // genuinely unclear (ProcessResult.unclearReply) — an answer that just needs a
-  // follow-up question (e.g. DISCOVERY's madeProgress path) never counts, so a normal
-  // multi-turn conversation never trips this.
+  // Live-test feedback: escalate to a human instead of repeating "no logré entender"
+  // forever. Counts only turns explicitly flagged unclear (ProcessResult.unclearReply) —
+  // a follow-up question in a normal multi-turn conversation never trips this.
   private static readonly UNCLEAR_REPLY_ESCALATION_THRESHOLD = 3;
   private static readonly ESCALATION_TEXT =
     'Parece que no te estoy ayudando bien, serás redirigido a mi líder de servicio 🙏';
@@ -366,15 +347,10 @@ export class AgentService {
     await this.telegram.sendText(adminChatId, text);
   }
 
-  // Real live-test bug (2026-07-26): a RETURNING customer (nombre/email already known
-  // from a previous purchase or a persisted profile — the greeting itself says "Ya
-  // tengo parte de tu perfil de una conversación anterior") still got asked "¿cuál es tu
-  // nombre?" then "¿cuál es tu correo?" from scratch when accepting the waitlist offer —
-  // the exact "nunca preguntar lo que ya sabemos" violation the affiliate-ID lookup and
-  // persistent-memory features exist to prevent everywhere else. Pre-fills
-  // contactName/contactEmail/contactPhone from whatever's already known
-  // (nombre/email/verifiedPhone) and only asks for whichever piece is still missing; if
-  // everything is already known, skips straight to notifying and ending the chat.
+  // Live bug: a returning customer with nombre/email already known still got asked from
+  // scratch when accepting the waitlist offer — violates "nunca preguntar lo que ya
+  // sabemos". Pre-fills from whatever's known, asks only what's missing; skips straight to
+  // finalizing if everything's already known.
   private beginLeadCapture(context: ConversationContext): ProcessResult {
     const filled: ConversationContext = {
       ...context,
@@ -441,12 +417,9 @@ export class AgentService {
       currentState !== ConversationState.GREETING &&
       currentState !== ConversationState.QUOTE_PRESENTED
     ) {
-      // Real live-test bug (confirmed directly in the production Supabase conversations
-      // table): two conversations that had ALREADY completed a real, Wompi-approved
-      // purchase ended up with state='abandoned' after the customer later declined to buy
-      // anything more — this check has no awareness a policy already exists.
-      // "Abandoned before buying anything" and "bought something, then declined more"
-      // must never share a conversation status.
+      // Live bug (confirmed in production Supabase): two conversations that had already
+      // completed a purchase ended up 'abandoned' after later declining to buy more.
+      // "Abandoned before buying" and "bought, then declined more" must never share a status.
       const terminalState = context.hasCompletedPurchase
         ? ConversationState.COMPLETED
         : ConversationState.ABANDONED;
@@ -474,13 +447,10 @@ export class AgentService {
         }
 
         if (intent.isAffirmative) {
-          // Real live-test feedback (2026-07-26): a RETURNING affiliate — `serieId`
-          // already known from a successful lookup in an earlier conversation, surviving
-          // this restart via persistent memory — still got asked "Ingresa tu ID..." all
-          // over again, the exact "nunca preguntar lo que ya sabemos" violation this
-          // whole affiliate-lookup feature exists to prevent. `serieId` is always set the
-          // moment a lookup succeeds (handleAffiliateId), regardless of which other
-          // fields that CSV row happened to have, so it's the one reliable signal here.
+          // Live bug: a returning affiliate with `serieId` already known (surviving via
+          // persistent memory) still got asked "Ingresa tu ID..." again — violates "nunca
+          // preguntar lo que ya sabemos". `serieId` is always set once a lookup succeeds,
+          // so it's the one reliable signal here.
           if (context.serieId) {
             const knownContext: ConversationContext = { ...context, autorizado: true, discoveryFilter: true };
             return {
@@ -541,21 +511,11 @@ export class AgentService {
         // would force a paying customer to redo verification. Left on the keyword-only
         // path; a proper "resume as returning customer" flow is separate future scope.
         if (currentState === ConversationState.ABANDONED || currentState === ConversationState.REJECTED) {
-          // 2026-07-26 persistent memory (Diseño preguntas.docx: "la siguiente
-          // conversación nunca debe empezar desde cero") -- carry forward the durable
-          // profile facts (pets, dependents, budget, KYC, purchase history) instead of
-          // wiping to {}. Session-scoped state (the quote in progress, one-shot KYC
-          // gates, discoveryFilter, productCategory) still resets, since a fresh inquiry
-          // may want something different this time.
-          // Real live-test bug (2026-07-26, screenshot): this rendered the GREETING text
-          // (which already folds in the authorization ask, same as case GREETING below)
-          // but set nextState back to GREETING instead of AUTHORIZATION — so the user's
-          // very next message (even an immediate "sí") got routed through case GREETING
-          // again, which re-renders the IDENTICAL text a second time before finally
-          // reaching AUTHORIZATION. Setting nextState: AUTHORIZATION here (matching case
-          // GREETING's own one-shot pattern) shows the text exactly once, while still
-          // requiring a fresh "sí" to re-confirm Ley 1581 consent (autorizado is
-          // deliberately never carried over — see persistent-context.ts).
+          // Persistent memory: carries forward durable profile facts instead of wiping to
+          // {}. Session-scoped state still resets for a fresh inquiry.
+          // Live bug: this rendered GREETING's text but set nextState back to GREETING, so
+          // the user's next message re-rendered the identical text before reaching
+          // AUTHORIZATION. nextState: AUTHORIZATION (matching case GREETING) shows it once.
           const remembered = pickPersistentFields(context);
           return {
             text: STATE_RESPONSES[ConversationState.GREETING](remembered),
@@ -590,19 +550,13 @@ export class AgentService {
     }
   }
 
-  // Affiliate ID lookup
-  // 2026-07-26 — "nunca preguntar lo que ya sabemos" (Diseño preguntas.docx, Nivel 1)
-  // for income: DISCOVERY's filter has no income question at all, so this is the one
-  // signal Colsubsidio can supply directly if the user self-identifies with their
-  // affiliate ID (looked up against SERIE in the synthetic affiliate CSV — see
-  // AffiliateLookupService). A decline ("no"), an unrecognized-but-numeric ID, or the
-  // lookup being disabled (missing CSV file) all proceed to DISCOVERY identically, just
-  // without the rangoSalarial boost — same never-loop-forever contract as every other
-  // one-shot gate in this file. A non-numeric, non-"no" answer does NOT proceed (see the
-  // digit-shape guard below) — that's the one thing this gate actually rejects.
+  // Affiliate ID lookup. "Nunca preguntar lo que ya sabemos" for income: this is the one
+  // signal Colsubsidio can supply if the user self-identifies via SERIE. A decline, an
+  // unrecognized-but-numeric ID, or lookup being disabled all proceed to DISCOVERY
+  // identically, just without the rangoSalarial boost. Only a non-numeric, non-"no" answer
+  // is rejected (digit-shape guard below).
   //
-  // 2026-07-26 — SERIE is a plain row number into the real affiliate CSV (1..500000,
-  // matching its ~500K rows), NOT a document-length check like cédula's 6-10 digits.
+  // SERIE is a plain row number (1..500000, matching the CSV), not a length check like cédula.
   private static readonly MAX_SERIE = 500_000;
 
   private handleAffiliateId(context: ConversationContext, text: string, rawText: string): ProcessResult {
@@ -614,19 +568,11 @@ export class AgentService {
       // a number dictated one digit at a time by voice, e.g. "1, 2, 3, 4, 5, 6, 7, 8, 9.").
       const serie = this.joinSpokenDigits(rawText).replace(/\D/g, '');
 
-      // Real live-test bug (2026-07-26): a non-numeric, non-"no" answer ("Juan" — either
-      // a misheard voice transcription or a genuine misunderstanding of the question)
-      // used to be silently treated as an implicit decline, advancing to DISCOVERY
-      // without ever telling the user their answer didn't make sense. Only digits or an
-      // explicit "no" may pass this gate now — same "never silently guess" contract as
-      // cédula's own digit-shape validation a few turns later in this same flow. Range
-      // is 1–MAX_SERIE (not a digit-count check like cédula's 6-10 — SERIE is a plain
-      // sequential row number, 1..500000, matching the real CSV's row count, so most
-      // real values are far shorter than 6 digits; a length-based check would reject
-      // the majority of genuine SERIE values). Returns neither `context` nor
-      // `nextState`, so handleMessage persists nothing — the conversation stays exactly
-      // where it was and this same gate re-fires on the user's next message, never
-      // silently letting them continue past an invalid answer.
+      // Live bug: a non-numeric, non-"no" answer ("Juan") was silently treated as an
+      // implicit decline, advancing to DISCOVERY without telling the user. Only digits or
+      // "no" pass now. Range 1–MAX_SERIE, not a digit-count check — SERIE is a sequential
+      // row number, so a length check would reject most genuine values. Returns neither
+      // `context` nor `nextState`: the conversation stays put and re-fires this gate.
       const serieNum = serie ? Number(serie) : NaN;
       if (!serie || !Number.isFinite(serieNum) || serieNum < 1 || serieNum > AgentService.MAX_SERIE) {
         return {
@@ -1126,7 +1072,7 @@ export class AgentService {
       };
     }
 
-    const currentProduct = PRODUCTS.find((p) => p.id === context.quoteProductId);
+    const currentProduct = this.catalog.getProduct(context.quoteProductId);
 
     // Real live-test bug (screenshot, 2026-07-25): "salir" then "terminar", sent right
     // after a quote was shown, got the IDENTICAL quote card re-shown verbatim both times
@@ -1185,7 +1131,7 @@ export class AgentService {
       if (intent.petResolution === 'gato' || intent.petResolution === 'perro') {
         const species = intent.petResolution;
         const speciesProductId = species === 'gato' ? 'medicina-prepagada-gatos' : 'medicina-prepagada-perros';
-        const speciesProduct = PRODUCTS.find((p) => p.id === speciesProductId);
+        const speciesProduct = this.catalog.getProduct(speciesProductId);
         if (speciesProduct) {
           return {
             text: this.formatQuote(speciesProduct, { reasons: [], monthlyPremium: speciesProduct.basePremium }, context),
@@ -1281,7 +1227,7 @@ export class AgentService {
       const nextProduct = allScores.find((s) => !seen.includes(s.productId));
 
       if (nextProduct) {
-        const altProduct = PRODUCTS.find((p) => p.id === nextProduct.productId);
+        const altProduct = this.catalog.getProduct(nextProduct.productId);
         if (altProduct) {
           return {
             text: this.formatQuote(altProduct, nextProduct, context),
@@ -1467,7 +1413,7 @@ export class AgentService {
   private mentionsAlreadyCoveredTopic(text: string, context: ConversationContext): boolean {
     const productIds = context.selectedProductIds?.length ? context.selectedProductIds : (context.quoteProductId ? [context.quoteProductId] : []);
     const coverageText = productIds
-      .map((id) => PRODUCTS.find((p) => p.id === id))
+      .map((id) => this.catalog.getProduct(id))
       .filter((p): p is InsuranceProduct => !!p)
       .flatMap((p) => p.coverages)
       .join(' ')
@@ -1483,7 +1429,7 @@ export class AgentService {
   private isPetSelected(context: ConversationContext): boolean {
     if (context.productCategory === 'mascotas') return true;
     if (!context.selectedProductIds?.length) return false;
-    return context.selectedProductIds.some((id) => PRODUCTS.find((p) => p.id === id)?.category === 'mascotas');
+    return context.selectedProductIds.some((id) => this.catalog.getProduct(id)?.category === 'mascotas');
   }
 
   // Acknowledges interest in a different category without abandoning the quote already
@@ -1603,7 +1549,7 @@ export class AgentService {
     // toward "how many pets to collect" (petCountForProduct's own petCount fallback
     // would otherwise add a phantom pet for every non-pet product in the purchase).
     const products = productIds
-      .map((id) => PRODUCTS.find((p) => p.id === id))
+      .map((id) => this.catalog.getProduct(id))
       .filter((p): p is InsuranceProduct => !!p && p.category === 'mascotas');
     if (products.length === 0) return context.petCount ?? 1;
     const total = products.reduce((sum, p) => sum + (this.petCountForProduct(context, p) ?? 1), 0);
@@ -1639,7 +1585,7 @@ export class AgentService {
     const productIds = context.selectedProductIds?.length
       ? context.selectedProductIds
       : (context.quoteProductId ? [context.quoteProductId] : []);
-    return productIds.some((id) => PRODUCTS.find((p) => p.id === id)?.requiresUnderwriting);
+    return productIds.some((id) => this.catalog.getProduct(id)?.requiresUnderwriting);
   }
 
   // 2026-07-24 clarification: the generic "edad, enfermedad, historial clínico" question
@@ -2146,7 +2092,7 @@ export class AgentService {
       const productIds = newContext.selectedProductIds?.length
         ? newContext.selectedProductIds
         : (newContext.quoteProductId ? [newContext.quoteProductId] : []);
-      const hasResolvableProduct = productIds.some((id) => PRODUCTS.find((p) => p.id === id));
+      const hasResolvableProduct = productIds.some((id) => this.catalog.getProduct(id));
 
       const policyIds: string[] = [];
       for (const productId of productIds) {
@@ -2154,7 +2100,7 @@ export class AgentService {
         // their OWN per-species count (petCountForProduct), not the combined total —
         // otherwise both policies store/charge the wrong pet_count (real bug: 2 dogs + 1
         // cat both stored as petCount 3).
-        const product = PRODUCTS.find((p) => p.id === productId);
+        const product = this.catalog.getProduct(productId);
         const petCountOverride = product ? this.petCountForProduct(newContext, product) : newContext.petCount;
         const { policyId } = await this.policy.issue(convId, { ...newContext, quoteProductId: productId, petCount: petCountOverride });
         policyIds.push(policyId);
@@ -2237,7 +2183,7 @@ export class AgentService {
       ? context.selectedProductIds
       : (context.quoteProductId ? [context.quoteProductId] : []);
     const products = productIds
-      .map((id) => PRODUCTS.find((p) => p.id === id))
+      .map((id) => this.catalog.getProduct(id))
       .filter((p): p is InsuranceProduct => !!p);
 
     if (products.length === 0) {
@@ -2423,7 +2369,7 @@ export class AgentService {
     const reason = scored?.reasons[0] ?? 'se ajusta a lo que buscas';
     const others = (context.shownProductIds ?? [])
       .filter((id) => id !== product.id)
-      .map((id) => PRODUCTS.find((p) => p.id === id))
+      .map((id) => this.catalog.getProduct(id))
       .filter((p): p is InsuranceProduct => !!p);
     const othersLine = others.length
       ? `\n\nTambién te mostré ${others.map((p) => p.name).join(' y ')} — dime si prefieres que profundice en ese en vez.`
@@ -2446,7 +2392,7 @@ export class AgentService {
   // never fabricate a detail card for a product that no longer exists).
   private answerPolicyInquiry(context: ConversationContext): ProcessResult {
     const products = (context.purchasedProductIds ?? [])
-      .map((id) => PRODUCTS.find((p) => p.id === id))
+      .map((id) => this.catalog.getProduct(id))
       .filter((p): p is InsuranceProduct => !!p);
     if (products.length === 0) {
       return { text: STATE_RESPONSES[ConversationState.COMPLETED](context) };
@@ -2470,8 +2416,8 @@ export class AgentService {
   // single-product re-show priced against the raw cross-species petCount. Pure text
   // builder — never mutates context, since a re-show must not touch the purchase state.
   private formatMixedSpeciesQuote(context: ConversationContext): string {
-    const gatoProduct = PRODUCTS.find((p) => p.id === 'medicina-prepagada-gatos')!;
-    const perroProduct = PRODUCTS.find((p) => p.id === 'medicina-prepagada-perros')!;
+    const gatoProduct = this.catalog.getProduct('medicina-prepagada-gatos')!;
+    const perroProduct = this.catalog.getProduct('medicina-prepagada-perros')!;
     const gatoCount = this.petCountForProduct(context, gatoProduct) ?? 1;
     const perroCount = this.petCountForProduct(context, perroProduct) ?? 1;
     const gatoTotal = computeTotalPremium(gatoProduct, gatoCount);

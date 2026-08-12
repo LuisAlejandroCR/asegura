@@ -1,9 +1,10 @@
 // policy.service.ts: creates policy records; the final PDF is only generated after
 // payment is confirmed (see generateFinalPdf, called from wompi-webhook.controller.ts)
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.service';
 import { PdfService } from './pdf.service';
-import { PRODUCTS } from '../quoting/products.data';
+import { ProductCatalog } from '../quoting/product-catalog.service';
+import { IProductRepository } from '../quoting/types';
 import { computeTotalPremium } from '../quoting/pricing';
 import { ConversationContext } from '../agent/types';
 import { classifyPetsBySpecies } from '../agent/breed-matcher';
@@ -20,10 +21,14 @@ export class PolicyService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly pdf: PdfService,
+    // Default keeps every direct `new PolicyService(supabase, pdf)` in the spec file
+    // working unchanged — Nest's DI still injects the real shared singleton in production.
+    @Inject('IProductRepository')
+    private readonly catalog: IProductRepository = new ProductCatalog(),
   ) {}
 
   async issue(conversationId: string, context: ConversationContext): Promise<IssuedPolicy> {
-    const product = PRODUCTS.find((p) => p.id === context.quoteProductId);
+    const product = this.catalog.getProduct(context.quoteProductId ?? '');
     const monthlyPremium = product ? computeTotalPremium(product, context.petCount) : 0;
 
     // Real live-test bug: a mixed household (1 cat + 2 dogs) issues one policy per
@@ -106,7 +111,7 @@ export class PolicyService {
 
   // Generates the policy PDF after payment is confirmed — the only PDF the user receives.
   async generateFinalPdf(policy: Policy): Promise<Buffer | null> {
-    const product = PRODUCTS.find((p) => p.id === policy.product_id);
+    const product = this.catalog.getProduct(policy.product_id);
     if (!product) return null;
 
     try {

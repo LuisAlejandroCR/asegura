@@ -84,7 +84,7 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 | Pagos | Wompi — Payment Links (sandbox) |
 | Deploy | Railway (API) + Vercel (pitch web) |
 | Dashboard | Metabase |
-| Tests | 770+ (unit + fuzz + invariant) |
+| Tests | 912 (unit + fuzz + invariant) |
 
 ---
 
@@ -117,7 +117,9 @@ El PDF de cada póliza incluye un código QR que enlaza a su registro de auditor
 
 ## Privacidad
 
-La autorización de tratamiento de datos se solicita antes de consultar cualquier perfil (Ley 1581 de 2012). Sin autorización, el flujo no continúa. 
+La autorización de tratamiento de datos se solicita antes de consultar cualquier perfil (Ley 1581 de 2012). Sin autorización, el flujo no continúa.
+
+**Nota sobre `Usos_Productos_Afiliados_SIMULADO.csv`:** es un dataset **sintético** generado para el hackathon — no contiene datos reales de afiliados de Colsubsidio. Se usa únicamente para probar la personalización del agente (segmento familiar, rango salarial, etc.) con un volumen de datos realista.
 
 ---
 

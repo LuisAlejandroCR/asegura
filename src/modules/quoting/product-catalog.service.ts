@@ -6,9 +6,12 @@
 // public_price/requires_quote all set) become an InsuranceProduct; that alone excludes the
 // unmigrated ones (SOAT, vehicular) without hardcoding ids. Broken YAML or a real product
 // missing coverages never gets dropped silently — validate() below crashes the boot, since
-// shipping a smaller catalog is worse than not booting. products.data.ts is no longer read
-// here but stays: agent.service.ts/conversation-state.machine.ts/policy.service.ts still
-// import it, migrating those is later scope.
+// shipping a smaller catalog is worse than not booting.
+//
+// 2026-08-11 — agent.service.ts, conversation-state.machine.ts, and policy.service.ts all
+// migrated off products.data.ts onto this class (DI where they have a constructor,
+// module-level `new ProductCatalog()` where they don't). products.data.ts now exists only
+// as a fixture for specs that assert against a known fixed list — never a runtime source.
 import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';

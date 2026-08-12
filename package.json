@@ -7,9 +7,9 @@
     "dev": "node ./node_modules/@nestjs/cli/bin/nest.js start --watch",
     "start": "node dist/main",
     "start:prod": "node dist/main",
-    "test": "node ./node_modules/.bin/jest",
-    "test:watch": "node ./node_modules/.bin/jest --watch",
-    "test:cov": "node ./node_modules/.bin/jest --coverage"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
@@ -20,11 +20,9 @@
     "@supabase/supabase-js": "^2.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
-    "ethers": "^5.8.0",
     "grammy": "^1.45.1",
     "helmet": "^7.0.0",
     "js-yaml": "^4.1.0",
-    "ollama": "^0.6.3",
     "pdfkit": "^0.19.1",
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.1.13",

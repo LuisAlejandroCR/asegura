@@ -3,8 +3,14 @@
 // to what the context already knows (name, cédula, remembered profile).
 
 import { ConversationState, ConversationContext } from './types';
-import { PRODUCTS } from '../quoting/products.data';
+import { ProductCatalog } from '../quoting/product-catalog.service';
 import { hasRememberedProfile } from './persistent-context';
+
+// Reads the same YAML-backed catalog as QuotingService/AgentService/PolicyService — this
+// file has no DI constructor to inject IProductRepository into (STATE_RESPONSES is plain
+// module state, not a class), so it loads its own copy at import time instead. Never a
+// separate data source: same files on disk, same 11 products.
+const PRODUCTS = new ProductCatalog().getProducts();
 
 type TransitionMap = Partial<Record<ConversationState, ConversationState[]>>;
 
