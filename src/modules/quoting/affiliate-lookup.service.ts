@@ -121,9 +121,22 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
     let serieIdx = -1;
     let isHeader = true;
 
+    // split()/trim() return NEW strings per row: 500k rows held ~7.5M string objects for
+    // only 372 distinct values (every column but SERIE is categorical). Heap 277 → 134 MB.
+    // Matters because this runs pre-listen: running out kills the boot, not just the lookup.
+    const pool = new Map<string, string>();
+    const intern = (v: string): string => {
+      const hit = pool.get(v);
+      if (hit !== undefined) return hit;
+      pool.set(v, v);
+      return v;
+    };
+
     const col = (cols: string[], name: string): string | undefined => {
       const i = columnIndex[name];
-      return i !== undefined && i >= 0 ? cols[i]?.trim() : undefined;
+      if (i === undefined || i < 0) return undefined;
+      const raw = cols[i]?.trim();
+      return raw ? intern(raw) : raw;
     };
     const boolCol = (cols: string[], name: string): boolean | undefined => {
       const v = col(cols, name);

@@ -47,19 +47,16 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // AseguraWeb (apps/web) corre en otro dominio (Vercel), así que TODA llamada de
-  // texto.html/voz.html es cross-origin: si CORS_ORIGIN no lista ese origen exacto, el
-  // navegador bloquea la respuesta y la UI solo puede mostrar "No se pudo conectar" —
-  // sin nada en los logs del backend, porque la petición sí llegó y sí respondió.
-  // Dejar el origen configurado (y el de WEB_APP_URL) visible al arrancar convierte ese
-  // fallo mudo en una línea de log comparable de un vistazo.
-  logger.log(`CORS origins: ${corsOrigins.length ? corsOrigins.join(', ') : '(ninguno — se rechaza todo origen cruzado)'}`);
+  // AseguraWeb runs on another domain, so every call from texto.html/voz.html is
+  // cross-origin. A CORS mismatch leaves no backend trace — the request arrives and is
+  // answered, the browser just discards it — so log the configured origins at boot.
+  logger.log(`CORS origins: ${corsOrigins.length ? corsOrigins.join(', ') : '(none — every cross-origin request is rejected)'}`);
 
   const webAppUrl = config.get<string>('WEB_APP_URL', '');
   if (webAppUrl && !corsOrigins.includes(new URL(webAppUrl).origin)) {
     logger.warn(
-      `WEB_APP_URL (${webAppUrl}) no está en CORS_ORIGIN — texto.html y voz.html van a ` +
-        'fallar con "No se pudo conectar" al llamar /web-session y /voice/session.',
+      `WEB_APP_URL (${webAppUrl}) is not in CORS_ORIGIN — texto.html and voz.html will ` +
+        'fail on /web-session and /voice/session.',
     );
   }
 
@@ -92,11 +89,14 @@ async function bootstrap() {
   }
 
   const port = config.get<number>('PORT', 3000);
-  // 0.0.0.0 explícito: en un contenedor (Railway) el router externo entra por la IP del
-  // contenedor, no por loopback. Dejarlo al default hace que un bind a 127.0.0.1 se vea
-  // como "Application failed to respond" (502) con el proceso arriba y sin errores.
+  // Explicit 0.0.0.0: in a container the external router reaches the container IP, not
+  // loopback, and a 127.0.0.1 bind looks like a 502 with the process up and no errors.
   await app.listen(port, '0.0.0.0');
-  logger.log(`Asegura running on port ${port}`);
+  // Boot loads the 500k-row affiliate CSV before listening, so this is the real peak
+  // against the container limit. A kernel OOM is SIGKILL — nothing to catch or log —
+  // so printing the headroom every boot is the only way to see it coming.
+  const rssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+  logger.log(`Asegura running on port ${port} (rss ${rssMb} MB)`);
 }
 
 bootstrap().catch((err) => {
@@ -104,5 +104,13 @@ bootstrap().catch((err) => {
   // discovered deep in setup) becomes an unhandled promise rejection — silent on some
   // Node versions, fatal-but-uninformative on others. Log clearly and exit intentionally.
   new Logger('Bootstrap').error(`Fatal error during startup: ${err}`);
-  process.exit(1);
+  if (err instanceof Error && err.stack) {
+    new Logger('Bootstrap').error(err.stack);
+  }
+
+  // process.exit() drops pending writes, and in a container stdout is a pipe (async), so
+  // the line above was discarded 1 time out of 1 — the error handler ate its own message.
+  // exitCode lets the loop drain; the unref'd timer only fires if something else hangs it.
+  process.exitCode = 1;
+  setTimeout(() => process.exit(1), 2000).unref();
 });

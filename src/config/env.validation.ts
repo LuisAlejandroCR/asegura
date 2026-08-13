@@ -2,6 +2,7 @@
 import { plainToInstance } from 'class-transformer';
 import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, validateSync } from 'class-validator';
 import { Logger } from '@nestjs/common';
+import * as fs from 'fs';
 
 enum Environment {
   Development = 'development',
@@ -197,7 +198,17 @@ export function validate(config: Record<string, unknown>) {
   const groupErrors = crossFieldErrors(validated);
 
   if (errors.length > 0 || groupErrors.length > 0) {
-    Logger.error(`Config validation failed:\n${[...errors.map(String), ...groupErrors].join('\n')}`);
+    const detail = [...errors.map(String), ...groupErrors].join('\n');
+    Logger.error(`Config validation failed:\n${detail}`);
+
+    // Logger.error writes to stdout — a pipe in a container, so async — and the exit below
+    // drops it, losing the reason exactly when it is all that matters. writeSync(2) is
+    // unbuffered and always lands. Duplicated on purpose: twice beats not at all.
+    try {
+      fs.writeSync(2, `Config validation failed:\n${detail}\n`);
+    } catch {
+      // fd 2 closed or redirected: nothing better to do, the exit stands.
+    }
     process.exit(1);
   }
   return validated;
