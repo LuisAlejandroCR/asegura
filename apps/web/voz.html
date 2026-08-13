@@ -443,9 +443,8 @@
 <script type="module">
 import { Room, RoomEvent } from 'livekit-client';
 import { renderProgress, injectProgressStyles } from './progress-bar.js';
-// Backend NestJS, no este sitio estático — mismo origen solo en local si se corren juntos.
-// api-base.js normaliza VITE_API_URL (le pone https:// si falta, quita la barra final);
-// sin la env var cae a same-origin, que en Vercel es un 404 garantizado.
+// api-base.js normalizes VITE_API_URL (adds https:// when missing, strips trailing slash);
+// without the env var it falls back to same-origin, which on Vercel is a guaranteed 404.
 import { apiFetch } from './api-base.js';
 
 // Enlazado desde el chat (plan 17 §11) — identifica esta sesión de voz con la

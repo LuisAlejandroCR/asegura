@@ -121,15 +121,9 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
     let serieIdx = -1;
     let isHeader = true;
 
-    // split() y trim() devuelven strings NUEVOS por fila: sin este pool, las 500k filas
-    // del CSV real quedaban con ~7.5M objetos string en el heap para representar apenas
-    // 372 valores distintos (todas las columnas salvo SERIE son categóricas — GENERO: 2,
-    // CATEGORIA: 4, CIUDAD_AFILIADO: 232…). Medido sobre el CSV del repo: 277 MB → 129 MB
-    // de heap. Importa porque este parse corre en onApplicationBootstrap, ANTES de que
-    // Nest ligue el puerto: quedarse sin heap acá no degrada la búsqueda de afiliados,
-    // mata el proceso antes de que escuche, que en Railway se ve como
-    // 502 "Application failed to respond" sin más rastro.
-    // Reusar la instancia no cambia el valor: siguen siendo === al string original.
+    // split()/trim() return NEW strings per row: 500k rows held ~7.5M string objects for
+    // only 372 distinct values (every column but SERIE is categorical). Heap 277 → 134 MB.
+    // Matters because this runs pre-listen: running out kills the boot, not just the lookup.
     const pool = new Map<string, string>();
     const intern = (v: string): string => {
       const hit = pool.get(v);

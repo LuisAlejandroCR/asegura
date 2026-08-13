@@ -201,16 +201,13 @@ export function validate(config: Record<string, unknown>) {
     const detail = [...errors.map(String), ...groupErrors].join('\n');
     Logger.error(`Config validation failed:\n${detail}`);
 
-    // Logger.error escribe en stdout, que en un contenedor es un pipe → write asíncrono.
-    // process.exit() no vacía lo pendiente, así que el motivo del fallo podía perderse
-    // justo cuando es lo único que importa: el deploy moría y en los logs de Railway no
-    // quedaba nada después de "Starting Container". writeSync(2) va directo al fd de
-    // stderr, sin buffer, así que este mensaje llega siempre — incluso si el exit gana la
-    // carrera. Duplicado a propósito: mejor la línea dos veces que ninguna.
+    // Logger.error writes to stdout — a pipe in a container, so async — and the exit below
+    // drops it, losing the reason exactly when it is all that matters. writeSync(2) is
+    // unbuffered and always lands. Duplicated on purpose: twice beats not at all.
     try {
       fs.writeSync(2, `Config validation failed:\n${detail}\n`);
     } catch {
-      // fd 2 cerrado/redirigido: no hay nada mejor que hacer, el exit sigue igual.
+      // fd 2 closed or redirected: nothing better to do, the exit stands.
     }
     process.exit(1);
   }

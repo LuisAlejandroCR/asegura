@@ -18,9 +18,8 @@ function baseConfig(overrides: Record<string, unknown> = {}) {
 function withMockedExit() {
   const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
   const errorSpy = jest.spyOn(require('@nestjs/common').Logger, 'error').mockImplementation(() => undefined);
-  // validate() repite el motivo del fallo con fs.writeSync(2, …) — escritura síncrona que
-  // sobrevive al process.exit() en producción (ver env.validation.ts). Acá solo se silencia
-  // para que las 8 pruebas de config inválida no ensucien la salida del suite.
+  // validate() repeats the reason via fs.writeSync(2, …) to survive process.exit();
+  // silenced here so the invalid-config cases do not pollute the suite output.
   const writeSyncSpy = jest.spyOn(require('fs'), 'writeSync').mockImplementation(() => 0);
   return {
     exitSpy,
