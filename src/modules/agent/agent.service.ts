@@ -31,12 +31,28 @@ import { matchBreed } from './breed-matcher';
 // serialized instead of pushed through an IChannelAdapter. `quote` matches
 // src/voice-agent/cotizar-tool.ts's CotizarResult shape on purpose — same product/price/
 // reason data, same source (QuotingService), whether the session is voice or text.
+// Split unit price from count so the UI never has to guess whether a number is per-pet
+// or already multiplied — the ambiguity behind the understated card.
+export interface WebQuoteLine {
+  producto: string;
+  aseguradora: string;
+  precioUnitario: number;
+  cantidad: number;
+  subtotal: number;
+  coberturas: string[];
+  razon: string;
+}
+
 export interface WebReply {
   texts: string[];
   state: ConversationState;
   progress: { step: number; totalSteps: number; label: string };
   choices?: string[];
   quote?: { producto: string; aseguradora: string; precioMensual: number; coberturas: string[]; razon: string };
+  // A mixed-species household is TWO products, and `quote` can only hold one — the card
+  // showed the cat price as the whole premium. Every line, each priced by its own count.
+  quotes?: WebQuoteLine[];
+  totalMensual?: number;
   document?: { filename: string; downloadUrl: string };
   checkoutUrl?: string;
   expectedInput: 'text' | 'selfie';
@@ -391,17 +407,45 @@ export class AgentService {
     // Same shape/source as src/voice-agent/cotizar-tool.ts's CotizarResult — the resumen
     // sheet reads structured data, never the markdown-formatted `.text` meant for chat.
     if (finalState === ConversationState.QUOTE_PRESENTED && finalContext.quoteProductId) {
-      const product = this.catalog.getProduct(finalContext.quoteProductId);
-      if (product) {
-        const allScores = this.quoting.score(finalContext as AffiliateSignals);
-        const score = allScores.find((s) => s.productId === product.id);
-        reply.quote = {
-          producto: product.name,
-          aseguradora: product.insurer,
-          precioMensual: score?.monthlyPremium ?? computeTotalPremium(product, finalContext.petCount),
-          coberturas: product.coverages.slice(0, 3),
-          razon: score?.reasons?.[0] ?? '',
-        };
+      // selectedProductIds holds every product of a multi-product quote (mixed-species
+      // households); it's absent for an ordinary single-product one.
+      const quotedIds = finalContext.selectedProductIds?.length
+        ? finalContext.selectedProductIds
+        : [finalContext.quoteProductId];
+      const allScores = this.quoting.score(finalContext as AffiliateSignals);
+
+      const lines = quotedIds
+        .map((id) => this.catalog.getProduct(id))
+        .filter((p): p is InsuranceProduct => !!p)
+        .map((product) => {
+          // Same per-species count the chat text prices with — never the combined total.
+          const cantidad = this.petCountForProduct(finalContext, product) ?? 1;
+          return {
+            producto: product.name,
+            aseguradora: product.insurer,
+            precioUnitario: product.basePremium,
+            cantidad,
+            subtotal: computeTotalPremium(product, cantidad),
+            coberturas: product.coverages.slice(0, 3),
+            razon: allScores.find((s) => s.productId === product.id)?.reasons?.[0] ?? '',
+          };
+        });
+
+      if (lines.length) {
+        reply.quotes = lines;
+        reply.totalMensual = lines.reduce((sum, l) => sum + l.subtotal, 0);
+
+        const first = this.catalog.getProduct(finalContext.quoteProductId);
+        if (first) {
+          const score = allScores.find((s) => s.productId === first.id);
+          reply.quote = {
+            producto: first.name,
+            aseguradora: first.insurer,
+            precioMensual: score?.monthlyPremium ?? computeTotalPremium(first, finalContext.petCount),
+            coberturas: first.coverages.slice(0, 3),
+            razon: score?.reasons?.[0] ?? '',
+          };
+        }
       }
     }
 

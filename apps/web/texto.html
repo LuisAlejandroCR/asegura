@@ -162,6 +162,23 @@
   .tarjeta-cotizacion .precio dd{font-size:22px;font-weight:800;color:var(--negro);letter-spacing:-.02em}
   .tarjeta-cotizacion .precio dd span{font-size:13px;font-weight:600;color:var(--gris)}
 
+  /* Un hogar mixto son VARIOS productos. El subtotal por línea va atenuado para que el
+     total de abajo siga siendo el número grande — antes la tarjeta mostraba el precio del
+     primer producto como si fuera la prima completa. */
+  .tarjeta-cotizacion .precio.subtotal{border-top:none;padding-top:4px}
+  .tarjeta-cotizacion .precio.subtotal dt{font-size:12.5px;opacity:.8}
+  .tarjeta-cotizacion .precio.subtotal dd{font-size:16px;font-weight:700;color:var(--gris)}
+  .tarjeta-cotizacion .precio.subtotal dd span{font-size:12px}
+
+  .tarjeta-cotizacion .linea-detalle{
+    font-size:12.5px;color:var(--gris);opacity:.85;margin-bottom:2px;
+    font-variant-numeric:tabular-nums;
+  }
+
+  .tarjeta-cotizacion .separador{
+    border:none;border-top:1px dashed var(--gris-claro);margin:16px 0 14px;
+  }
+
   /* ── Botón de pagar (aparece como burbuja especial) ──────── */
   .btn-pagar{
     align-self:stretch;
@@ -463,17 +480,27 @@ function hideTyping() {
   if (escribiendoEl) { escribiendoEl.remove(); escribiendoEl = null; }
 }
 
-function addQuoteCard(quote) {
+// Recibe TODAS las líneas de la cotización (un hogar con gato y perros son dos productos)
+// y el total real. Con una sola línea se ve igual que siempre.
+function addQuoteCard(quotes, total) {
   const card = document.createElement('div');
   card.className = 'tarjeta-cotizacion';
-  card.innerHTML = `
-    <h2>${escapeHtml(quote.producto)}</h2>
-    <p class="aseguradora">${escapeHtml(quote.aseguradora)}</p>
-    ${quote.razon ? `<p class="razon">${escapeHtml(quote.razon)}</p>` : ''}
-    <ul>${(quote.coberturas ?? []).map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
+  const multi = quotes.length > 1;
+
+  const bloques = quotes.map((q, i) => `
+    ${i ? '<hr class="separador">' : ''}
+    <h2>${escapeHtml(q.producto)}</h2>
+    <p class="aseguradora">${escapeHtml(q.aseguradora)}</p>
+    ${q.razon ? `<p class="razon">${escapeHtml(q.razon)}</p>` : ''}
+    <ul>${(q.coberturas ?? []).map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
+    ${q.cantidad > 1 ? `<p class="linea-detalle">${pesos(q.precioUnitario)} × ${q.cantidad} mascotas</p>` : ''}
+    ${multi ? `<dl class="precio subtotal"><dt>Subtotal</dt><dd>${pesos(q.subtotal)}<span> /mes</span></dd></dl>` : ''}
+  `).join('');
+
+  card.innerHTML = `${bloques}
     <dl class="precio">
-      <dt>Tu prima mensual</dt>
-      <dd>${pesos(quote.precioMensual)}<span> /mes</span></dd>
+      <dt>${multi ? 'Total para tu familia' : 'Tu prima mensual'}</dt>
+      <dd>${pesos(total)}<span> /mes</span></dd>
     </dl>
   `;
   chat.appendChild(card);
@@ -603,7 +630,14 @@ function startCountdown(url) {
 // ── Aplica una WebReply completa a la pantalla ─────────────────────────────
 function applyReply(reply) {
   for (const t of reply.texts ?? []) addBubble('agent', t);
-  if (reply.quote) addQuoteCard(reply.quote);
+  // `quote` (singular) sigue existiendo por paridad con la herramienta de voz; si el
+  // backend es viejo y solo manda ese, se arma una línea equivalente.
+  if (reply.quotes?.length) {
+    addQuoteCard(reply.quotes, reply.totalMensual);
+  } else if (reply.quote) {
+    const q = reply.quote;
+    addQuoteCard([{ ...q, precioUnitario: q.precioMensual, cantidad: 1, subtotal: q.precioMensual }], q.precioMensual);
+  }
   if (reply.checkoutUrl) addPayButton(reply.checkoutUrl);
   renderProgress(progressEl, reply.progress);
   renderChips(reply.choices);
