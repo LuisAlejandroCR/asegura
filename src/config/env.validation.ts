@@ -2,6 +2,7 @@
 import { plainToInstance } from 'class-transformer';
 import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, validateSync } from 'class-validator';
 import { Logger } from '@nestjs/common';
+import * as fs from 'fs';
 
 enum Environment {
   Development = 'development',
@@ -197,7 +198,20 @@ export function validate(config: Record<string, unknown>) {
   const groupErrors = crossFieldErrors(validated);
 
   if (errors.length > 0 || groupErrors.length > 0) {
-    Logger.error(`Config validation failed:\n${[...errors.map(String), ...groupErrors].join('\n')}`);
+    const detail = [...errors.map(String), ...groupErrors].join('\n');
+    Logger.error(`Config validation failed:\n${detail}`);
+
+    // Logger.error escribe en stdout, que en un contenedor es un pipe → write asíncrono.
+    // process.exit() no vacía lo pendiente, así que el motivo del fallo podía perderse
+    // justo cuando es lo único que importa: el deploy moría y en los logs de Railway no
+    // quedaba nada después de "Starting Container". writeSync(2) va directo al fd de
+    // stderr, sin buffer, así que este mensaje llega siempre — incluso si el exit gana la
+    // carrera. Duplicado a propósito: mejor la línea dos veces que ninguna.
+    try {
+      fs.writeSync(2, `Config validation failed:\n${detail}\n`);
+    } catch {
+      // fd 2 cerrado/redirigido: no hay nada mejor que hacer, el exit sigue igual.
+    }
     process.exit(1);
   }
   return validated;

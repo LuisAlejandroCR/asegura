@@ -96,7 +96,13 @@ async function bootstrap() {
   // contenedor, no por loopback. Dejarlo al default hace que un bind a 127.0.0.1 se vea
   // como "Application failed to respond" (502) con el proceso arriba y sin errores.
   await app.listen(port, '0.0.0.0');
-  logger.log(`Asegura running on port ${port}`);
+  // RSS al ligar el puerto: el arranque carga el CSV de afiliados (500k filas) ANTES de
+  // escuchar, así que este número es el pico real contra el límite del contenedor. Un
+  // OOM del kernel es un SIGKILL: no hay excepción que atrapar ni línea que loguear, el
+  // proceso simplemente desaparece. Tener el margen impreso en cada arranque es la única
+  // forma de ver que se está acercando antes de que pase.
+  const rssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+  logger.log(`Asegura running on port ${port} (rss ${rssMb} MB)`);
 }
 
 bootstrap().catch((err) => {
@@ -104,5 +110,21 @@ bootstrap().catch((err) => {
   // discovered deep in setup) becomes an unhandled promise rejection — silent on some
   // Node versions, fatal-but-uninformative on others. Log clearly and exit intentionally.
   new Logger('Bootstrap').error(`Fatal error during startup: ${err}`);
-  process.exit(1);
+  if (err instanceof Error && err.stack) {
+    new Logger('Bootstrap').error(err.stack);
+  }
+
+  // process.exit() NO vacía la escritura pendiente: cuando stdout es un pipe (siempre, en
+  // un contenedor) los write son asíncronos, así que el exit inmediato descartaba el
+  // mensaje de arriba. Efecto real en Railway: el deploy moría y en los logs no aparecía
+  // NADA después de "Starting Container" — el propio handler de errores se comía la única
+  // pista de por qué. Verificado: con process.exit(1) el "Fatal error during startup"
+  // salía 0 de 1 veces.
+  //
+  // exitCode + salida natural deja que el event loop drene el buffer antes de terminar.
+  // El timer unref'd no mantiene vivo el proceso (si no queda nada pendiente, Node sale
+  // solo y nunca dispara); solo actúa si algo más dejó el loop colgado, para que un
+  // arranque fallido no se quede colgado para siempre.
+  process.exitCode = 1;
+  setTimeout(() => process.exit(1), 2000).unref();
 });
