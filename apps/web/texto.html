@@ -506,7 +506,11 @@ function setExpectedInput(kind) {
   filaSelfie.hidden = !isSelfie;
 }
 
-function showError() {
+// Sin argumentos = el link en sí no sirve (401). Con argumentos = otra cosa falló y el
+// texto por defecto mentiría: mandar a pedir un link nuevo no arregla un backend caído.
+function showError(titulo, texto) {
+  if (titulo) errorScreen.querySelector('h2').textContent = titulo;
+  if (texto) errorScreen.querySelector('p').textContent = texto;
   errorScreen.classList.add('activo');
   chat.style.display = 'none';
   chipsEl.style.display = 'none';
@@ -706,8 +710,14 @@ selfieInput.addEventListener('change', () => {
     for (const m of snapshot.transcript ?? []) addBubble(m.role, m.text);
     textoEl.focus();
   } catch (err) {
+    // Llegar acá NO significa link inválido — el 401 ya se manejó arriba. Esto es el
+    // backend caído o CORS, y decir "pide un link nuevo" manda al usuario a un bucle:
+    // el link nuevo falla igual.
     console.error('No se pudo cargar la sesión:', err);
-    showError();
+    showError(
+      'No pudimos conectarnos',
+      'Tu enlace sigue siendo válido. Revisa tu conexión y vuelve a abrir esta página en un momento.',
+    );
   }
 })();
 </script>

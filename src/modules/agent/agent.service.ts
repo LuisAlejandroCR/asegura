@@ -1268,7 +1268,10 @@ export class AgentService {
           // Channel-neutral wording: Telegram users see a real button (requestContact
           // below still renders it there); WhatsApp/web users just continue and the
           // NEXT message verifies them transparently, no button needed.
-          text: 'Antes de continuar, confirmemos que eres tú — toca el botón para compartir tu número (o simplemente escribe algo, si no lo ves) 👇',
+          // 2026-08-13 (driven end-to-end on AseguraWeb): leading with "toca el botón"
+          // still read as broken on the 2 of 3 channels where no button renders, and the
+          // 👇 pointed at nothing. Now the universally-true action comes first.
+          text: 'Antes de continuar, confirmemos que eres tú: escríbeme cualquier cosa y lo verifico al instante. Si ves un botón para compartir tu número, también sirve.',
           nextState: ConversationState.DATA_CAPTURE,
           context: { ...context, awaitingPhoneVerification: true },
           requestContact: true,
