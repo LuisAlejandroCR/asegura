@@ -19,6 +19,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    open: true,
+    // Headless (container, WSL, SSH) has no xdg-open, so `open: true` threw ENOENT on
+    // every run. Keeps auto-open on desktops, where DISPLAY is set.
+    open: process.platform !== 'linux' || !!process.env.DISPLAY,
   },
 });
