@@ -28,10 +28,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         ? exception.message
         : 'Internal server error';
 
-    this.logger.error(
-      `${request.method} ${request.url} → ${status}: ${message}`,
-      exception instanceof Error ? exception.stack : undefined,
-    );
+    const line = `${request.method} ${request.url} → ${status}: ${message}`;
+
+    // A 4xx is the caller's mistake (bad URL, bad payload), not a server fault — logging it
+    // as ERROR with an Express stack buries real 5xx incidents in noise.
+    if (status >= 400 && status < 500) {
+      this.logger.warn(line);
+    } else {
+      this.logger.error(line, exception instanceof Error ? exception.stack : undefined);
+    }
 
     response.status(status).json({
       statusCode: status,
