@@ -1,38 +1,103 @@
-// progress-bar.js: shared persistent progress indicator for AseguraWeb (texto.html and
-// voz.html) — plan-17 §15 picked this over pop-ups as the highest-value "not just text"
-// element to build first: it's ALWAYS visible (not a one-off moment) and directly attacks
-// abandono by answering "¿cuánto falta?", the single biggest source of drop-off in long
-// forms. Renders from the SAME {step, totalSteps, label} shape progressFor() (backend,
-// conversation-state.machine.ts) returns — never invents its own stage list.
+// progress-bar.js: shared quest rail for AseguraWeb (texto.html and voz.html) — plan-17 §15
+// picked a persistent progress indicator over pop-ups because it's ALWAYS visible and
+// directly attacks abandono by answering "¿cuánto falta?". 2026-08-13: the thin bar read as
+// a form's completion meter, so it became a rail of numbered stage nodes — the same shape a
+// game uses for level select. Same data, same exports: renders from the {step, totalSteps,
+// label} that progressFor() (backend, conversation-state.machine.ts) returns, and never
+// invents its own stage list.
+
+const sinMovimiento = () =>
+  window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+
+// Short haptic tick. Shared so both pages feel the same; silently absent on desktop.
+export function tick(patron = 12) {
+  if (sinMovimiento()) return;
+  try { navigator.vibrate?.(patron); } catch { /* unsupported: no-op */ }
+}
+
 export function renderProgress(el, { step, totalSteps, label }) {
-  const pct = totalSteps > 0 ? Math.round((step / totalSteps) * 100) : 0;
+  const total = Math.max(totalSteps, 1);
+  const actual = Math.min(Math.max(step, 1), total);
+  // Fill runs node-center to node-center, so stage 1 is 0% and the last stage is 100% —
+  // step/total would leave the final node visually unfinished at "¡Listo!".
+  const pct = total > 1 ? ((actual - 1) / (total - 1)) * 100 : 100;
+
+  const previo = Number(el.dataset.step || 0);
+  const avanzo = previo > 0 && actual > previo;
 
   el.setAttribute('role', 'progressbar');
-  el.setAttribute('aria-valuenow', String(step));
-  el.setAttribute('aria-valuemin', '0');
-  el.setAttribute('aria-valuemax', String(totalSteps));
-  el.setAttribute('aria-valuetext', `${label} — paso ${step} de ${totalSteps}`);
+  el.setAttribute('aria-valuenow', String(actual));
+  el.setAttribute('aria-valuemin', '1');
+  el.setAttribute('aria-valuemax', String(total));
+  el.setAttribute('aria-valuetext', `${label} — etapa ${actual} de ${total}`);
+
+  const nodos = Array.from({ length: total }, (_, i) => {
+    const n = i + 1;
+    const estado = n < actual ? 'hecho' : n === actual ? 'actual' : 'pendiente';
+    const marca = n < actual
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>'
+      : String(n);
+    return `<li class="ap-nodo ${estado}${avanzo && n === actual ? ' ap-subio' : ''}">${marca}</li>`;
+  }).join('');
 
   el.innerHTML = `
-    <div class="ap-track">
-      <div class="ap-fill" style="width:${pct}%"></div>
+    <div class="ap-rail">
+      <div class="ap-track"><div class="ap-fill" style="width:${pct}%"></div></div>
+      <ol class="ap-nodos">${nodos}</ol>
     </div>
-    <div class="ap-label">${label} · ${step}/${totalSteps}</div>
+    <p class="ap-label"><b>Etapa ${actual} de ${total}</b> · ${label}</p>
   `;
+
+  el.dataset.step = String(actual);
+  if (avanzo) tick([10, 40, 18]);
+  return avanzo;
 }
 
 // Injected once per page — kept here instead of duplicated in both HTML files' <style>
-// blocks. Uses the same --amarillo/--azul tokens voz.html's :root already defines.
+// blocks. Uses the same --amarillo/--azul tokens both pages' :root already defines.
 export function injectProgressStyles() {
   if (document.getElementById('ap-progress-styles')) return;
   const style = document.createElement('style');
   style.id = 'ap-progress-styles';
   style.textContent = `
-    .ap-progress{width:100%;max-width:460px;margin:0 auto;padding:4px 4px 0}
-    .ap-track{height:6px;border-radius:3px;background:var(--gris-claro,#f2f2f2);overflow:hidden}
-    .ap-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--amarillo,#ffd000),var(--azul,#0067b1));transition:width .45s cubic-bezier(.32,.72,0,1)}
-    .ap-label{margin-top:5px;font-size:11.5px;font-weight:600;color:var(--gris,#575756);text-align:center;letter-spacing:.01em;font-variant-numeric:tabular-nums}
-    @media (prefers-reduced-motion:reduce){.ap-fill{transition:none}}
+    .ap-progress{width:100%;max-width:420px;margin:0 auto;padding:8px 6px 0}
+    .ap-rail{position:relative;height:24px}
+    .ap-track{position:absolute;left:11px;right:11px;top:50%;height:4px;margin-top:-2px;
+      border-radius:2px;background:var(--gris-claro,#f2f2f2);overflow:hidden}
+    .ap-fill{height:100%;border-radius:2px;
+      background:linear-gradient(90deg,var(--amarillo,#ffd000),var(--azul,#0067b1));
+      transition:width .55s cubic-bezier(.32,.72,0,1)}
+    .ap-nodos{position:relative;display:flex;justify-content:space-between;
+      align-items:center;height:100%;list-style:none;margin:0;padding:0}
+    .ap-nodo{display:flex;align-items:center;justify-content:center;
+      width:22px;height:22px;border-radius:50%;flex:none;
+      font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;
+      background:var(--blanco,#fff);border:2px solid var(--gris-claro,#f2f2f2);
+      color:var(--gris,#575756);transition:transform .3s cubic-bezier(.2,.9,.3,1.4),
+      background .3s ease,border-color .3s ease,color .3s ease}
+    .ap-nodo svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:4;
+      stroke-linecap:round;stroke-linejoin:round}
+    .ap-nodo.hecho{background:var(--amarillo,#ffd000);border-color:var(--amarillo,#ffd000);
+      color:var(--negro,#000)}
+    .ap-nodo.actual{background:var(--azul,#0067b1);border-color:var(--azul,#0067b1);
+      color:var(--blanco,#fff);transform:scale(1.18);
+      box-shadow:0 0 0 4px rgba(0,103,177,.16)}
+    /* Latido del nodo activo: la única animación que corre siempre. Dice "es tu turno". */
+    .ap-nodo.actual::after{content:"";position:absolute;width:22px;height:22px;
+      border-radius:50%;border:2px solid var(--azul,#0067b1);
+      animation:ap-latido 2.2s ease-out infinite}
+    @keyframes ap-latido{0%{opacity:.55;transform:scale(1)}70%,100%{opacity:0;transform:scale(2)}}
+    .ap-nodo.ap-subio{animation:ap-pop .5s cubic-bezier(.2,.9,.3,1.5)}
+    @keyframes ap-pop{0%{transform:scale(1)}45%{transform:scale(1.75)}100%{transform:scale(1.18)}}
+    .ap-label{margin-top:7px;font-size:11.5px;font-weight:600;color:var(--gris,#575756);
+      text-align:center;letter-spacing:.01em}
+    .ap-label b{color:var(--azul,#0067b1);font-weight:800}
+    @media (prefers-reduced-motion:reduce){
+      .ap-fill{transition:none}
+      .ap-nodo{transition:none}
+      .ap-nodo.actual::after{animation:none;opacity:0}
+      .ap-nodo.ap-subio{animation:none}
+    }
   `;
   document.head.appendChild(style);
 }

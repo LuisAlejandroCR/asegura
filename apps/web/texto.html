@@ -3,17 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
 <title>Asegura — Escríbenos</title>
 <style>
   /* Paleta oficial — idéntica a voz.html y pdf.service.ts */
   :root{
     --amarillo:#ffd000;
+    --amarillo-hondo:#e6b800;
     --azul:#0067b1;
+    --azul-hondo:#004b80;
     --gris:#575756;
     --gris-claro:#f2f2f2;
     --negro:#000;
     --blanco:#fff;
     --fondo:#fafafa;
+    --sombra-carta:0 6px 26px rgba(0,40,70,.10),0 1px 3px rgba(0,40,70,.06);
   }
 
   *{box-sizing:border-box;margin:0;padding:0}
@@ -28,183 +32,288 @@
     height:100dvh;
     -webkit-font-smoothing:antialiased;
     overflow:hidden;
+    position:relative;
   }
 
-  /* ── Encabezado + barra de progreso ──────────────────────── */
+  /* ── Fondo ambiental ───────────────────────────────────────
+     Dos manchas de marca a muy baja opacidad, derivando lento. Lo que separa una pantalla
+     de juego de un formulario no es el color: es que la pantalla esté VIVA aunque nadie
+     toque nada. Se apaga entero con prefers-reduced-motion. */
+  #fondo{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+  #fondo i{
+    position:absolute;display:block;border-radius:50%;filter:blur(60px);opacity:.5;
+  }
+  #fondo i:nth-child(1){
+    width:60vmax;height:60vmax;left:-22vmax;top:-26vmax;
+    background:radial-gradient(circle,rgba(255,208,0,.30),transparent 68%);
+    animation:derivaA 26s ease-in-out infinite alternate;
+  }
+  #fondo i:nth-child(2){
+    width:54vmax;height:54vmax;right:-24vmax;bottom:-24vmax;
+    background:radial-gradient(circle,rgba(0,103,177,.24),transparent 68%);
+    animation:derivaB 32s ease-in-out infinite alternate;
+  }
+  @keyframes derivaA{from{transform:translate(0,0) scale(1)}to{transform:translate(9vmax,7vmax) scale(1.14)}}
+  @keyframes derivaB{from{transform:translate(0,0) scale(1)}to{transform:translate(-8vmax,-6vmax) scale(1.1)}}
+
+  header,main,#chips,footer,#errorScreen,#postCheckout{position:relative;z-index:1}
+
+  /* ── Encabezado + rail de etapas ──────────────────────────── */
   header{
-    text-align:center;
-    padding:max(14px,env(safe-area-inset-top)) 16px 10px;
+    padding:max(12px,env(safe-area-inset-top)) 16px 10px;
     flex:none;
-    background:var(--blanco);
+    background:rgba(255,255,255,.86);
+    backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);
     border-bottom:1px solid var(--gris-claro);
   }
 
-  h1{
-    font-size:20px;
-    font-weight:700;
-    color:var(--azul);
-    letter-spacing:-.02em;
-  }
+  .marca{display:flex;align-items:center;justify-content:center;gap:8px}
 
-  .sub{font-size:12.5px;color:var(--gris);opacity:.75;margin-top:2px}
+  .escudo{
+    width:26px;height:26px;flex:none;border-radius:8px;
+    background:linear-gradient(145deg,var(--azul),var(--azul-hondo));
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 2px 8px rgba(0,103,177,.34);
+  }
+  .escudo svg{width:14px;height:14px;fill:none;stroke:var(--amarillo);stroke-width:2.4;
+    stroke-linecap:round;stroke-linejoin:round}
+
+  h1{font-size:19px;font-weight:800;color:var(--azul);letter-spacing:-.025em;line-height:1}
+  .sub{font-size:11.5px;color:var(--gris);opacity:.72;text-align:center;margin-top:3px}
+
+  /* ── Aviso de etapa superada ───────────────────────────────
+     El único "premio" del recorrido. Se dispara solo cuando el backend confirma que la
+     etapa avanzó de verdad — nunca por optimismo del frontend. */
+  #avisoEtapa{
+    position:fixed;top:0;left:50%;z-index:40;
+    transform:translate(-50%,-120%);
+    display:flex;align-items:center;gap:7px;
+    margin-top:max(10px,env(safe-area-inset-top));
+    padding:8px 15px;border-radius:999px;
+    background:var(--negro);color:var(--blanco);
+    font-size:12.5px;font-weight:700;letter-spacing:.01em;
+    box-shadow:0 8px 26px rgba(0,0,0,.28);
+    pointer-events:none;
+  }
+  #avisoEtapa.visible{animation:asomar 2.2s cubic-bezier(.2,.9,.3,1.2) both}
+  #avisoEtapa b{color:var(--amarillo)}
+  @keyframes asomar{
+    0%{transform:translate(-50%,-120%)}
+    12%,72%{transform:translate(-50%,0)}
+    100%{transform:translate(-50%,-120%)}
+  }
 
   /* ── Transcripción ────────────────────────────────────────── */
   main{
     flex:1;
     overflow-y:auto;
-    padding:16px 14px 8px;
+    padding:16px 14px 10px;
     display:flex;
     flex-direction:column;
-    gap:10px;
+    gap:9px;
     max-width:560px;
     width:100%;
     margin:0 auto;
     -webkit-overflow-scrolling:touch;
   }
 
+  .fila{display:flex;align-items:flex-end;gap:7px;max-width:100%}
+  .fila-usuario{justify-content:flex-end}
+
+  /* Avatar del agente: presencia constante. Se oculta (sin perder el sangrado) en mensajes
+     consecutivos del mismo emisor — el patrón de cualquier app de chat. */
+  .avatar{
+    width:26px;height:26px;flex:none;border-radius:9px;
+    background:linear-gradient(145deg,var(--azul),var(--azul-hondo));
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 2px 7px rgba(0,103,177,.3);
+  }
+  .avatar svg{width:13px;height:13px;fill:none;stroke:var(--amarillo);stroke-width:2.5;
+    stroke-linecap:round;stroke-linejoin:round}
+  .avatar.oculto{visibility:hidden}
+
   .burbuja{
-    max-width:82%;
+    max-width:calc(100% - 34px);
     padding:11px 14px;
-    border-radius:16px;
+    border-radius:17px;
     font-size:14.5px;
     line-height:1.48;
     white-space:pre-wrap;
-    animation:aparecer .32s cubic-bezier(.32,.72,0,1) both;
+    animation:aparecer .38s cubic-bezier(.2,.85,.25,1) both;
   }
 
   @keyframes aparecer{
-    from{opacity:0;transform:translateY(10px) scale(.98)}
+    from{opacity:0;transform:translateY(9px) scale(.965)}
     to{opacity:1;transform:translateY(0) scale(1)}
   }
 
   .burbuja.agente{
-    align-self:flex-start;
     background:var(--blanco);
     color:var(--negro);
     border:1px solid var(--gris-claro);
-    border-bottom-left-radius:5px;
-    box-shadow:0 1px 3px rgba(0,0,0,.04);
+    border-bottom-left-radius:6px;
+    box-shadow:0 2px 10px rgba(0,40,70,.05);
   }
 
   .burbuja.usuario{
-    align-self:flex-end;
-    background:var(--azul);
+    background:linear-gradient(145deg,var(--azul),var(--azul-hondo));
     color:var(--blanco);
-    border-bottom-right-radius:5px;
+    border-bottom-right-radius:6px;
+    box-shadow:0 3px 12px rgba(0,103,177,.26);
   }
 
   .burbuja a{color:inherit;text-decoration:underline}
   .burbuja.agente a{color:var(--azul)}
+  .burbuja strong{font-weight:700}
+  .burbuja em{font-style:normal;opacity:.68;font-size:.9em}
 
   .escribiendo{
-    align-self:flex-start;
     display:flex;
     gap:4px;
     padding:13px 16px;
     background:var(--blanco);
     border:1px solid var(--gris-claro);
-    border-radius:16px;
-    border-bottom-left-radius:5px;
+    border-radius:17px;
+    border-bottom-left-radius:6px;
+    box-shadow:0 2px 10px rgba(0,40,70,.05);
   }
   .escribiendo span{
-    width:6px;height:6px;border-radius:50%;background:var(--gris);opacity:.4;
+    width:6px;height:6px;border-radius:50%;background:var(--azul);opacity:.4;
     animation:pulso 1.1s ease-in-out infinite;
   }
   .escribiendo span:nth-child(2){animation-delay:.15s}
   .escribiendo span:nth-child(3){animation-delay:.3s}
-  @keyframes pulso{0%,60%,100%{opacity:.25;transform:scale(1)}30%{opacity:.8;transform:scale(1.25)}}
+  @keyframes pulso{0%,60%,100%{opacity:.25;transform:scale(1)}30%{opacity:.9;transform:scale(1.3)}}
 
-  /* ── Tarjeta de cotización (embebida en el chat) ─────────── */
+  /* ── Tarjeta de cotización ─────────────────────────────────
+     El momento de recompensa del recorrido: la carta se reparte, las coberturas se
+     desbloquean una por una y el total sube contando. Nada de esto inventa un dato — solo
+     revela, con ritmo, exactamente lo que el backend mandó. */
   .tarjeta-cotizacion{
-    align-self:stretch;
+    width:100%;
     background:var(--blanco);
     border:1px solid var(--gris-claro);
-    border-radius:18px;
-    padding:16px 18px;
-    box-shadow:0 4px 18px rgba(0,0,0,.06);
-    animation:revelar .4s cubic-bezier(.2,.8,.2,1) both;
+    border-radius:20px;
+    padding:0 0 16px;
+    overflow:hidden;
+    box-shadow:var(--sombra-carta);
+    animation:repartir .58s cubic-bezier(.2,.85,.25,1.05) both;
+    position:relative;
   }
 
-  @keyframes revelar{
-    from{opacity:0;transform:translateY(14px) scale(.96)}
-    to{opacity:1;transform:translateY(0) scale(1)}
+  @keyframes repartir{
+    from{opacity:0;transform:translateY(26px) scale(.93) rotate(-1.4deg)}
+    to{opacity:1;transform:translateY(0) scale(1) rotate(0)}
   }
 
-  .tarjeta-cotizacion h2{font-size:17.5px;font-weight:700;color:var(--azul);letter-spacing:-.01em}
-  .tarjeta-cotizacion .aseguradora{font-size:12.5px;color:var(--gris);opacity:.75;margin-top:1px}
+  /* Destello que barre la carta una sola vez al aparecer. */
+  .tarjeta-cotizacion::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(105deg,transparent 38%,rgba(255,255,255,.62) 50%,transparent 62%);
+    transform:translateX(-120%);
+    animation:destello 1.15s .32s cubic-bezier(.35,.5,.3,1) both;
+  }
+  @keyframes destello{to{transform:translateX(120%)}}
 
-  .tarjeta-cotizacion .razon{
-    background:rgba(0,103,177,.07);
-    border-left:3px solid var(--azul);
-    border-radius:0 8px 8px 0;
-    padding:9px 11px;
-    margin:12px 0;
-    font-size:13.5px;
-    line-height:1.45;
+  .cinta{
+    display:flex;align-items:center;gap:7px;
+    padding:9px 18px;
+    background:linear-gradient(90deg,var(--amarillo),#ffe166);
     color:var(--negro);
+    font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  }
+  .cinta svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2.2;
+    stroke-linecap:round;stroke-linejoin:round}
+
+  .bloque{padding:14px 18px 0}
+
+  .titulo-fila{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  .tarjeta-cotizacion h2{font-size:17.5px;font-weight:800;color:var(--azul);letter-spacing:-.018em;line-height:1.25}
+  .tarjeta-cotizacion .aseguradora{font-size:12.5px;color:var(--gris);opacity:.75;margin-top:2px}
+
+  /* Insignia de cantidad — el "2x" del carrito de Telegram. Hace obvio que el subtotal ya
+     viene multiplicado, que es justo la ambigüedad que produjo el bug del total. */
+  .insignia-cant{
+    flex:none;padding:4px 10px;border-radius:999px;
+    background:rgba(0,103,177,.1);color:var(--azul);
+    font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;
   }
 
-  .tarjeta-cotizacion ul{list-style:none;margin:0 0 12px}
+  .porque{
+    margin:12px 0 4px;
+    background:rgba(0,103,177,.06);
+    border-left:3px solid var(--azul);
+    border-radius:0 10px 10px 0;
+    padding:10px 12px;
+  }
+  .porque b{
+    display:block;font-size:10.5px;font-weight:800;letter-spacing:.07em;
+    text-transform:uppercase;color:var(--azul);margin-bottom:4px;
+  }
+  .porque span{font-size:13.5px;line-height:1.45;color:var(--negro)}
+
+  .rotulo-cob{
+    margin:14px 0 6px;font-size:10.5px;font-weight:800;letter-spacing:.07em;
+    text-transform:uppercase;color:var(--gris);opacity:.7;
+  }
+
+  .tarjeta-cotizacion ul{list-style:none;margin:0}
   .tarjeta-cotizacion li{
-    display:flex;align-items:flex-start;gap:8px;
-    font-size:14px;line-height:1.4;padding:3px 0;color:var(--negro);
+    display:flex;align-items:flex-start;gap:9px;
+    font-size:14px;line-height:1.4;padding:4px 0;color:var(--negro);
+    animation:desbloquear .42s cubic-bezier(.2,.9,.3,1.25) both;
+    animation-delay:calc(var(--i) * 85ms + 340ms);
+  }
+  @keyframes desbloquear{
+    from{opacity:0;transform:translateX(-10px)}
+    to{opacity:1;transform:translateX(0)}
   }
   .tarjeta-cotizacion li::before{
-    content:"";flex:none;width:15px;height:15px;margin-top:2px;border-radius:50%;
-    background:var(--amarillo) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center/9px no-repeat;
+    content:"";flex:none;width:17px;height:17px;margin-top:1px;border-radius:50%;
+    background:var(--amarillo) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center/10px no-repeat;
+    box-shadow:0 1px 4px rgba(255,208,0,.6);
   }
 
-  .tarjeta-cotizacion .precio{
+  .separador{border:none;border-top:1px dashed var(--gris-claro);margin:16px 18px 0}
+
+  /* El subtotal vive DENTRO de .bloque (que ya sangra 18px); el total es hijo directo de la
+     carta y pone el suyo. Un sangrado en la regla base los sumaba y descuadraba la columna. */
+  .precio{
     display:flex;align-items:baseline;justify-content:space-between;
-    border-top:1px solid var(--gris-claro);padding-top:11px;
+    padding-top:12px;
   }
-  .tarjeta-cotizacion .precio dt{font-size:13px;color:var(--gris)}
-  .tarjeta-cotizacion .precio dd{font-size:22px;font-weight:800;color:var(--negro);letter-spacing:-.02em}
-  .tarjeta-cotizacion .precio dd span{font-size:13px;font-weight:600;color:var(--gris)}
+  .precio dt{font-size:13px;color:var(--gris);font-weight:600}
+  .precio dd{font-size:26px;font-weight:800;color:var(--negro);letter-spacing:-.03em;
+    font-variant-numeric:tabular-nums}
+  .precio dd span{font-size:13px;font-weight:600;color:var(--gris)}
 
-  /* Un hogar mixto son VARIOS productos. El subtotal por línea va atenuado para que el
-     total de abajo siga siendo el número grande — antes la tarjeta mostraba el precio del
-     primer producto como si fuera la prima completa. */
-  .tarjeta-cotizacion .precio.subtotal{border-top:none;padding-top:4px}
-  .tarjeta-cotizacion .precio.subtotal dt{font-size:12.5px;opacity:.8}
-  .tarjeta-cotizacion .precio.subtotal dd{font-size:16px;font-weight:700;color:var(--gris)}
-  .tarjeta-cotizacion .precio.subtotal dd span{font-size:12px}
+  .precio.subtotal{padding-top:6px}
+  .precio.subtotal dt{font-size:12.5px;opacity:.8;font-weight:500}
+  .precio.subtotal dd{font-size:16px;font-weight:700;color:var(--gris)}
+  .precio.subtotal dd span{font-size:12px}
 
-  .tarjeta-cotizacion .linea-detalle{
-    font-size:12.5px;color:var(--gris);opacity:.85;margin-bottom:2px;
+  .precio.total{
+    margin:14px 18px 0;padding-top:14px;
+    border-top:2px solid var(--gris-claro);
+  }
+  .precio.total dt{font-weight:800;color:var(--negro);font-size:13.5px}
+
+  .linea-detalle{
+    font-size:12.5px;color:var(--gris);opacity:.85;margin:6px 0 0;
     font-variant-numeric:tabular-nums;
   }
 
-  .tarjeta-cotizacion .separador{
-    border:none;border-top:1px dashed var(--gris-claro);margin:16px 0 14px;
-  }
-
-  /* ── Botón de pagar (aparece como burbuja especial) ──────── */
-  .btn-pagar{
-    align-self:stretch;
-    display:block;
-    width:100%;
-    min-height:52px;
-    border:none;
-    border-radius:14px;
-    background:var(--amarillo);
-    color:var(--negro);
-    font-family:inherit;
-    font-size:16px;
-    font-weight:700;
-    cursor:pointer;
-    transition:transform .12s ease, filter .15s ease;
-    animation:revelar .35s cubic-bezier(.2,.8,.2,1) both;
-  }
-  .btn-pagar:hover,.btn-pagar:focus-visible{filter:brightness(.95)}
-  .btn-pagar:active{transform:scale(.97)}
-
-  /* ── Chips de respuesta sugerida ──────────────────────────── */
+  /* ── Fichas de respuesta sugerida ──────────────────────────
+     Se agrandaron a objetivo táctil de juego y entran escalonadas. NO reemplazan el campo
+     de texto: la regla NLP-first del proyecto exige que escribir libre siempre funcione,
+     así que el input nunca se oculta cuando hay fichas. */
   #chips{
     display:flex;
     gap:8px;
     flex-wrap:wrap;
-    padding:0 14px 8px;
+    justify-content:center;
+    padding:2px 14px 10px;
     max-width:560px;
     width:100%;
     margin:0 auto;
@@ -213,27 +322,76 @@
   #chips:empty{display:none}
 
   .chip{
-    border:1.5px solid var(--azul);
+    display:flex;align-items:center;gap:7px;
+    border:1.5px solid rgba(0,103,177,.35);
     background:var(--blanco);
     color:var(--azul);
     font-family:inherit;
-    font-size:13.5px;
-    font-weight:600;
-    padding:8px 14px;
-    border-radius:999px;
+    font-size:14px;
+    font-weight:700;
+    padding:10px 16px;
+    min-height:44px;
+    border-radius:14px;
     cursor:pointer;
-    transition:transform .1s ease, background .15s ease;
+    box-shadow:0 2px 8px rgba(0,40,70,.06);
+    transition:transform .12s cubic-bezier(.2,.9,.3,1.4),background .16s ease,
+      border-color .16s ease,box-shadow .16s ease;
+    animation:entrarFicha .34s cubic-bezier(.2,.9,.3,1.2) both;
+    animation-delay:calc(var(--i) * 55ms);
   }
-  .chip:hover,.chip:focus-visible{background:rgba(0,103,177,.08)}
-  .chip:active{transform:scale(.94)}
+  @keyframes entrarFicha{
+    from{opacity:0;transform:translateY(12px) scale(.9)}
+    to{opacity:1;transform:translateY(0) scale(1)}
+  }
+  .chip .ico{font-size:16px;line-height:1}
+  .chip:hover,.chip:focus-visible{
+    background:rgba(0,103,177,.06);border-color:var(--azul);
+    box-shadow:0 4px 14px rgba(0,103,177,.16);transform:translateY(-2px);
+  }
+  .chip:active{transform:scale(.93)}
 
-  /* ── Pie: input de texto o selfie ─────────────────────────── */
+  /* ── Pie ──────────────────────────────────────────────────── */
   footer{
     flex:none;
     padding:10px 14px max(10px,env(safe-area-inset-bottom));
-    background:var(--blanco);
+    background:rgba(255,255,255,.9);
+    backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);
     border-top:1px solid var(--gris-claro);
   }
+
+  /* Barra de pago fija — el patrón "PAY $8.47" del video de Telegram: acción única, ancho
+     completo, con el total ADENTRO del botón para que nadie pague sin ver la cifra. */
+  #barraPago{
+    display:none;
+    width:100%;max-width:560px;margin:0 auto 10px;
+  }
+  #barraPago.visible{display:block;animation:entrarPago .45s cubic-bezier(.2,.9,.3,1.15) both}
+  @keyframes entrarPago{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+
+  .btn-pagar{
+    position:relative;overflow:hidden;
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    width:100%;min-height:56px;padding:0 20px;
+    border:none;border-radius:16px;
+    background:linear-gradient(145deg,var(--amarillo),var(--amarillo-hondo));
+    color:var(--negro);
+    font-family:inherit;font-size:15.5px;font-weight:800;letter-spacing:-.01em;
+    cursor:pointer;
+    box-shadow:0 6px 20px rgba(255,208,0,.42);
+    transition:transform .12s cubic-bezier(.2,.9,.3,1.4),box-shadow .18s ease;
+  }
+  .btn-pagar strong{font-size:17px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .btn-pagar:hover,.btn-pagar:focus-visible{box-shadow:0 8px 26px rgba(255,208,0,.55)}
+  .btn-pagar:active{transform:scale(.975)}
+  /* Brillo lento y continuo: dice "esta es LA acción", sin urgencia falsa ni cuenta atrás. */
+  .btn-pagar::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.5) 50%,transparent 60%);
+    transform:translateX(-120%);
+    animation:brillo 3.4s 1s ease-in-out infinite;
+  }
+  @keyframes brillo{0%{transform:translateX(-120%)}55%,100%{transform:translateX(120%)}}
 
   .fila-input{
     display:flex;
@@ -244,140 +402,152 @@
 
   #texto{
     flex:1;
-    min-height:46px;
+    min-height:48px;
     max-height:120px;
-    padding:12px 16px;
+    padding:13px 17px;
     border:1.5px solid var(--gris-claro);
-    border-radius:23px;
+    border-radius:24px;
     font-family:inherit;
     font-size:15px;
     color:var(--negro);
+    background:var(--blanco);
     resize:none;
     outline:none;
-    transition:border-color .15s ease;
+    transition:border-color .16s ease,box-shadow .16s ease;
   }
-  #texto:focus{border-color:var(--azul)}
+  #texto:focus{border-color:var(--azul);box-shadow:0 0 0 4px rgba(0,103,177,.12)}
 
   #btn-enviar{
     flex:none;
-    width:46px;height:46px;
+    width:48px;height:48px;
     border:none;
     border-radius:50%;
-    background:var(--azul);
+    background:linear-gradient(145deg,var(--azul),var(--azul-hondo));
     color:var(--blanco);
     cursor:pointer;
     display:flex;align-items:center;justify-content:center;
-    transition:transform .12s ease, opacity .15s ease;
+    box-shadow:0 4px 14px rgba(0,103,177,.34);
+    transition:transform .12s cubic-bezier(.2,.9,.3,1.4),opacity .15s ease,box-shadow .15s ease;
   }
-  #btn-enviar:active{transform:scale(.92)}
-  #btn-enviar:disabled{opacity:.4;cursor:default}
+  #btn-enviar:active{transform:scale(.9)}
+  #btn-enviar:disabled{opacity:.38;cursor:default;box-shadow:none}
   #btn-enviar svg{width:19px;height:19px}
 
-  .selfie-caja{
-    max-width:560px;
-    margin:0 auto;
-    text-align:center;
-  }
+  .selfie-caja{max-width:560px;margin:0 auto;text-align:center}
 
   .selfie-caja label{
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    gap:8px;
-    padding:18px;
+    display:flex;flex-direction:column;align-items:center;gap:9px;
+    padding:20px;
     border:2px dashed var(--azul);
-    border-radius:16px;
-    background:rgba(0,103,177,.04);
+    border-radius:18px;
+    background:rgba(0,103,177,.045);
     cursor:pointer;
-    transition:background .15s ease;
+    transition:background .16s ease,transform .12s ease;
   }
-  .selfie-caja label:hover{background:rgba(0,103,177,.08)}
+  .selfie-caja label:hover{background:rgba(0,103,177,.09)}
+  .selfie-caja label:active{transform:scale(.985)}
   .selfie-caja svg{width:30px;height:30px;color:var(--azul)}
-  .selfie-caja span{font-size:13.5px;font-weight:600;color:var(--azul)}
+  .selfie-caja span{font-size:14px;font-weight:700;color:var(--azul)}
   .selfie-caja input{display:none}
-  .selfie-caja p{margin-top:8px;font-size:11.5px;color:var(--gris);opacity:.7}
+  .selfie-caja p{margin-top:9px;font-size:11.5px;color:var(--gris);opacity:.7}
 
-  /* ── Pantalla de error / sesión inválida ──────────────────── */
-  #errorScreen{
+  /* ── Pantallas de error / cierre ───────────────────────────── */
+  #errorScreen,#postCheckout{
     display:none;
     flex:1;
     flex-direction:column;
     align-items:center;
     justify-content:center;
-    gap:14px;
+    gap:15px;
     padding:32px;
     text-align:center;
   }
-  #errorScreen.activo{display:flex}
-  #errorScreen h2{font-size:19px;color:var(--azul)}
+  #errorScreen.activo,#postCheckout.activo{display:flex}
+  #errorScreen h2{font-size:19px;color:var(--azul);font-weight:700}
   #errorScreen p{font-size:14.5px;color:var(--gris);max-width:320px;line-height:1.5}
 
-  /* ── Pantalla post-checkout ────────────────────────────────── */
-  #postCheckout{
-    display:none;
-    flex:1;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    gap:16px;
-    padding:32px;
-    text-align:center;
-  }
-  #postCheckout.activo{display:flex}
-
-  .check-circulo{
-    width:74px;height:74px;
-    border-radius:50%;
-    background:var(--amarillo);
+  /* Medalla final — el cierre del recorrido. Un sello, no un checkbox. */
+  .medalla{
+    width:104px;height:104px;border-radius:50%;
     display:flex;align-items:center;justify-content:center;
-    animation:pop .5s cubic-bezier(.2,.9,.3,1.3) both;
+    background:linear-gradient(145deg,var(--amarillo),var(--amarillo-hondo));
+    box-shadow:0 10px 34px rgba(255,208,0,.5);
+    animation:acunar .62s cubic-bezier(.2,.9,.3,1.45) both;
     position:relative;
   }
-  .check-circulo svg{width:36px;height:36px}
-  @keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+  .medalla svg.marca{width:46px;height:46px;fill:none;stroke:var(--negro);stroke-width:3;
+    stroke-linecap:round;stroke-linejoin:round;position:relative;z-index:2}
+  @keyframes acunar{from{transform:scale(0) rotate(-25deg)}to{transform:scale(1) rotate(0)}}
 
-  /* Confetti minimalista: unas cuantas partículas cayendo, CSS puro */
-  .confeti{position:absolute;inset:-40px auto auto -40px;width:160px;height:160px;pointer-events:none}
+  /* Aro de destello girando detrás de la medalla. */
+  .medalla::before{
+    content:"";position:absolute;inset:-9px;border-radius:50%;
+    background:conic-gradient(from 0deg,transparent 0 62%,rgba(255,255,255,.9) 78%,transparent 92%);
+    animation:girar 3.4s linear infinite;
+  }
+  @keyframes girar{to{transform:rotate(360deg)}}
+
+  .sello{
+    padding:5px 14px;border-radius:999px;
+    background:var(--negro);color:var(--amarillo);
+    font-size:10.5px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
+  }
+
+  /* Confetti CSS puro — sin librería nueva. */
+  .confeti{position:absolute;inset:0;pointer-events:none;overflow:visible}
   .confeti i{
-    position:absolute;width:6px;height:10px;top:50%;left:50%;
+    position:absolute;width:7px;height:12px;top:50%;left:50%;border-radius:1px;
     background:var(--azul);
-    animation:caer 1.1s ease-out forwards;
+    animation:caer 1.5s cubic-bezier(.15,.6,.35,1) forwards;
     opacity:0;
   }
-  .confeti i:nth-child(odd){background:var(--amarillo)}
+  .confeti i:nth-child(3n){background:var(--amarillo)}
+  .confeti i:nth-child(3n+1){background:var(--azul-hondo)}
   @keyframes caer{
-    0%{opacity:1;transform:translate(0,0) rotate(0)}
-    100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(var(--rot))}
+    0%{opacity:1;transform:translate(0,0) rotate(0) scale(1)}
+    100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(var(--rot)) scale(.6)}
   }
 
-  #postCheckout h2{font-size:20px;color:var(--negro);font-weight:700}
-  #postCheckout p{font-size:14px;color:var(--gris);max-width:300px;line-height:1.5}
-  #cuentaAtras{font-variant-numeric:tabular-nums;font-weight:700;color:var(--azul)}
+  #postCheckout h2{font-size:21px;color:var(--negro);font-weight:800;letter-spacing:-.02em}
+  #postCheckout p{font-size:14px;color:var(--gris);max-width:310px;line-height:1.5}
+  #cuentaAtras{font-variant-numeric:tabular-nums;font-weight:800;color:var(--azul)}
 
   .btn-volver{
-    min-height:50px;
-    padding:0 24px;
-    border:none;
-    border-radius:12px;
-    background:var(--azul);
+    min-height:52px;padding:0 26px;
+    border:none;border-radius:14px;
+    background:linear-gradient(145deg,var(--azul),var(--azul-hondo));
     color:var(--blanco);
-    font-family:inherit;
-    font-size:15px;
-    font-weight:700;
+    font-family:inherit;font-size:15px;font-weight:700;
     cursor:pointer;
+    box-shadow:0 5px 18px rgba(0,103,177,.32);
+    transition:transform .12s ease;
   }
+  .btn-volver:active{transform:scale(.97)}
+  .btn-volver:disabled{opacity:.55;box-shadow:none;cursor:default}
 
   @media (prefers-reduced-motion:reduce){
-    .burbuja,.tarjeta-cotizacion,.btn-pagar,.check-circulo{animation:none!important}
-    .ap-fill{transition:none!important}
+    #fondo{display:none}
+    .burbuja,.tarjeta-cotizacion,.tarjeta-cotizacion li,.chip,.medalla,#barraPago.visible,
+    #avisoEtapa.visible{animation:none!important}
+    .tarjeta-cotizacion::after,.btn-pagar::after,.medalla::before{display:none}
     .confeti{display:none}
+    #avisoEtapa.visible{transform:translate(-50%,0)}
   }
 </style>
 </head>
 <body>
 
+  <div id="fondo" aria-hidden="true"><i></i><i></i></div>
+
+  <div id="avisoEtapa" role="status" aria-live="polite"></div>
+
   <header>
-    <h1>Asegura</h1>
+    <div class="marca">
+      <span class="escudo" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 2 4 5.5v6c0 5 3.4 9.2 8 10.5 4.6-1.3 8-5.5 8-10.5v-6z"/></svg>
+      </span>
+      <h1>Asegura</h1>
+    </div>
     <p class="sub">Tu asesor de seguros · Colsubsidio</p>
     <div id="progress" class="ap-progress" aria-label="Progreso de la solicitud"></div>
   </header>
@@ -392,20 +562,21 @@
   </div>
 
   <div id="postCheckout">
-    <div class="check-circulo">
-      <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <polyline points="20 6 9 17 4 12"/>
-      </svg>
+    <div class="medalla">
+      <svg class="marca" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
       <div class="confeti" id="confeti"></div>
     </div>
+    <span class="sello" id="postSello" hidden>Póliza activa</span>
     <h2 id="postTitulo">Confirmando tu pago…</h2>
     <p id="postTexto">Esto puede tardar unos segundos. En cuanto se confirme, tu póliza llega al chat.</p>
     <button class="btn-volver" id="btnVolver" hidden>Volver a WhatsApp</button>
   </div>
 
   <footer id="footer">
+    <div id="barraPago"></div>
+
     <div class="fila-input" id="filaTexto">
-      <textarea id="texto" rows="1" placeholder="Escribe tu mensaje…" aria-label="Tu mensaje"></textarea>
+      <textarea id="texto" rows="1" placeholder="Escríbeme lo que necesitas…" aria-label="Tu mensaje"></textarea>
       <button id="btn-enviar" aria-label="Enviar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
@@ -427,7 +598,7 @@
   </footer>
 
 <script type="module">
-import { renderProgress, injectProgressStyles } from './progress-bar.js';
+import { renderProgress, injectProgressStyles, tick } from './progress-bar.js';
 import { apiFetch } from './api-base.js';
 
 const token = new URLSearchParams(location.search).get('token');
@@ -435,12 +606,15 @@ const token = new URLSearchParams(location.search).get('token');
 const chat = document.getElementById('chat');
 const chipsEl = document.getElementById('chips');
 const progressEl = document.getElementById('progress');
+const avisoEtapa = document.getElementById('avisoEtapa');
 const errorScreen = document.getElementById('errorScreen');
 const postCheckout = document.getElementById('postCheckout');
 const postTitulo = document.getElementById('postTitulo');
 const postTexto = document.getElementById('postTexto');
+const postSello = document.getElementById('postSello');
 const btnVolver = document.getElementById('btnVolver');
 const footer = document.getElementById('footer');
+const barraPago = document.getElementById('barraPago');
 const filaTexto = document.getElementById('filaTexto');
 const filaSelfie = document.getElementById('filaSelfie');
 const textoEl = document.getElementById('texto');
@@ -449,17 +623,19 @@ const selfieInput = document.getElementById('selfieInput');
 
 injectProgressStyles();
 
-const pesos = (n) => '$' + n.toLocaleString('es-CO');
+const sinMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const dormir = (ms) => new Promise((r) => setTimeout(r, sinMovimiento ? 0 : ms));
+const pesos = (n) => '$' + Math.round(n).toLocaleString('es-CO');
 
-function addBubble(role, text) {
-  const div = document.createElement('div');
-  div.className = `burbuja ${role === 'user' ? 'usuario' : 'agente'}`;
-  // Agent text can carry a single markdown link — the only markdown AgentService ever
-  // emits ([label](url)) — rendered as a real anchor; everything else stays plain text.
-  div.innerHTML = escapeHtml(text).replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-  chat.appendChild(div);
-  chat.scrollTop = chat.scrollHeight;
-}
+const ESCUDO_SVG =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5.5v6c0 5 3.4 9.2 8 10.5 4.6-1.3 8-5.5 8-10.5v-6z"/></svg>';
+
+// Último total conocido: `checkoutUrl` y `totalMensual` pueden llegar en turnos distintos,
+// y la barra de pago debe mostrar la cifra igual. Sin total conocido, no se inventa uno.
+let totalConocido = null;
+let ultimoRol = null;
+
+function bajar() { chat.scrollTop = chat.scrollHeight; }
 
 function escapeHtml(s) {
   const d = document.createElement('div');
@@ -467,17 +643,99 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
+// El agente emite un markdown mínimo y acotado: *negrita*, _cursiva_ y [texto](url). Sin
+// esto, la burbuja muestra los asteriscos crudos — lo primero que delata "formulario".
+// Los links se apartan ANTES de aplicar negrita/cursiva: un `_` dentro de una URL se comía
+// el enlace.
+function formatear(texto) {
+  const enlaces = [];
+  // Marcador delimitado por NUL: el texto ya pasó por escapeHtml, así que no puede traer
+  // uno propio. Un marcador legible tipo " 0 " sí colisionaba — cualquier " 3 " del mensaje
+  // se habría convertido en un enlace inexistente.
+  const conMarcas = escapeHtml(texto).replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    (_m, etiqueta, url) => {
+      enlaces.push(`<a href="${url}" target="_blank" rel="noopener">${etiqueta}</a>`);
+      return `\u0000${enlaces.length - 1}\u0000`;
+    },
+  );
+  return conMarcas
+    .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
+    .replace(/_([^_\n]+)_/g, '<em>$1</em>')
+    .replace(/\u0000(\d+)\u0000/g, (m, i) => enlaces[Number(i)] ?? m);
+}
+
+function addBubble(role, text) {
+  const esAgente = role !== 'user';
+  const fila = document.createElement('div');
+  fila.className = `fila ${esAgente ? 'fila-agente' : 'fila-usuario'}`;
+
+  if (esAgente) {
+    const av = document.createElement('div');
+    av.className = `avatar${ultimoRol === 'agent' ? ' oculto' : ''}`;
+    av.innerHTML = ESCUDO_SVG;
+    fila.appendChild(av);
+  }
+
+  const div = document.createElement('div');
+  div.className = `burbuja ${esAgente ? 'agente' : 'usuario'}`;
+  div.innerHTML = formatear(text);
+  fila.appendChild(div);
+
+  chat.appendChild(fila);
+  ultimoRol = esAgente ? 'agent' : 'user';
+  bajar();
+}
+
+// Los mensajes del agente entran uno por uno, con el indicador de escritura entre ellos —
+// la cadencia de una caja de diálogo, no un volcado de párrafos.
+async function revelarBurbujas(texts) {
+  for (let i = 0; i < texts.length; i++) {
+    if (i > 0) {
+      showTyping();
+      await dormir(360);
+      hideTyping();
+    }
+    addBubble('agent', texts[i]);
+    tick(8);
+    if (i < texts.length - 1) await dormir(110);
+  }
+}
+
 let escribiendoEl = null;
 function showTyping() {
   hideTyping();
   escribiendoEl = document.createElement('div');
-  escribiendoEl.className = 'escribiendo';
-  escribiendoEl.innerHTML = '<span></span><span></span><span></span>';
+  escribiendoEl.className = 'fila fila-agente';
+  escribiendoEl.innerHTML =
+    `<div class="avatar${ultimoRol === 'agent' ? ' oculto' : ''}">${ESCUDO_SVG}</div>` +
+    '<div class="escribiendo"><span></span><span></span><span></span></div>';
   chat.appendChild(escribiendoEl);
-  chat.scrollTop = chat.scrollHeight;
+  bajar();
 }
 function hideTyping() {
   if (escribiendoEl) { escribiendoEl.remove(); escribiendoEl = null; }
+}
+
+// El total sube contando. Redondea a la centena mientras corre para que no titile el
+// último dígito, y aterriza siempre en la cifra exacta que mandó el backend.
+// El DOM ya se pinta con la cifra REAL: esta función solo la baja a 0 dentro del primer
+// frame. Así, si requestAnimationFrame nunca corre (pestaña en segundo plano, que es
+// justo donde se detectó), lo que queda en pantalla es la prima correcta y no un "$0".
+function contarHasta(el, valor) {
+  if (sinMovimiento || valor <= 0) return;
+  const inicio = performance.now();
+  const paso = (t) => {
+    const p = Math.min((t - inicio) / 900, 1);
+    const suave = 1 - Math.pow(1 - p, 3);
+    if (p < 1) {
+      el.textContent = pesos(Math.round((valor * suave) / 100) * 100);
+      requestAnimationFrame(paso);
+    } else {
+      el.textContent = pesos(valor);
+    }
+  };
+  requestAnimationFrame(paso);
 }
 
 // Recibe TODAS las líneas de la cotización (un hogar con gato y perros son dos productos)
@@ -487,50 +745,118 @@ function addQuoteCard(quotes, total) {
   card.className = 'tarjeta-cotizacion';
   const multi = quotes.length > 1;
 
-  const bloques = quotes.map((q, i) => `
+  const bloques = quotes.map((q, i) => {
+    const coberturas = q.coberturas ?? [];
+    return `
     ${i ? '<hr class="separador">' : ''}
-    <h2>${escapeHtml(q.producto)}</h2>
-    <p class="aseguradora">${escapeHtml(q.aseguradora)}</p>
-    ${q.razon ? `<p class="razon">${escapeHtml(q.razon)}</p>` : ''}
-    <ul>${(q.coberturas ?? []).map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
-    ${q.cantidad > 1 ? `<p class="linea-detalle">${pesos(q.precioUnitario)} × ${q.cantidad} mascotas</p>` : ''}
-    ${multi ? `<dl class="precio subtotal"><dt>Subtotal</dt><dd>${pesos(q.subtotal)}<span> /mes</span></dd></dl>` : ''}
-  `).join('');
+    <div class="bloque">
+      <div class="titulo-fila">
+        <div>
+          <h2>${escapeHtml(q.producto)}</h2>
+          <p class="aseguradora">${escapeHtml(q.aseguradora)}</p>
+        </div>
+        ${q.cantidad > 1 ? `<span class="insignia-cant">× ${q.cantidad}</span>` : ''}
+      </div>
+      ${q.razon ? `<div class="porque"><b>¿Por qué esto para ti?</b><span>${escapeHtml(q.razon)}</span></div>` : ''}
+      ${coberturas.length ? `<p class="rotulo-cob">${coberturas.length} cobertura${coberturas.length === 1 ? '' : 's'} incluida${coberturas.length === 1 ? '' : 's'}</p>` : ''}
+      <ul>${coberturas.map((c, j) => `<li style="--i:${j}">${escapeHtml(c)}</li>`).join('')}</ul>
+      ${q.cantidad > 1 ? `<p class="linea-detalle">${pesos(q.precioUnitario)} × ${q.cantidad} mascotas</p>` : ''}
+      ${multi ? `<dl class="precio subtotal"><dt>Subtotal</dt><dd>${pesos(q.subtotal)}<span> /mes</span></dd></dl>` : ''}
+    </div>`;
+  }).join('');
 
-  card.innerHTML = `${bloques}
-    <dl class="precio">
+  card.innerHTML = `
+    <div class="cinta">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5.5v6c0 5 3.4 9.2 8 10.5 4.6-1.3 8-5.5 8-10.5v-6z"/></svg>
+      Tu protección recomendada
+    </div>
+    ${bloques}
+    <dl class="precio total">
       <dt>${multi ? 'Total para tu familia' : 'Tu prima mensual'}</dt>
-      <dd>${pesos(total)}<span> /mes</span></dd>
+      <dd><span class="cifra">${pesos(total)}</span><span> /mes</span></dd>
     </dl>
   `;
   chat.appendChild(card);
-  chat.scrollTop = chat.scrollHeight;
+  ultimoRol = null; // la próxima burbuja del agente vuelve a mostrar avatar
+  bajar();
+
+  const cifra = card.querySelector('.cifra');
+  const arranque = sinMovimiento ? 0 : 420;
+  setTimeout(() => { contarHasta(cifra, total); tick([8, 30, 8]); }, arranque);
 }
 
-function addPayButton(checkoutUrl) {
+// Barra fija con el total ADENTRO del botón (patrón "PAY $8.47" de Telegram Web Apps): la
+// cifra viaja con la acción, así nadie confirma un pago sin ver cuánto es.
+function mostrarBarraPago(checkoutUrl) {
+  barraPago.replaceChildren();
   const btn = document.createElement('button');
   btn.className = 'btn-pagar';
-  btn.textContent = 'Pagar de forma segura con Wompi';
-  btn.addEventListener('click', () => { location.href = checkoutUrl; });
-  chat.appendChild(btn);
-  chat.scrollTop = chat.scrollHeight;
+  btn.innerHTML = totalConocido
+    ? `<span>Activar mi protección</span><strong>${pesos(totalConocido)}/mes</strong>`
+    : '<span>Pagar de forma segura con Wompi</span>';
+  btn.addEventListener('click', () => {
+    tick([14, 26, 14]);
+    location.href = checkoutUrl;
+  });
+  barraPago.appendChild(btn);
+  barraPago.classList.add('visible');
+}
+
+// La barra NO se esconde al mandar otro mensaje. El backend manda `checkoutUrl` una sola
+// vez; si el usuario pregunta algo después ("¿esto es seguro?"), esconderla lo dejaría sin
+// forma de pagar. El botón de pago del diseño anterior sobrevivía en el scroll del chat por
+// ser una burbuja más — una barra fija necesita esta regla explícita.
+
+// Ícono por palabra clave. Las 5 primeras son las categorías del filtro F01 que el backend
+// ya manda; el resto son las respuestas recurrentes del flujo. Sin coincidencia: sin ícono.
+const ICONOS = [
+  [/familia|hijo|espos|pareja|mam|pap/i, '❤️'],
+  [/salud|m[eé]dic|hospital|enferm/i, '🏥'],
+  [/mascota|perro|gato|michi|lomito|peludo/i, '🐾'],
+  [/accidente|ca[ií]da|lesi[oó]n/i, '🤕'],
+  [/no estoy segur|no s[eé]|no sé|ayúdame|ayudame/i, '🤔'],
+  [/otra opci|otro|diferente|m[aá]s opciones|mu[eé]strame/i, '🔄'],
+  [/hablar|voz|audio|llamar/i, '🎙️'],
+  [/escribir|texto|chatear/i, '⌨️'],
+  [/vida|fallec/i, '🛡️'],
+  [/exequial/i, '🕊️'],
+  [/^s[ií]\b|me interesa|dale|listo|continuar|de acuerdo/i, '✅'],
+  [/^no\b|cancelar|despu[eé]s/i, '✋'],
+];
+
+function iconoPara(texto) {
+  for (const [re, ico] of ICONOS) if (re.test(texto)) return ico;
+  return null;
 }
 
 function renderChips(choices) {
   chipsEl.replaceChildren();
-  for (const choice of choices ?? []) {
+  (choices ?? []).forEach((choice, i) => {
     const btn = document.createElement('button');
     btn.className = 'chip';
-    btn.textContent = choice;
-    btn.addEventListener('click', () => sendMessage(choice));
+    btn.style.setProperty('--i', String(i));
+    const ico = iconoPara(choice);
+    btn.innerHTML = (ico ? `<span class="ico" aria-hidden="true">${ico}</span>` : '') +
+      `<span>${escapeHtml(choice)}</span>`;
+    btn.addEventListener('click', () => { tick(14); sendMessage(choice); });
     chipsEl.appendChild(btn);
-  }
+  });
 }
 
 function setExpectedInput(kind) {
   const isSelfie = kind === 'selfie';
   filaTexto.hidden = isSelfie;
   filaSelfie.hidden = !isSelfie;
+}
+
+let avisoTimer = null;
+function anunciarEtapa(label) {
+  avisoEtapa.innerHTML = `<b>✓ Etapa superada</b> · ${escapeHtml(label)}`;
+  avisoEtapa.classList.remove('visible');
+  void avisoEtapa.offsetWidth; // reinicia la animación si dos etapas caen seguidas
+  avisoEtapa.classList.add('visible');
+  clearTimeout(avisoTimer);
+  avisoTimer = setTimeout(() => avisoEtapa.classList.remove('visible'), 2400);
 }
 
 // Sin argumentos = el link en sí no sirve (401). Con argumentos = otra cosa falló y el
@@ -557,9 +883,11 @@ function showPostCheckout(snapshot) {
 
   const done = snapshot.state === 'policy_issued' || snapshot.state === 'completed';
   if (done) {
+    postSello.hidden = false;
     postTitulo.textContent = '¡Listo! Ya quedaste asegurado 🎉';
     postTexto.textContent = 'Tu póliza en PDF ya está en camino a tu chat.';
     burstConfetti();
+    tick([18, 50, 18, 50, 30]);
     if (snapshot.returnUrl) {
       startCountdown(snapshot.returnUrl);
     } else {
@@ -596,14 +924,14 @@ function showPostCheckout(snapshot) {
 function burstConfetti() {
   const box = document.getElementById('confeti');
   box.replaceChildren();
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 26; i++) {
     const p = document.createElement('i');
     const angle = Math.random() * Math.PI * 2;
-    const dist = 60 + Math.random() * 60;
+    const dist = 80 + Math.random() * 90;
     p.style.setProperty('--dx', `${Math.cos(angle) * dist}px`);
-    p.style.setProperty('--dy', `${Math.sin(angle) * dist + 40}px`);
-    p.style.setProperty('--rot', `${(Math.random() - 0.5) * 480}deg`);
-    p.style.animationDelay = `${Math.random() * 120}ms`;
+    p.style.setProperty('--dy', `${Math.sin(angle) * dist + 90}px`);
+    p.style.setProperty('--rot', `${(Math.random() - 0.5) * 720}deg`);
+    p.style.animationDelay = `${Math.random() * 220}ms`;
     box.appendChild(p);
   }
 }
@@ -628,18 +956,26 @@ function startCountdown(url) {
 }
 
 // ── Aplica una WebReply completa a la pantalla ─────────────────────────────
-function applyReply(reply) {
-  for (const t of reply.texts ?? []) addBubble('agent', t);
+async function applyReply(reply) {
+  // El rail se mueve PRIMERO: el avance se siente inmediato y el diálogo aterriza después.
+  if (reply.progress && renderProgress(progressEl, reply.progress)) {
+    anunciarEtapa(reply.progress.label);
+  }
+
+  await revelarBurbujas(reply.texts ?? []);
+
   // `quote` (singular) sigue existiendo por paridad con la herramienta de voz; si el
   // backend es viejo y solo manda ese, se arma una línea equivalente.
   if (reply.quotes?.length) {
+    totalConocido = reply.totalMensual ?? null;
     addQuoteCard(reply.quotes, reply.totalMensual);
   } else if (reply.quote) {
     const q = reply.quote;
+    totalConocido = q.precioMensual;
     addQuoteCard([{ ...q, precioUnitario: q.precioMensual, cantidad: 1, subtotal: q.precioMensual }], q.precioMensual);
   }
-  if (reply.checkoutUrl) addPayButton(reply.checkoutUrl);
-  renderProgress(progressEl, reply.progress);
+
+  if (reply.checkoutUrl) mostrarBarraPago(reply.checkoutUrl);
   renderChips(reply.choices);
   setExpectedInput(reply.expectedInput);
 
@@ -655,6 +991,7 @@ async function sendMessage(text) {
   if (!text.trim()) return;
   addBubble('user', text);
   textoEl.value = '';
+  textoEl.style.height = 'auto';
   chipsEl.replaceChildren();
   showTyping();
   btnEnviar.disabled = true;
@@ -667,7 +1004,7 @@ async function sendMessage(text) {
     hideTyping();
     if (res.status === 401) { showError(); return; }
     if (!res.ok) throw new Error(`web-session respondió ${res.status}`);
-    applyReply(await res.json());
+    await applyReply(await res.json());
   } catch (err) {
     hideTyping();
     console.error('No se pudo enviar el mensaje:', err);
@@ -689,7 +1026,7 @@ async function sendSelfie(width, height) {
     hideTyping();
     if (res.status === 401) { showError(); return; }
     if (!res.ok) throw new Error(`web-session respondió ${res.status}`);
-    applyReply(await res.json());
+    await applyReply(await res.json());
   } catch (err) {
     hideTyping();
     console.error('No se pudo enviar la selfie:', err);
@@ -697,7 +1034,7 @@ async function sendSelfie(width, height) {
   }
 }
 
-btnEnviar.addEventListener('click', () => sendMessage(textoEl.value));
+btnEnviar.addEventListener('click', () => { tick(12); sendMessage(textoEl.value); });
 textoEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -718,6 +1055,7 @@ selfieInput.addEventListener('change', () => {
   const url = URL.createObjectURL(file);
   img.onload = () => {
     URL.revokeObjectURL(url);
+    tick(14);
     sendSelfie(img.naturalWidth, img.naturalHeight);
   };
   img.src = url;
@@ -741,6 +1079,8 @@ selfieInput.addEventListener('change', () => {
       return;
     }
 
+    // El historial se pinta de golpe: al recargar, la cadencia de diálogo sería una espera,
+    // no un efecto.
     for (const m of snapshot.transcript ?? []) addBubble(m.role, m.text);
     textoEl.focus();
   } catch (err) {
