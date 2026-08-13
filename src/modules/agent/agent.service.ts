@@ -1261,7 +1261,14 @@ export class AgentService {
       // returning customer (phoneVerified already true) skips straight to the real prompt.
       if (!context.phoneVerified) {
         return {
-          text: 'Antes de continuar, confirmemos que eres tú — toca el botón para compartir tu número de Telegram (ya verificado, no necesitas escribir nada) 👇',
+          // 2026-08-12 (live-tested via texto.html): this text used to hardcode "de
+          // Telegram" — nonsensical on WhatsApp (no such button exists there either) and
+          // on AseguraWeb (handleWebMessage auto-verifies via a synthetic contact on
+          // every message, same as WhatsApp's WaId — see the header comment there).
+          // Channel-neutral wording: Telegram users see a real button (requestContact
+          // below still renders it there); WhatsApp/web users just continue and the
+          // NEXT message verifies them transparently, no button needed.
+          text: 'Antes de continuar, confirmemos que eres tú — toca el botón para compartir tu número (o simplemente escribe algo, si no lo ves) 👇',
           nextState: ConversationState.DATA_CAPTURE,
           context: { ...context, awaitingPhoneVerification: true },
           requestContact: true,
@@ -1717,7 +1724,7 @@ export class AgentService {
           awaitingSelfie: true,
         };
         return {
-          text: 'Identidad verificada ✅\n\n📸 Por último, toca el clip 📎 y envíame una selfie ahora mismo para confirmar tu identidad.',
+          text: 'Identidad verificada ✅\n\n📸 Por último, envíame una selfie ahora mismo para confirmar tu identidad.',
           context: verifiedContext,
           // '✅' is NOT one of Telegram's allowed reaction emoji (grammy's
           // ReactionTypeEmoji union) — silently failed with REACTION_INVALID in
@@ -1733,7 +1740,7 @@ export class AgentService {
         awaitingSelfie: true,
       };
       return {
-        text: 'Sin problema, seguimos así.\n\n📸 Por último, toca el clip 📎 y envíame una selfie ahora mismo para confirmar tu identidad.',
+        text: 'Sin problema, seguimos así.\n\n📸 Por último, envíame una selfie ahora mismo para confirmar tu identidad.',
         context: skippedContext,
       };
     }

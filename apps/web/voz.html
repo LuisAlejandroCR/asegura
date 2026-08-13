@@ -304,9 +304,65 @@
 
   .letra-chica{font-size:12px;color:var(--gris);opacity:.7;margin-top:12px;line-height:1.45}
 
+  /* ── Pantalla post-checkout (plan-17 §12, misma que texto.html) ─────── */
+  #postCheckout{
+    display:none;
+    flex:1;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:16px;
+    padding:32px;
+    text-align:center;
+  }
+  #postCheckout.activo{display:flex}
+
+  .check-circulo{
+    width:74px;height:74px;
+    border-radius:50%;
+    background:var(--amarillo);
+    display:flex;align-items:center;justify-content:center;
+    animation:pop .5s cubic-bezier(.2,.9,.3,1.3) both;
+    position:relative;
+  }
+  .check-circulo svg{width:36px;height:36px}
+  @keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+
+  .confeti{position:absolute;inset:-40px auto auto -40px;width:160px;height:160px;pointer-events:none}
+  .confeti i{
+    position:absolute;width:6px;height:10px;top:50%;left:50%;
+    background:var(--azul);
+    animation:caer 1.1s ease-out forwards;
+    opacity:0;
+  }
+  .confeti i:nth-child(odd){background:var(--amarillo)}
+  @keyframes caer{
+    0%{opacity:1;transform:translate(0,0) rotate(0)}
+    100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(var(--rot))}
+  }
+
+  #postCheckout h2{font-size:20px;color:var(--negro);font-weight:700}
+  #postCheckout p{font-size:14px;color:var(--gris);max-width:300px;line-height:1.5}
+  #cuentaAtras{font-variant-numeric:tabular-nums;font-weight:700;color:var(--azul)}
+
+  .btn-volver{
+    min-height:50px;
+    padding:0 24px;
+    border:none;
+    border-radius:12px;
+    background:var(--azul);
+    color:var(--blanco);
+    font-family:inherit;
+    font-size:15px;
+    font-weight:700;
+    cursor:pointer;
+  }
+
   @media (prefers-reduced-motion:reduce){
     #orb{animation:none!important;transition:none}
     #resumen[open] .hoja{animation:none}
+    .check-circulo{animation:none}
+    .confeti{display:none}
   }
 </style>
 </head>
@@ -370,6 +426,20 @@
     </div>
   </dialog>
 
+  <!-- Mismo mecanismo que texto.html (plan-17 §12): si el token ya trae un pago
+       pendiente/confirmado al cargar, se muestra esto en vez del orbe. -->
+  <div id="postCheckout">
+    <div class="check-circulo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+      <div class="confeti" id="confeti"></div>
+    </div>
+    <h2 id="postTitulo">Confirmando tu pago…</h2>
+    <p id="postTexto">Esto puede tardar unos segundos. En cuanto se confirme, tu póliza llega al chat.</p>
+    <button class="btn-volver" id="btnVolver" hidden>Volver a WhatsApp</button>
+  </div>
+
 <script type="module">
 import { Room, RoomEvent } from 'livekit-client';
 import { renderProgress, injectProgressStyles } from './progress-bar.js';
@@ -395,12 +465,98 @@ const webToken = new URLSearchParams(location.search).get('token');
   const btnPagar = document.getElementById('btn-pagar');
   const btnDuda  = document.getElementById('btn-duda');
   const progressEl = document.getElementById('progress');
+  const mainEl = document.querySelector('main');
+  const footerEl = document.querySelector('footer');
+  const postCheckout = document.getElementById('postCheckout');
+  const postTitulo = document.getElementById('postTitulo');
+  const postTexto = document.getElementById('postTexto');
+  const btnVolver = document.getElementById('btnVolver');
 
   injectProgressStyles();
-  // Estático por ahora — voz.html no recibe {state, progress} reales del backend todavía
-  // (esa pieza depende del worker de voz, fuera de alcance de este pase). Arranca en el
-  // primer paso del flujo web (DISCOVERY) para que la barra no aparezca vacía/rota.
-  renderProgress(progressEl, { step: 1, totalSteps: 6, label: 'Cuéntanos' });
+
+  // Plan-17 §12 — mismo mecanismo que texto.html: si el token de sesión ya trae un pago
+  // pendiente o confirmado al cargar (el usuario volvió tras pagar, o vino de texto.html),
+  // se muestra esa pantalla en vez del orbe. Sin token, o mientras la sesión sigue en
+  // discovery/cotización, la barra queda estática (el worker de voz aún no manda estado
+  // real — ver el comentario del `webToken` arriba) y el orbe funciona como siempre.
+  function burstConfetti() {
+    const box = document.getElementById('confeti');
+    box.replaceChildren();
+    for (let i = 0; i < 14; i++) {
+      const p = document.createElement('i');
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 60 + Math.random() * 60;
+      p.style.setProperty('--dx', `${Math.cos(angle) * dist}px`);
+      p.style.setProperty('--dy', `${Math.sin(angle) * dist + 40}px`);
+      p.style.setProperty('--rot', `${(Math.random() - 0.5) * 480}deg`);
+      p.style.animationDelay = `${Math.random() * 120}ms`;
+      box.appendChild(p);
+    }
+  }
+
+  let pollTimer = null;
+  function showPostCheckout(snapshot) {
+    mainEl.style.display = 'none';
+    footerEl.style.display = 'none';
+    postCheckout.classList.add('activo');
+
+    const done = snapshot.state === 'policy_issued' || snapshot.state === 'completed';
+    if (!done) {
+      if (!pollTimer) {
+        let attempts = 0;
+        pollTimer = setInterval(async () => {
+          attempts++;
+          if (attempts > 40) { clearInterval(pollTimer); pollTimer = null; return; }
+          try {
+            const res = await fetch(`${API_URL}/web-session/${webToken}`);
+            if (!res.ok) return;
+            const fresh = await res.json();
+            if (fresh.state === 'policy_issued' || fresh.state === 'completed') showPostCheckout(fresh);
+          } catch { /* red intermitente: reintenta en el próximo tick */ }
+        }, 3000);
+      }
+      return;
+    }
+
+    postTitulo.textContent = '¡Listo! Ya quedaste asegurado 🎉';
+    postTexto.textContent = 'Tu póliza en PDF ya está en camino a tu chat.';
+    burstConfetti();
+    if (snapshot.returnUrl) {
+      let n = 3;
+      postTexto.innerHTML = `Te llevamos de vuelta a WhatsApp en <span id="cuentaAtras">${n}</span>…`;
+      const iv = setInterval(() => {
+        n--;
+        const el = document.getElementById('cuentaAtras');
+        if (el) el.textContent = String(Math.max(n, 0));
+        if (n <= 0) { clearInterval(iv); location.href = snapshot.returnUrl; }
+      }, 1000);
+      btnVolver.hidden = false;
+      btnVolver.textContent = 'Volver ahora';
+      btnVolver.onclick = () => { clearInterval(iv); location.href = snapshot.returnUrl; };
+    } else {
+      btnVolver.hidden = false;
+      btnVolver.textContent = 'Ya puedes cerrar esta pestaña';
+      btnVolver.disabled = true;
+    }
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  if (webToken) {
+    fetch(`${API_URL}/web-session/${webToken}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`web-session respondió ${res.status}`))))
+      .then((snapshot) => {
+        renderProgress(progressEl, snapshot.progress);
+        const paymentish = snapshot.state === 'payment' || snapshot.state === 'policy_issued' || snapshot.state === 'completed';
+        if (paymentish) showPostCheckout(snapshot);
+      })
+      .catch((err) => {
+        console.warn('No se pudo cargar la sesión real, quedando en modo demo:', err);
+        renderProgress(progressEl, { step: 1, totalSteps: 6, label: 'Cuéntanos' });
+      });
+  } else {
+    // Sin token: comportamiento de siempre, orbe standalone sin sesión real.
+    renderProgress(progressEl, { step: 1, totalSteps: 6, label: 'Cuéntanos' });
+  }
 
   const MENSAJES = {
     inactivo:   'Toca el círculo para empezar a hablar',
