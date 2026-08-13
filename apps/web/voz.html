@@ -443,11 +443,10 @@
 <script type="module">
 import { Room, RoomEvent } from 'livekit-client';
 import { renderProgress, injectProgressStyles } from './progress-bar.js';
-
 // Backend NestJS, no este sitio estático — mismo origen solo en local si se corren juntos.
-// Sin VITE_API_URL en producción, cae a same-origin (rompe si el backend vive en otro
-// dominio; Vercel/Railway necesitan la env var real).
-const API_URL = import.meta.env.VITE_API_URL || '';
+// api-base.js normaliza VITE_API_URL (le pone https:// si falta, quita la barra final);
+// sin la env var cae a same-origin, que en Vercel es un 404 garantizado.
+import { apiFetch } from './api-base.js';
 
 // Enlazado desde el chat (plan 17 §11) — identifica esta sesión de voz con la
 // conversación real de Telegram/WhatsApp. El worker de voz (proceso Node aparte, sin DI
@@ -508,7 +507,7 @@ const webToken = new URLSearchParams(location.search).get('token');
           attempts++;
           if (attempts > 40) { clearInterval(pollTimer); pollTimer = null; return; }
           try {
-            const res = await fetch(`${API_URL}/web-session/${webToken}`);
+            const res = await apiFetch(`/web-session/${webToken}`);
             if (!res.ok) return;
             const fresh = await res.json();
             if (fresh.state === 'policy_issued' || fresh.state === 'completed') showPostCheckout(fresh);
@@ -542,7 +541,7 @@ const webToken = new URLSearchParams(location.search).get('token');
   }
 
   if (webToken) {
-    fetch(`${API_URL}/web-session/${webToken}`)
+    apiFetch(`/web-session/${webToken}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`web-session respondió ${res.status}`))))
       .then((snapshot) => {
         renderProgress(progressEl, snapshot.progress);
@@ -643,7 +642,7 @@ const webToken = new URLSearchParams(location.search).get('token');
 
     let sesion;
     try {
-      const res = await fetch(`${API_URL}/voice/session`, {
+      const res = await apiFetch(`/voice/session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ webToken }),
