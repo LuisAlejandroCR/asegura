@@ -411,8 +411,8 @@
 
 <script type="module">
 import { renderProgress, injectProgressStyles } from './progress-bar.js';
+import { apiFetch } from './api-base.js';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
 const token = new URLSearchParams(location.search).get('token');
 
 const chat = document.getElementById('chat');
@@ -551,7 +551,7 @@ function showPostCheckout(snapshot) {
         return;
       }
       try {
-        const res = await fetch(`${API_URL}/web-session/${token}`);
+        const res = await apiFetch(`/web-session/${token}`);
         if (!res.ok) return;
         const fresh = await res.json();
         if (fresh.state === 'policy_issued' || fresh.state === 'completed') {
@@ -621,7 +621,7 @@ async function sendMessage(text) {
   showTyping();
   btnEnviar.disabled = true;
   try {
-    const res = await fetch(`${API_URL}/web-session/${token}/message`, {
+    const res = await apiFetch(`/web-session/${token}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
@@ -643,7 +643,7 @@ async function sendMessage(text) {
 async function sendSelfie(width, height) {
   showTyping();
   try {
-    const res = await fetch(`${API_URL}/web-session/${token}/message`, {
+    const res = await apiFetch(`/web-session/${token}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ photo: { width, height } }),
@@ -690,7 +690,7 @@ selfieInput.addEventListener('change', () => {
   if (!token) { showError(); return; }
 
   try {
-    const res = await fetch(`${API_URL}/web-session/${token}`);
+    const res = await apiFetch(`/web-session/${token}`);
     if (res.status === 401) { showError(); return; }
     if (!res.ok) throw new Error(`web-session respondió ${res.status}`);
     const snapshot = await res.json();

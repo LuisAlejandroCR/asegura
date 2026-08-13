@@ -47,6 +47,22 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // AseguraWeb (apps/web) corre en otro dominio (Vercel), así que TODA llamada de
+  // texto.html/voz.html es cross-origin: si CORS_ORIGIN no lista ese origen exacto, el
+  // navegador bloquea la respuesta y la UI solo puede mostrar "No se pudo conectar" —
+  // sin nada en los logs del backend, porque la petición sí llegó y sí respondió.
+  // Dejar el origen configurado (y el de WEB_APP_URL) visible al arrancar convierte ese
+  // fallo mudo en una línea de log comparable de un vistazo.
+  logger.log(`CORS origins: ${corsOrigins.length ? corsOrigins.join(', ') : '(ninguno — se rechaza todo origen cruzado)'}`);
+
+  const webAppUrl = config.get<string>('WEB_APP_URL', '');
+  if (webAppUrl && !corsOrigins.includes(new URL(webAppUrl).origin)) {
+    logger.warn(
+      `WEB_APP_URL (${webAppUrl}) no está en CORS_ORIGIN — texto.html y voz.html van a ` +
+        'fallar con "No se pudo conectar" al llamar /web-session y /voice/session.',
+    );
+  }
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -76,7 +92,10 @@ async function bootstrap() {
   }
 
   const port = config.get<number>('PORT', 3000);
-  await app.listen(port);
+  // 0.0.0.0 explícito: en un contenedor (Railway) el router externo entra por la IP del
+  // contenedor, no por loopback. Dejarlo al default hace que un bind a 127.0.0.1 se vea
+  // como "Application failed to respond" (502) con el proceso arriba y sin errores.
+  await app.listen(port, '0.0.0.0');
   logger.log(`Asegura running on port ${port}`);
 }
 
