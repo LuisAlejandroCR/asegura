@@ -3085,6 +3085,26 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     );
   });
 
+  // Live bug (2026-08-18, Telegram voice): "Tengo dos perros y un gato." already answers
+  // the breakdown question, and the counts ARE captured from it — but the mixto branch
+  // asked "¿Cuántos gatos y cuántos perros tienes?" anyway, so the user had to repeat
+  // themselves. The context assertion in the test below this one never caught it because
+  // it checks the saved counts, not the reply the person actually reads.
+  it('regression — counts stated in the SAME message that reveals a mixed household are not asked for again', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: {},
+      intent: makeIntent({ productCategory: 'mascotas', petType: 'mixto', petCount: 3 }),
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('Tengo dos perros y un gato'));
+    await service.handleMessage({});
+    const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
+    expect(sentText).not.toMatch(/cuántos gatos y cuántos perros/i);
+    expect(sentText).toContain('1 gato');
+    expect(sentText).toContain('2 perros');
+    expect(sentText).toMatch(/para todos/i);
+  });
+
   it('regression — "para todos" without species counts asks for quantity breakdown instead of quoting', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DISCOVERY,
@@ -3703,7 +3723,12 @@ describe('AgentService — DISCOVERY asks species before quoting mascotas', () =
     await service.handleMessage({});
     expect(quoting.bestQuote).not.toHaveBeenCalled();
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    expect(sentText).toContain('¿Cuántos gatos');
+    // 2026-08-18: this asserted "¿Cuántos gatos" — but the message already states both
+    // counts, so re-asking them was the repeated-question bug. The guarantee this test
+    // exists for is unchanged: the species gate must not swallow the mixto path into a
+    // blind quote (bestQuote above). It now lands on the which-pet clarification, which
+    // is what the test name says it protects.
+    expect(sentText).toMatch(/los gatos, los perros, o para todos/i);
   });
 });
 

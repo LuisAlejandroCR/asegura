@@ -75,6 +75,44 @@ describe('AUTHORIZATION → DISCOVERY entry — WEB_APP_URL configured', () => {
     expect(sentText).toContain('texto.html');
   });
 
+  // Live bug (2026-08-18): the question itself is "¿hablar o escribir?", so people answer
+  // by naming BOTH ("escribir, no hablar" / "escribir mejor que hablar"). Voice won on a
+  // bare mention, so the choice was recorded inverted. The damage surfaces at the very END:
+  // webModality builds Wompi's redirect_url, so someone who asked to write got the voice
+  // page opened on them right after paying — the last screen of the whole flow.
+  it.each([
+    ['quiero escribir, no hablar'],
+    ['prefiero escribir que hablar'],
+    ['no quiero hablar, prefiero escribir'],
+  ])('resolves %s to the WRITING page even though it also mentions hablar', async (reply) => {
+    const { service, telegram, conversations, config } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { awaitingWebModalityChoice: true },
+    });
+    withWebAppUrl(config);
+    conversations.getOrCreate.mockResolvedValue({ id: 'conv-1', user_id: 'u1', channel: 'telegram', state: ConversationState.DISCOVERY, context: { awaitingWebModalityChoice: true } });
+    telegram.normalize.mockResolvedValue({ userId: 'u1', channel: 'telegram', channelId: '1', text: reply, timestamp: new Date() });
+    await service.handleMessage({});
+    const [, sentText] = telegram.sendText.mock.calls[0];
+    expect(sentText).toContain('texto.html');
+    expect(sentText).not.toContain('voz.html');
+    const savedContext = conversations.saveState.mock.calls[0]?.[2] as { webModality?: string };
+    expect(savedContext.webModality).toBe('texto');
+  });
+
+  it('still resolves a genuine voice choice that mentions writing ("hablar, no escribir") to the voice page', async () => {
+    const { service, telegram, conversations, config } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { awaitingWebModalityChoice: true },
+    });
+    withWebAppUrl(config);
+    conversations.getOrCreate.mockResolvedValue({ id: 'conv-1', user_id: 'u1', channel: 'telegram', state: ConversationState.DISCOVERY, context: { awaitingWebModalityChoice: true } });
+    telegram.normalize.mockResolvedValue({ userId: 'u1', channel: 'telegram', channelId: '1', text: 'hablar, no escribir', timestamp: new Date() });
+    await service.handleMessage({});
+    const [, sentText] = telegram.sendText.mock.calls[0];
+    expect(sentText).toContain('voz.html');
+  });
+
   it('"seguir aquí" (or anything unrecognized) clears the flag and falls through to normal DISCOVERY handling of that SAME message — never re-sends the hablar/escribir link', async () => {
     const { service, telegram, conversations, config } = buildService({
       state: ConversationState.DISCOVERY,

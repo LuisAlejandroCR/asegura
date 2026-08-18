@@ -810,9 +810,20 @@ export class AgentService {
   // (F01/free text), so a real answer typed instead of tapping a choice is never lost.
   private resolveWebModalityChoice(convId: string, context: ConversationContext, text: string): ProcessResult | null {
     const lower = text.toLowerCase();
-    const wantsVoice = /\b(hablar|voz|audio|llamar)\b/.test(lower);
-    const wantsText = /\b(escribir|texto|escrib|chat)\b/.test(lower);
-    if (!wantsVoice && !wantsText) return null;
+    // Live bug (2026-08-18): the question names both options ("¿hablar o escribir?"), so
+    // people answer naming both — "escribir, no hablar", "escribir mejor que hablar". Voice
+    // used to win on a bare mention, recording the choice INVERTED. It surfaces at the very
+    // end: webModality builds Wompi's redirect_url, so someone who asked to write got the
+    // voice page opened on them right after paying. Drop negated mentions, then let
+    // whichever option is named FIRST win — that's the one people lead with.
+    const stripped = lower.replace(
+      /\bno\s+(?:quiero\s+|me\s+gusta\s+|puedo\s+)?(?:hablar|voz|audio|llamar|escribir|texto|chat)\b/g,
+      ' ',
+    );
+    const voiceAt = stripped.search(/\b(hablar|voz|audio|llamar)\b/);
+    const textAt = stripped.search(/\b(escribir|texto|escrib|chat)\b/);
+    if (voiceAt < 0 && textAt < 0) return null;
+    const wantsVoice = voiceAt >= 0 && (textAt < 0 || voiceAt < textAt);
 
     const webAppUrl = this.config.get<string>('WEB_APP_URL');
     const token = webAppUrl ? this.webSessionTokens.sign({ conversationId: convId }) : null;
@@ -1088,6 +1099,17 @@ export class AgentService {
     // First time detecting mixed pets — ask for quantity breakdown before quoting.
     // Must ask counts first so "para todos" can quote both species at the right price.
     if (newContext.petType === 'mixto') {
+      // Live bug (2026-08-18): "Tengo dos perros y un gato." states the breakdown in the
+      // very message that reveals the mixed household, and the block above already saved
+      // it — but this branch asked for it anyway, so the person had to repeat themselves
+      // to a agent that had just written their answer down. Only ask for what's missing.
+      const known = newContext.petSpeciesCounts;
+      if (known?.gato && known?.perro) {
+        return {
+          text: `Entendido, tienes ${known.gato} gato${known.gato !== 1 ? 's' : ''} y ${known.perro} perro${known.perro !== 1 ? 's' : ''}. ¿Quieres el seguro para los gatos, los perros, o para todos?`,
+          context: newContext,
+        };
+      }
       return {
         text: '¡Qué bonita familia de mascotas! 🐱🐶 ¿Cuántos gatos y cuántos perros tienes? Así calculo el valor exacto.',
         context: newContext,
