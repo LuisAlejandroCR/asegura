@@ -9,7 +9,12 @@
 import { type JobContext, ServerOptions, cli, defineAgent, voice } from '@livekit/agents';
 import * as openai from '@livekit/agents-plugin-openai';
 import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
-import dotenv from 'dotenv';
+// Namespace import, not default: tsconfig has allowSyntheticDefaultImports without
+// esModuleInterop, so `import dotenv from 'dotenv'` type-checks but emits
+// `dotenv_1.default.config()` — and dotenv's CJS export has no `.default`, so the worker
+// died on this line before doing anything. (helmet in main.ts survives only because it
+// happens to set module.exports.default.)
+import * as dotenv from 'dotenv';
 import { createVoiceAgent } from './agent';
 
 dotenv.config();
