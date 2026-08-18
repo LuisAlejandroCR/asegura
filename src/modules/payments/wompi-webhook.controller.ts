@@ -77,9 +77,10 @@ export class WompiWebhookController {
       return { status: 'ignored', reason: txData.status };
     }
 
+    // One write, not 'paid' followed by 'active': the second overwrote the first in the
+    // same request, so the intermediate state was never readable by anything.
     for (const p of pending) {
-      await this.policy.updateStatus(p.id, 'paid', { wompi_link_id: txData.paymentLinkId });
-      await this.policy.updateStatus(p.id, 'active');
+      await this.policy.updateStatus(p.id, 'active', { wompi_link_id: txData.paymentLinkId });
     }
 
     await this.notifyPoliciesIssued(pending);

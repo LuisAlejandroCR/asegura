@@ -24,6 +24,10 @@ export class GroqNlpService implements INlpProvider {
     }
   }
 
+  get isEnabled(): boolean {
+    return !!this.apiKey;
+  }
+
   // One short fixed retry on a 429 — not a backoff library, latency matters in real-time chat.
   // Any other error still falls straight through to fallbackIntent().
   private static readonly RATE_LIMIT_RETRY_DELAY_MS = 2_500;

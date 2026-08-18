@@ -9,6 +9,6 @@ import { WebSessionTokenService } from '../agent/web-session-token.service';
 @Module({
   controllers: [VoiceController],
   providers: [LiveKitTokenService, WebSessionTokenService],
-  exports: [LiveKitTokenService],
+  exports: [LiveKitTokenService, WebSessionTokenService],
 })
 export class VoiceModule {}

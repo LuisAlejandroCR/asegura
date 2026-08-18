@@ -1,9 +1,15 @@
 // health.controller.ts: GET /health — pings the database and reports which optional
-// integrations are configured.
-import { Controller, Get } from '@nestjs/common';
+// integrations are live, by asking each service instead of re-reading its env vars.
+import { Controller, Get, Inject } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
-import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../database/supabase.service';
+import { INlpProvider } from '../modules/nlp/types';
+import { TelegramAdapter } from '../modules/channel/telegram-adapter.service';
+import { WompiService } from '../modules/payments/wompi.service';
+import { LiveKitTokenService } from '../modules/voice/livekit-token.service';
+import { WebSessionTokenService } from '../modules/agent/web-session-token.service';
+
+const state = (live: boolean) => (live ? 'configured' : 'pending');
 
 // Railway polls this and kills the deploy on failure: a 429 here reads as a dead app.
 @SkipThrottle()
@@ -11,7 +17,11 @@ import { SupabaseService } from '../database/supabase.service';
 export class HealthController {
   constructor(
     private readonly supabase: SupabaseService,
-    private readonly config: ConfigService,
+    @Inject('INlpProvider') private readonly nlp: INlpProvider,
+    private readonly telegram: TelegramAdapter,
+    private readonly wompi: WompiService,
+    private readonly liveKit: LiveKitTokenService,
+    private readonly webSessionTokens: WebSessionTokenService,
   ) {}
 
   @Get()
@@ -20,18 +30,23 @@ export class HealthController {
     return {
       status: dbOk ? 'ok' : 'degraded',
       db: dbOk ? 'ok' : 'error',
-      llm: (this.config.get('LLM_API_KEY') || this.config.get('LLM_BASE_URL')) ? 'configured' : 'pending',
-      telegram: this.config.get('TELEGRAM_BOT_TOKEN') ? 'configured' : 'pending',
-      wompi: this.config.get('WOMPI_PUBLIC_KEY') ? 'configured' : 'pending',
+      llm: state(this.nlp.isEnabled),
+      telegram: state(this.telegram.instance !== null),
+      wompi: state(this.wompi.isEnabled),
+      jwt: state(this.webSessionTokens.isEnabled),
+      // LiveKit credentials only. Whether the voice worker is registered and answering is
+      // not observable from this process — it is a separate Railway service.
+      livekit: state(this.liveKit.isEnabled),
       timestamp: new Date().toISOString(),
     };
   }
 
   private async pingDb(): Promise<boolean> {
     try {
-      // The SDK returns an error object (no throw) for table-not-found; only network errors throw.
-      await this.supabase.db.from('conversations').select('id').limit(1);
-      return true;
+      // The SDK returns an error object instead of throwing for anything the server answered
+      // (missing table, rejected key); only transport failures reach the catch.
+      const { error } = await this.supabase.db.from('conversations').select('id').limit(1);
+      return !error;
     } catch {
       return false;
     }

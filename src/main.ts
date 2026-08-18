@@ -87,8 +87,12 @@ async function bootstrap() {
       const secret = config.getOrThrow<string>('TELEGRAM_WEBHOOK_SECRET');
       await telegram.setWebhook(`${host}/webhook/telegram`, secret);
     } else {
-      telegram.instance.start();
-      logger.log('Telegram bot started in polling mode');
+      // Deliberately not awaited: start() settles only when polling stops, so awaiting it
+      // would block bootstrap before app.listen. Unhandled, a 409 from a second poller
+      // killed the process twice in production.
+      telegram.instance
+        .start({ onStart: () => logger.log('Telegram bot started in polling mode') })
+        .catch((err) => logger.error(`Telegram polling stopped — chat is down, HTTP still serving: ${err}`));
     }
   }
 

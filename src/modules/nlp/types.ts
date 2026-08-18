@@ -28,6 +28,8 @@ interface InsuranceIntent {
 
 interface INlpProvider {
   extractIntent(text: string, history?: Array<{ role: string; text: string }>): Promise<InsuranceIntent>;
+  // False means extractIntent still answers, but from keyword matching, not the model.
+  readonly isEnabled: boolean;
 }
 
 export { InsuranceIntent, INlpProvider };

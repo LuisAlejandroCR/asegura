@@ -168,12 +168,13 @@ describe('WompiWebhookController — malformed payload', () => {
 });
 
 describe('WompiWebhookController — APPROVED payment', () => {
-  it('updates status to paid then active, and notifies the user', async () => {
+  it('settles the policy in one write, and notifies the user', async () => {
     const { controller, policyService, telegram, conversations } = buildController();
     await controller.handleWebhook(makeEvent());
 
-    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-1', 'paid', expect.anything());
-    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-1', 'active');
+    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-1', 'active', expect.anything());
+    // 'paid' used to be written and overwritten by 'active' in the next statement.
+    expect(policyService.updateStatus).not.toHaveBeenCalledWith('pol-1', 'paid', expect.anything());
 
     expect(conversations.saveState).toHaveBeenCalledWith(
       'conv-1', ConversationState.POLICY_ISSUED, expect.objectContaining({ policyId: 'pol-1' }),
@@ -331,7 +332,7 @@ describe('WompiWebhookController — multi-product purchase (one payment, severa
   // Real feature: "quiero los dos" issues one policy per product, all sharing one
   // combined Wompi payment link — the webhook must settle every one of them, not just
   // the first match.
-  it('updates every policy sharing the payment link to paid then active', async () => {
+  it('settles every policy sharing the payment link', async () => {
     const policies = [
       makePolicy({ id: 'pol-1', product_id: 'vida-pan-american' }),
       makePolicy({ id: 'pol-2', product_id: 'asistencia-veterinaria' }),
@@ -339,10 +340,9 @@ describe('WompiWebhookController — multi-product purchase (one payment, severa
     const { controller, policyService } = buildController({ policies });
     await controller.handleWebhook(makeEvent());
 
-    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-1', 'paid', expect.anything());
-    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-1', 'active');
-    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-2', 'paid', expect.anything());
-    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-2', 'active');
+    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-1', 'active', expect.anything());
+    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-2', 'active', expect.anything());
+    expect(policyService.updateStatus).toHaveBeenCalledTimes(2);
   });
 
   it('sends one PDF per policy and a single combined confirmation message', async () => {
@@ -407,8 +407,8 @@ describe('WompiWebhookController — multi-product purchase (one payment, severa
     const result = await controller.handleWebhook(makeEvent());
 
     expect(result.status).toBe('processed');
-    expect(policyService.updateStatus).not.toHaveBeenCalledWith('pol-1', 'paid', expect.anything());
-    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-2', 'paid', expect.anything());
+    expect(policyService.updateStatus).not.toHaveBeenCalledWith('pol-1', 'active', expect.anything());
+    expect(policyService.updateStatus).toHaveBeenCalledWith('pol-2', 'active', expect.anything());
   });
 
   it('idempotency — skips entirely when every policy in the bundle is already processed', async () => {
