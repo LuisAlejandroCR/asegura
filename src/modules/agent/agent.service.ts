@@ -217,7 +217,8 @@ export class AgentService {
     // A contact share or a photo carries no text at all, so it must skip the empty-text bail.
     if (!msg.text && !msg.contact && !msg.photo) return;
 
-    this.logger.log(`Message from ${msg.userId}: "${msg.text.slice(0, 80)}"`);
+    // Never log the text: cédula, nombre, correo and teléfono all arrive through here.
+    this.logger.log(`Message from ${msg.userId} (${msg.text.length} chars)`);
 
     const { result } = await this.computeReply(msg);
 

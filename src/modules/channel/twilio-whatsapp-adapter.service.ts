@@ -117,7 +117,7 @@ export class TwilioWhatsAppAdapter implements IChannelAdapter {
       throw new Error(`Groq transcription failed: ${res.status} ${await res.text()}`);
     }
     const data = (await res.json()) as { text?: string };
-    this.logger.log(`Voice transcribed: "${(data.text ?? '').slice(0, 80)}"`);
+    this.logger.log(`Voice transcribed (${(data.text ?? '').length} chars)`);
     return data.text ?? '';
   }
 

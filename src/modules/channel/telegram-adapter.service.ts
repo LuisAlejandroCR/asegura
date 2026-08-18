@@ -128,7 +128,7 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
     }
 
     const data = (await res.json()) as { text?: string };
-    this.logger.log(`Voice transcribed: "${(data.text ?? '').slice(0, 80)}"`);
+    this.logger.log(`Voice transcribed (${(data.text ?? '').length} chars)`);
     return data.text ?? '';
   }
 
