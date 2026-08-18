@@ -2,6 +2,7 @@
   "name": "asegura",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.22.0",
   "scripts": {
     "build": "node ./node_modules/@nestjs/cli/bin/nest.js build",
     "dev": "node ./node_modules/@nestjs/cli/bin/nest.js start --watch",

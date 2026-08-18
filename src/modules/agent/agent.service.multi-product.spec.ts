@@ -1,6 +1,6 @@
 // agent.service.multi-product.spec.ts: the backend half of buying 2+ different products
 // in one purchase — one combined Wompi payment, one policy row + PDF per product (see
-// createPaymentLinkFlow and PolicyService.findAllByWompiLinkId). As of 2026-07-24
+// CreatePaymentLinkFlow and PolicyService.findAllByWompiLinkId).
 // ("restore the flow"), nothing in the live agent conversation sets
 // context.selectedProductIds automatically anymore — a quote in progress is never
 // interrupted by a mention of a different category (see deferCrossSell in
@@ -41,7 +41,7 @@ describe('AgentService — multi-product purchase: pet details still collected w
 });
 
 describe('AgentService — multi-product purchase: DATA_CAPTURE issues one policy per product', () => {
-  // 2026-07-24: "sí" now issues the policies immediately (unchanged) but asks the
+  // "sí" now issues the policies immediately (unchanged) but asks the
   // payment method (Tarjeta Colsubsidio vs. link de pago) before generating the Wompi
   // link — see the payment-method-choice describe block in agent.service.spec.ts. The
   // combined-amount payment link itself is created on the FOLLOW-UP turn once that

@@ -12,9 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No version pin here on purpose: action-setup reads packageManager from package.json,
+      # so CI, Railway and local stay on one pnpm. Settings in pnpm-workspace.yaml need 10+.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - uses: actions/setup-node@v4
         with:

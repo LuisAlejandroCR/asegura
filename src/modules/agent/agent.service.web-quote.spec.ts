@@ -1,7 +1,7 @@
 // agent.service.web-quote.spec.ts: WebReply.quote is singular, so a mixed-species
 // household (cat + dogs = two products) rendered a card showing only the FIRST product's
 // price — $81.800 next to the label "Tu prima mensual" when the real total was $275.000,
-// a 3.4x understatement. Found by driving texto.html end-to-end (2026-08-13).
+// A 3.4x understatement. Found by driving texto.html end-to-end.
 // `quotes` carries every line with its own count and subtotal, plus the real total.
 
 import { buildService } from './agent.service.test-helpers';

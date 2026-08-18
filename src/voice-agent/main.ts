@@ -68,6 +68,10 @@ if (require.main === module) {
     new ServerOptions({
       agent: __filename,
       agentName: 'asegura-voice',
+      // Sized for the container, not the CPU count. The default prewarms min(cores, 4) job
+      // processes in production and each one re-imports this file, measured at ~2.5 GB total.
+      // One idle process means the second concurrent caller waits for a cold start.
+      numIdleProcesses: 1,
       wsURL: requireEnv('LIVEKIT_URL'),
       apiKey: requireEnv('LIVEKIT_API_KEY'),
       apiSecret: requireEnv('LIVEKIT_API_SECRET'),

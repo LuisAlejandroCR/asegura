@@ -830,31 +830,6 @@ packages:
     resolution: {integrity: sha512-i39au9JY9qqZ9b0yKa5+2E3BQD9JtbGlCxqDbSvFjxprdHTdP96NgsLHOViwLk84J+eCLIyNzcGw5G3zIK2ZhQ==}
     engines: {node: '>=18.0.0'}
 
-  '@livekit/local-inference-darwin-arm64@0.2.6':
-    resolution: {integrity: sha512-YdzE0eXgLpUfT0S6AcJ73BknX6fnHWqmH2AukNkO6IBmpth4dFnTvTpOrGWPunlbDJmXanCwdD+Bh9O4oQA+PQ==}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@livekit/local-inference-darwin-x64@0.2.6':
-    resolution: {integrity: sha512-fSicCqoYA5iOtW2jZfB91RIcNafXs19xRNPH5QSHvrRXljvCn8WMh+7do1jEg1f2U98TDsyptZ91laiDSh8xNg==}
-    cpu: [x64]
-    os: [darwin]
-
-  '@livekit/local-inference-linux-arm64-gnu@0.2.6':
-    resolution: {integrity: sha512-XvLWw8IwiIimoQjivxelRdSz9uSenR7UJiw1KDL35qJd3ZrI3QMORnyx63s7TFgNNCoyJ2CBFBqs9k9pPuqkTA==}
-    cpu: [arm64]
-    os: [linux]
-
-  '@livekit/local-inference-linux-x64-gnu@0.2.6':
-    resolution: {integrity: sha512-L9MagQm/5tm0r82/GXecIZU8jz/2LY8DsMzRPlkz/2Et6qR4zz+8wEOUifuLC520L8MFN7HN6yf+PNbQnSfvWA==}
-    cpu: [x64]
-    os: [linux]
-
-  '@livekit/local-inference-win32-x64-msvc@0.2.6':
-    resolution: {integrity: sha512-g3B10sLdIsE0du8xh8+oFAllvbKZBRcVUXf52HvtRwNVQ3OiodrRI/Ehyvy9C94rwKDI40Kk5ZWcPo7cTI68IQ==}
-    cpu: [x64]
-    os: [win32]
-
   '@livekit/local-inference@0.2.6':
     resolution: {integrity: sha512-HtA5tC+gdDHoWAkb0QJYVCIoLL6/53VGXVoRY68zIeTUik9kAW/EOuYirEqRuGlL2UCzjWRRhRSkxLleLyucmQ==}
     engines: {node: '>=18.0.0'}
@@ -4037,6 +4012,9 @@ packages:
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
+ignoredOptionalDependencies:
+  - '@livekit/local-inference-*'
+
 snapshots:
 
   '@angular-devkit/core@17.3.11(chokidar@3.6.0)':
@@ -4797,30 +4775,9 @@ snapshots:
       '@livekit/av-linux-x64': 10.0.0
       '@livekit/av-win32-x64': 10.0.0
 
-  '@livekit/local-inference-darwin-arm64@0.2.6':
-    optional: true
-
-  '@livekit/local-inference-darwin-x64@0.2.6':
-    optional: true
-
-  '@livekit/local-inference-linux-arm64-gnu@0.2.6':
-    optional: true
-
-  '@livekit/local-inference-linux-x64-gnu@0.2.6':
-    optional: true
-
-  '@livekit/local-inference-win32-x64-msvc@0.2.6':
-    optional: true
-
   '@livekit/local-inference@0.2.6':
     dependencies:
       node-gyp-build: 4.8.4
-    optionalDependencies:
-      '@livekit/local-inference-darwin-arm64': 0.2.6
-      '@livekit/local-inference-darwin-x64': 0.2.6
-      '@livekit/local-inference-linux-arm64-gnu': 0.2.6
-      '@livekit/local-inference-linux-x64-gnu': 0.2.6
-      '@livekit/local-inference-win32-x64-msvc': 0.2.6
 
   '@livekit/mutex@1.1.1': {}
 

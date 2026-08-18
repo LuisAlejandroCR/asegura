@@ -75,7 +75,7 @@ describe('AUTHORIZATION → DISCOVERY entry — WEB_APP_URL configured', () => {
     expect(sentText).toContain('texto.html');
   });
 
-  // 2026-08-18: the chat message used to carry the signed session token in full view, so a
+  // The chat message used to carry the signed session token in full view, so a
   // screenshot or a forwarded message handed over a working session. The chat now gets a
   // short single-use code on the backend's own host; PUBLIC_URL is what makes that host
   // knowable, so without it the long link stays (degrade, never send a link that 404s).
@@ -99,7 +99,7 @@ describe('AUTHORIZATION → DISCOVERY entry — WEB_APP_URL configured', () => {
     expect(sentText).not.toContain('texto.html');
   });
 
-  // Live bug (2026-08-18): the question itself is "¿hablar o escribir?", so people answer
+  // The question itself is "¿hablar o escribir?", so people answer
   // by naming BOTH ("escribir, no hablar" / "escribir mejor que hablar"). Voice won on a
   // bare mention, so the choice was recorded inverted. The damage surfaces at the very END:
   // webModality builds Wompi's redirect_url, so someone who asked to write got the voice

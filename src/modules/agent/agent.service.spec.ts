@@ -1,6 +1,6 @@
 // agent.service.spec.ts: the conversation suite for AgentService — one describe per
 // state (GREETING through COMPLETED) plus the regression cases from live testing.
-// Each dated block names the real bug it locks down; keep that context when editing.
+// Each regression comment states the rule it locks down; the story belongs in memoria.md.
 
 import { ConversationState, ConversationContext } from './types';
 import { ProductCatalog } from '../quoting/product-catalog.service';
@@ -40,7 +40,7 @@ describe('AgentService — unsupported input', () => {
 // GREETING state
 
 describe('AgentService — GREETING', () => {
-  // 2026-07-24 feedback: greeting + a full separate authorization paragraph read as a
+  // Greeting + a full separate authorization paragraph read as a
   // wall of text before the user could say anything — combined into ONE short message;
   // the Ley 1581 disclosure is kept (legally required) but folded in, not its own message.
   it('sends one combined greeting + authorization message, not two separate ones', async () => {
@@ -57,7 +57,7 @@ describe('AgentService — GREETING', () => {
     );
   });
 
-  // 2026-07-26 feedback: "puedes responder por texto o audio" used to only appear two
+  // "puedes responder por texto o audio" used to only appear two
   // turns later, in the affiliate-ID question — moved up so the very first message
   // already sets that expectation, before the user has committed to anything.
   it('the very first message already mentions text/audio are both fine', async () => {
@@ -93,7 +93,7 @@ describe('AgentService — GREETING', () => {
 // AUTHORIZATION state
 
 describe('AgentService — AUTHORIZATION', () => {
-  // 2026-07-26 affiliate CSV lookup — "sí" no longer jumps straight to DISCOVERY. It now
+  // Affiliate CSV lookup — "sí" no longer jumps straight to DISCOVERY. It now
   // asks a one-shot affiliate-ID question first (see the "affiliate ID lookup" describe
   // block below for that second step), staying in AUTHORIZATION meanwhile.
   it('"sí" stays in AUTHORIZATION and asks for the affiliate ID next, with autorizado:true', async () => {
@@ -106,12 +106,12 @@ describe('AgentService — AUTHORIZATION', () => {
     );
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).toContain('Ingresa tu ID');
-    // 2026-07-26 feedback: the text/audio reassurance already appeared in GREETING
+    // The text/audio reassurance already appeared in GREETING
     // (message 1) — repeating it here, two turns later, would be redundant.
     expect(sentText).not.toMatch(/texto o audio/i);
   });
 
-  // Real live-test feedback (2026-07-26): a RETURNING affiliate — serieId already known
+  // A RETURNING affiliate — serieId already known
   // from a successful lookup in an earlier conversation, surviving a restart via
   // persistent memory — got asked "Ingresa tu ID..." all over again instead of skipping
   // straight to DISCOVERY with an honest acknowledgment.
@@ -193,11 +193,11 @@ describe('AgentService — AUTHORIZATION', () => {
   });
 });
 
-// Affiliate ID lookup (2026-07-26)
+// Affiliate ID lookup
 // "sí" asks a one-shot affiliate-ID question before DISCOVERY starts — a decline, an
 // unrecognized ID, or the lookup being disabled (missing CSV) all proceed to DISCOVERY
 // identically, just without the rangoSalarial boost. F01 hybrid buttons move here too
-// (Step 4, 2026-07-26) — the real first moment DISCOVERY actually begins.
+// (Step 4) — the real first moment DISCOVERY actually begins.
 describe('AgentService — affiliate ID lookup', () => {
   it('a decline ("no") proceeds to DISCOVERY with F01 buttons, no rangoSalarial set', async () => {
     const { service, telegram, conversations, affiliateLookup } = buildService({
@@ -263,7 +263,7 @@ describe('AgentService — affiliate ID lookup', () => {
     expect(savedContext.rangoSalarial).toBeUndefined();
   });
 
-  // 2026-07-26 feature request: "capture the complete row... so the agent will know all
+  // "capture the complete row... so the agent will know all
   // about the registered user" — the FULL record persists as affiliateProfile, and a
   // known petCount pre-fills context.petCount (same precedent as dependents above).
   it('captures the FULL affiliate record as affiliateProfile and pre-fills petCount from it', async () => {
@@ -404,7 +404,7 @@ describe('AgentService — affiliate ID lookup', () => {
     );
   });
 
-  // Real live-test bug (2026-07-26, screenshot): a non-numeric, non-"no" answer
+  // A non-numeric, non-"no" answer
   // ("Juan" — voice misheard the ID question, or a genuine misunderstanding) used to be
   // silently treated as an implicit decline, advancing to DISCOVERY without ever
   // telling the user their answer didn't make sense. Only digits or an explicit "no"
@@ -438,7 +438,7 @@ describe('AgentService — affiliate ID lookup', () => {
     expect(sentText).not.toContain('número entre 1 y 500');
   });
 
-  // 2026-07-26 clarification: SERIE is a row number into the real affiliate CSV
+  // SERIE is a row number into the real affiliate CSV
   // (1..500000, matching its ~500K rows) — a value outside that range can never match a
   // real row, so it's rejected the same way a non-numeric reply is, instead of wasting a
   // lookup call on a value that's guaranteed to miss.
@@ -472,7 +472,7 @@ describe('AgentService — affiliate ID lookup', () => {
     });
   });
 
-  // 2026-07-26 Step 4 — F01 hybrid-filter buttons presented once the affiliate-ID step
+  // Step 4 — F01 hybrid-filter buttons presented once the affiliate-ID step
   // resolves. A tap is a shortcut over the NLP path, never a replacement — free
   // text/voice stay fully valid (rule #10).
   it('presents the F01 hybrid buttons via sendChoices once the ID step resolves', async () => {
@@ -492,17 +492,10 @@ describe('AgentService — affiliate ID lookup', () => {
   });
 });
 
-// Real live-test bug (2026-07-26, screenshot): tapping "❤️ Mi familia" returned an
-// "asistencia" category product ("Asistencias médicas familiares") as the FIRST quote
-// instead of a vida product. Exhaustive testing against the real QuotingService found no
-// realistic signal combination where a related category outscores an exact match (see
-// quoting.service.spec.ts), so this isn't a scoring bug — the more likely cause is Groq
-// itself confidently misclassifying a short emoji-prefixed button label, which the
-// existing null-only guardrail (Sesión 72) never corrects. A button tap is an exact,
-// known string with zero ambiguity — F01_CATEGORY_MAP now forces the category
-// deterministically, overriding both a stale already-set productCategory AND whatever
-// the NLP layer returned for this exact turn.
-describe('AgentService — F01 button taps deterministically force productCategory (2026-07-26)', () => {
+// A button tap is an exact known string, so F01_CATEGORY_MAP forces the category rather than
+// trusting the NLP layer, which misclassified short emoji-prefixed labels. It overrides both
+// a stale productCategory and whatever the model returned for this turn.
+describe('AgentService — F01 button taps deterministically force productCategory', () => {
   it('regression — "❤️ Mi familia" overrides an already-set, stale productCategory from an earlier turn', async () => {
     const { service, telegram, conversations, quoting } = buildService({
       state: ConversationState.DISCOVERY,
@@ -586,7 +579,7 @@ describe('AgentService — F01 button taps deterministically force productCatego
 });
 
 // KYC — phone verification via Telegram's native contact-share button
-// 2026-07-24 feedback: "simple KYC to know the user is real... Telegram autocomplete as
+// "simple KYC to know the user is real... Telegram autocomplete as
 // autoconfirmation and avoid user leave the chat" — confirmed approach is Telegram's
 // native request_contact button (no SMS/Twilio provider), fired once at the very start
 // of DATA_CAPTURE, before any other question.
@@ -642,7 +635,7 @@ describe('AgentService — KYC phone verification gate', () => {
     expect(sentText.toLowerCase()).not.toMatch(/documento de identidad|cédula/);
   });
 
-  // 2026-07-24 feedback: the contact-share confirmation gets a "big" Telegram reaction
+  // The contact-share confirmation gets a "big" Telegram reaction
   // (a much larger animated burst) on the shared-contact message itself.
   it('reacts to the shared-contact message with a big reaction', async () => {
     const { service, telegram } = buildService({
@@ -658,14 +651,9 @@ describe('AgentService — KYC phone verification gate', () => {
     expect(telegram.reactToMessage).toHaveBeenCalledWith('u1', 321, expect.any(String), true);
   });
 
-  // Real bug found 2026-07-24 (confirmed independently by a live test session and a
-  // teammate's findings report): this used to re-show the exact same "toca el botón"
-  // prompt forever for ANY typed reply that wasn't the contact-share — a genuine
-  // demo-killing infinite loop ("no me interesa" / "cobertura familiar" / random text
-  // all got the identical response, permanently). The button is shown once, at the
-  // QUOTE_PRESENTED -> DATA_CAPTURE transition; if the very next message still isn't a
-  // contact-share, this cosmetic KYC step must be skipped rather than asked again — it
-  // must never be allowed to block a real sale.
+  // Shown once at the QUOTE_PRESENTED -> DATA_CAPTURE transition: if the next message
+  // still isn't a contact-share, this cosmetic KYC step is skipped, not asked again.
+  // Re-asking looped forever on any typed reply and blocked the sale.
   it('regression — typing instead of sharing contact skips phone verification and moves on (never loops)', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DATA_CAPTURE,
@@ -681,7 +669,7 @@ describe('AgentService — KYC phone verification gate', () => {
   });
 });
 
-// KYC — cosmetic selfie step (2026-07-24, simulated identity confirmation)
+// KYC — cosmetic selfie step
 // User feedback: "let user know that the camera will open, take the selfie immediately,
 // simulate a KYC as cosmetic and let the user know it was successfully approved... this
 // is possible with a third-party service integrated into the chat to avoid false
@@ -733,7 +721,7 @@ describe('AgentService — KYC cosmetic selfie step', () => {
     expect(sentText).not.toContain('dígitos');
   });
 
-  // 2026-07-24 feedback: "is there a way to confirm that the image is a selfie, is ok if
+  // "is there a way to confirm that the image is a selfie, is ok if
   // is not high resolution" — no real face detection (stays a cosmetic simulation), but
   // a suspiciously tiny image (icon/sticker-shaped, not an actual camera photo) gets one
   // gentle retry ask instead of being silently accepted as "confirmed".
@@ -780,7 +768,7 @@ describe('AgentService — KYC cosmetic selfie step', () => {
     });
   });
 
-  // 2026-07-24 feedback: "is there a way to show an animated successfully check pass
+  // "is there a way to show an animated successfully check pass
   // inside the chat?" — sends the real branded success-checkmark video when the selfie
   // is confirmed, instead of just a text-only reaction.
   it('sends the branded success animation when the selfie is confirmed', async () => {
@@ -936,7 +924,7 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
   });
 
   it('regression — a filler/acknowledgment word is never captured as the nombre', async () => {
-    // Real live-test bug: after providing cédula, the user's next voice message was an
+    // After providing cédula, the user's next voice message was an
     // acknowledgment ("Gracias.") to the bot's own prior response, transcribed and
     // captured verbatim as the customer's full name — corrupting the rest of the flow
     // (the actual name then got captured as the "email" in the following turn).
@@ -1031,7 +1019,7 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
   });
 
   it('regression — text without a valid email format is never captured as the email', async () => {
-    // Real live-test bug: once nombre was wrongly set to "Gracias." (see above), the
+    // Once nombre was wrongly set to "Gracias." (see above), the
     // NEXT message ("Juan Pérez.") got captured as the email with zero format
     // validation — no '@', no domain, nothing. The user's later attempts to fix "just
     // the email" then had no effect because the underlying corruption was in nombre.
@@ -1060,7 +1048,7 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     );
   });
 
-  // Real live-test bug: a voice message dictating an email says "arroba" for @ and
+  // A voice message dictating an email says "arroba" for @ and
   // "punto" for . (standard Spanish spoken-email convention) — the literal transcription
   // has neither symbol, so it failed the /\S+@\S+\.\S+/ shape check entirely.
   describe('regression — spoken email dictation ("arroba"/"punto") is normalized before validating', () => {
@@ -1087,7 +1075,7 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     });
   });
 
-  // Real live-test bug (2026-07-26): "juan.gmail.com" dictated by voice (the user never
+  // "juan.gmail.com" dictated by voice (the user never
   // said "arroba" at all) failed the shape check 3 times in a row with the exact same
   // re-ask, no hint as to why. normalizeSpokenEmail can't invent an @ that was never
   // said — but the retry prompt can at least tell the user to say it next time.
@@ -1118,7 +1106,7 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
   });
 
   it('regression — "falta el correo" at confirmation is recognized as a correction request naming email', async () => {
-    // Real live-test bug: "falta el correo" / "correo falta" did not match any keyword
+    // "falta el correo" / "correo falta" did not match any keyword
     // in the correction-trigger list (corregir/cambiar/editar/está mal/equivocad) and
     // the message fell through to a generic "no logré entender" acknowledgment instead
     // of resetting the email field.
@@ -1136,7 +1124,7 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
   });
 
   it('regression — bare "no" at confirmation asks WHICH field is wrong instead of resetting everything', async () => {
-    // Real live-test bug: bare "no" immediately wiped cédula+nombre+email and forced a
+    // Bare "no" immediately wiped cédula+nombre+email and forced a
     // full restart. The user's very next message (a filler word, not a cédula) then got
     // misread as a cédula attempt and failed validation. Ask first, reset only on answer.
     const { service, telegram, conversations } = buildService({
@@ -1194,7 +1182,7 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
   });
 
   it('regression — correcting just the name only resets nombre, not cedula/email too', async () => {
-    // Real live-test bug: "Corrigé mi nombre, es Juan Pérez" forced the user to redo
+    // "Corrigé mi nombre, es Juan Pérez" forced the user to redo
     // cédula AND correo just to fix a one-word name typo — a needlessly clunky UX.
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DATA_CAPTURE,
@@ -1309,7 +1297,7 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
   });
 });
 
-// Conditional underwriting (2026-07-24 business feedback)
+// Conditional underwriting
 // "Seguro de vida" and both "Medicina prepagada" (gatos/perros) products need age,
 // pre-existing illnesses, and clinical history before they can be sold — everything
 // else in the catalog is direct-sell (cédula/nombre/correo only).
@@ -1331,7 +1319,7 @@ describe('AgentService — conditional underwriting gate', () => {
     );
   });
 
-  // 2026-07-24 clarification: the generic "edad, enfermedad, historial clínico" question
+  // The generic "edad, enfermedad, historial clínico" question
   // is only fully correct for a HUMAN product (vida) — a human's age is never captured
   // anywhere else in the flow. For a PET product (medicina-prepagada-gatos/perros), the
   // pet's age is ALWAYS already captured by the Step-0 per-pet loop (name/edad/raza)
@@ -1442,7 +1430,7 @@ describe('AgentService — conditional underwriting gate', () => {
   });
 });
 
-// Payment method choice (2026-07-24 feedback)
+// Payment method choice
 // "at the end let user choose if they want to pay with Tarjeta Colsubsidio or Link de
 // pago" — both route to the exact same real Wompi checkout link (no new payment rail,
 // nothing faked): Wompi already accepts card payments, so this is a wording/framing
@@ -1450,7 +1438,7 @@ describe('AgentService — conditional underwriting gate', () => {
 // already succeeded before it actually has — that would be dishonest to the user.
 
 describe('AgentService — payment method choice (Tarjeta Colsubsidio vs Link de pago)', () => {
-  // Real bug found 2026-07-24, same root cause as the KYC infinite-loop fixes above:
+  // Same root cause as the KYC infinite-loop fixes above:
   // this used to re-ask the same question forever for any unclear answer. Defaults to
   // the plain link de pago (the always-available, no-ambiguity option) instead of
   // looping — this must never be allowed to strand a purchase that's otherwise ready.
@@ -1487,7 +1475,7 @@ describe('AgentService — payment method choice (Tarjeta Colsubsidio vs Link de
     expect(sentText.toLowerCase()).not.toMatch(/coincidencia|emparejamos/);
   });
 
-  // Real live-test bug: nothing told the user the chat stays open/available while a real
+  // Nothing told the user the chat stays open/available while a real
   // Wompi payment link is still pending — ties to the 34-minute PAYMENT_CLOSE_DELAY_MS
   // fix (reminder.service.ts) so the user isn't surprised the conversation didn't close.
   it('reassures the user the conversation stays available while a payment link is pending', async () => {
@@ -1539,7 +1527,7 @@ describe('AgentService — payment method choice (Tarjeta Colsubsidio vs Link de
     expect(sentText.toLowerCase()).not.toMatch(/pago exitoso|pago realizado|ya pagaste|pago fue exitoso/);
   });
 
-  // 2026-07-24 feedback: "Tarjeta Colsubsidio" has no real API/sandbox of its own (unlike
+  // "Tarjeta Colsubsidio" has no real API/sandbox of its own (unlike
   // Wompi) — precisely BECAUSE there's nothing real to show for it, the "match found"
   // moment gets the real branded success-checkmark video. The real Wompi link is still
   // generated and sent exactly as before — this never skips or fakes the actual payment.
@@ -1675,7 +1663,7 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
     expect(sentText).toMatch(/mascota/i);
   });
 
-  // Real live-test bug (2026-07-24): a 3-pet voice message ("Bruna...Ramón...Pancha...")
+  // A 3-pet voice message ("Bruna...Ramón...Pancha...")
   // had Bruna silently dropped by the NLP extraction (fixed separately in
   // groq-nlp.service.ts). The user, believing all 3 pets were already given, was asked
   // for a "missing" 3rd pet and re-stated Pancha's details again — which got pushed as a
@@ -1809,7 +1797,7 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
     );
   });
 
-  // Real live-test bug (2026-07-24): a 3-pet message ("Bruna... Ramón... Pancha...")
+  // A 3-pet message ("Bruna... Ramón... Pancha...")
   // came back with Pancha duplicated and Bruna missing. Every correction attempt by name
   // ("Pancha, 10 años, Cocker") always matched the FIRST "Pancha", never the duplicate;
   // ordinal attempts ("el tercero es Ramón...") were not understood at all. The corrupted
@@ -2060,7 +2048,7 @@ describe('AgentService — abandonIntent after an already-completed purchase', (
 
 // QUOTE_PRESENTED — no-repeat invariant
 
-// QUOTE_PRESENTED — back-reference resolution (2026-07-26 live bug)
+// QUOTE_PRESENTED — back-reference resolution
 // "Prefiero la anterior.", "Quiero la primera opción que me ofreciste.", "la que vale
 // 16.800", "¿alguna más económica?" all reference a SPECIFIC already-shown product (or a
 // cheaper one among them) -- none had a handler before this fix; they either fell
@@ -2172,7 +2160,7 @@ describe('AgentService — QUOTE_PRESENTED back-reference resolution', () => {
 });
 
 // QUOTE_PRESENTED — category exhaustion no longer resets to DISCOVERY
-// Real live-test bug (2026-07-26): resetting productCategory/coverage and transitioning
+// Resetting productCategory/coverage and transitioning
 // to DISCOVERY when a category runs out of unseen options let the NEXT ambiguous
 // message's hallucinated productCategory silently start a brand-new, unrelated quote (an
 // "asistencia" shopper ended up with "vida"). Staying anchored in QUOTE_PRESENTED means
@@ -2191,7 +2179,7 @@ describe('AgentService — QUOTE_PRESENTED category exhaustion stays anchored', 
     telegram.normalize.mockResolvedValue(makeMessage('otra'));
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    // Live-test feedback (2026-07-26): once a category's alternatives run out, offer to
+    // Live-test feedback: once a category's alternatives run out, offer to
     // capture contact info (a real lead) instead of a dead end — applies to any category,
     // not only mascotas.
     expect(sentText).toContain('¿Te interesa?');
@@ -2207,7 +2195,7 @@ describe('AgentService — QUOTE_PRESENTED category exhaustion stays anchored', 
 });
 
 // Lead capture — waitlist offer when a category's alternatives run out
-// Real live-test bug (2026-07-26, "flow is broken"): awaitingContactConsent was set by
+// AwaitingContactConsent was set by
 // handleQuotation (category exhaustion, above) but only ever CHECKED inside
 // `case ConversationState.AUTHORIZATION` in processMessage — unreachable, since the
 // conversation stays anchored in QUOTE_PRESENTED with no nextState change. The reply to
@@ -2360,7 +2348,7 @@ describe('AgentService — lead capture after category exhaustion', () => {
     expect(telegram.sendText).toHaveBeenCalledTimes(1);
   });
 
-  // Real live-test bug (2026-07-26, screenshot): a RETURNING customer (nombre/email
+  // A RETURNING customer (nombre/email
   // already known — the greeting itself says "Ya tengo parte de tu perfil de una
   // conversación anterior") still got asked "¿cuál es tu nombre?" then "¿cuál es tu
   // correo?" from scratch when accepting the waitlist offer, instead of reusing what's
@@ -2445,7 +2433,7 @@ describe('AgentService — lead capture after category exhaustion', () => {
   });
 });
 
-// Real live-test bug (2026-07-26, screenshot): a voice-dictated email kept failing the
+// A voice-dictated email kept failing the
 // same way 4 times in a row — Whisper's punctuation model inserts a comma right after a
 // spoken filler word ("arroba," instead of clean trailing whitespace), and the original
 // `\s+arroba\s+`/`\s+punto\s+` patterns required LITERAL whitespace on both sides, so the
@@ -2543,7 +2531,7 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     }
   });
 
-  // Real live-test bug: after declining a cross-sell quote with a plain "No, está bien.",
+  // After declining a cross-sell quote with a plain "No, está bien.",
   // the agent kept cycling to ANOTHER alternative product instead of letting the user go
   // — the OLD code treated `isNegative` exactly like `wantsAlternative` (any "no" always
   // meant "show me something else"). AGENTS.md's own UX rule says a "no" gets an
@@ -2565,7 +2553,7 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     expect(sentText.toLowerCase()).toMatch(/aquí estoy|cuando quieras/);
   });
 
-  // Real live-test bug (2026-07-25): same bug class as the "stuck at abandoned despite
+  // Same bug class as the "stuck at abandoned despite
   // completed purchase" fix (task #78) — but via a DIFFERENT code path that fix never
   // touched. Task #78 only patched the top-level abandonIntent check, which explicitly
   // skips QUOTE_PRESENTED (line ~135). A plain decline of a POST-PURCHASE cross-sell
@@ -2601,7 +2589,7 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     );
   });
 
-  // Real live-test bug (screenshot, 2026-07-25/26): "No, pero no tengo gatos. No sé por
+  // "No, pero no tengo gatos. No sé por
   // qué pensaste que tenía gatos..." while a gato-specific quote was showing got the
   // IDENTICAL quote card re-shown verbatim — this nuanced, multi-clause correction
   // didn't trip Groq's own isAffirmative/isNegative/wantsAlternative classification
@@ -2609,7 +2597,7 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
   // caught it and it fell through to the generic re-show. An explicit "no tengo <the
   // species just quoted>" must now pivot back to DISCOVERY instead, regardless of what
   // the LLM classified the message as.
-  describe('QUOTE_PRESENTED — explicit denial of the currently-quoted pet species (2026-07-26 live bug)', () => {
+  describe('QUOTE_PRESENTED — explicit denial of the currently-quoted pet species', () => {
     it('regression — "no tengo gatos" while a gato quote is showing pivots to DISCOVERY instead of re-showing the same quote', async () => {
       const { service, telegram, conversations, quoting } = buildService({
         state: ConversationState.QUOTE_PRESENTED,
@@ -2654,7 +2642,7 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     });
   });
 
-  // Real live-test bug (screenshot, 2026-07-25): user said "salir" then "terminar" right
+  // User said "salir" then "terminar" right
   // after a quote was shown, and got the IDENTICAL quote card re-shown verbatim both
   // times, with zero acknowledgment. Root cause: handleQuotation never checked
   // intent.abandonIntent at all — and the top-level abandonIntent check in
@@ -2739,7 +2727,7 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     expect(sentText).not.toContain('precio accesible');
   });
 
-  // Real live-test bug: a genuinely unparseable message ("2+2", sent live by two
+  // A genuinely unparseable message ("2+2", sent live by two
   // different users) silently got the exact same quote card re-shown with zero
   // acknowledgment — indistinguishable from a legitimate follow-up question. Only a
   // message with NO letters at all (never true for a real Spanish question) gets a
@@ -2809,7 +2797,7 @@ describe('AgentService — QUOTE_PRESENTED honest response to an out-of-catalog 
     expect(sentText).toContain(vidaProduct.name);
   });
 
-  // Real live-test bug: asistencias-multiples genuinely covers "Asistencia vehículo" —
+  // Asistencias-multiples genuinely covers "Asistencia vehículo" —
   // asking about THAT coverage while it's on screen must not get the same "no tengo
   // seguros de vehículos" denial as someone asking for a dedicated car-insurance policy.
   it('regression — does NOT deny vehicle coverage when the shown product already includes "Asistencia vehículo"', async () => {
@@ -2839,7 +2827,7 @@ describe('AgentService — QUOTE_PRESENTED honest response to an out-of-catalog 
   });
 });
 
-// QUOTE_PRESENTED — explain/compare meta-questions (2026-07-26 live bug)
+// QUOTE_PRESENTED — explain/compare meta-questions
 // "¿Cuál es mejor?" / "Cuéntame más de ellos" / "Explícame de qué se trata" carry no
 // affirmative/negative/alternative signal, so they used to fall through to the same
 // truncated quote card being silently re-shown every time — read by the user as "it just
@@ -2914,7 +2902,7 @@ describe('AgentService — QUOTE_PRESENTED explain/compare meta-questions', () =
 
 describe('AgentService — QUOTE_PRESENTED cross-sell for personal coverage', () => {
   it('regression — asking about coverage "para mí" during a pet quote defers it instead of abandoning the pending purchase', async () => {
-    // 2026-07-24 "restore the flow": a quote in progress must never be abandoned for a
+    // "restore the flow": a quote in progress must never be abandoned for a
     // cross-sell mention — real live-test bug, repeated across many live sessions: "para
     // mí, qué hay" during an UNCONFIRMED mascotas quote used to immediately replace it
     // with a different product, so the mascotas purchase was silently dropped before
@@ -2997,7 +2985,7 @@ describe('AgentService — QUOTE_PRESENTED cross-sell for personal coverage', ()
 
 describe('AgentService — QUOTE_PRESENTED explicit category mention defers, does not abandon the quote', () => {
   it('regression — naming a different category by name defers it instead of replacing the pending quote', async () => {
-    // 2026-07-24 "restore the flow": while viewing an "asistencia" quote, "quiero ver
+    // "restore the flow": while viewing an "asistencia" quote, "quiero ver
     // seguro de vida" used to immediately REPLACE it — the asistencia purchase was
     // abandoned mid-flow, before ever reaching payment. Now it's deferred: the current
     // quote stays pending, and the named category becomes the post-purchase follow-up.
@@ -3047,7 +3035,7 @@ describe('AgentService — QUOTE_PRESENTED explicit category mention defers, doe
   });
 
   it('regression — a plain confirmation reaches DATA_CAPTURE even if the LLM spuriously sets productCategory with no category actually named in the text', async () => {
-    // Real live-test bug: "Sí, quiero esa." confirmed a shown quote, but the LLM
+    // "Sí, quiero esa." confirmed a shown quote, but the LLM
     // sometimes returns a productCategory value anyway despite the message naming no
     // category at all — this used to hijack a clear purchase confirmation into an
     // unwanted category switch, and DATA_CAPTURE was never reached ("after confirm,
@@ -3089,7 +3077,7 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     );
   });
 
-  // Live bug (2026-08-18, Telegram voice): "Tengo dos perros y un gato." already answers
+  // "Tengo dos perros y un gato." already answers
   // the breakdown question, and the counts ARE captured from it — but the mixto branch
   // asked "¿Cuántos gatos y cuántos perros tienes?" anyway, so the user had to repeat
   // themselves. The context assertion in the test below this one never caught it because
@@ -3126,7 +3114,7 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     );
   });
 
-  // Real live-test bug: a genuinely mixed household (2 dogs + 1 cat) got quoted a
+  // A genuinely mixed household (2 dogs + 1 cat) got quoted a
   // SINGLE product (medicina-prepagada-gatos, cat-only) multiplied by the TOTAL pet
   // count (3) — charging the 2 dogs at the cat rate. The user explicitly rejected it:
   // "eso no es para gatos, para los perros que hay". A mixto household with an explicit
@@ -3166,16 +3154,9 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     );
   });
 
-  // Real live-test bug (2026-07-26, screenshot): "Ambos." → agent asks "¿cuántos gatos y
-  // cuántos perros tienes?" → user answers "Una gata y dos perros." (both counts in ONE
-  // message) — but the NLP layer also classified this same message's petResolution as
-  // 'perro' (mentioning "perros" read as a species choice, not a count-question answer),
-  // which narrowed straight to a SINGLE product (medicina-prepagada-perros x2) and
-  // silently dropped the cat from the quote entirely — no combined quote, no ask, the cat
-  // just vanished. Giving counts for BOTH species in one message is itself unambiguous
-  // evidence the user wants BOTH insured, regardless of what petResolution says — the
-  // correct next step is the "gatos, perros, o todos?" question (restored below, this
-  // is the flow that worked this morning), never a silent narrow to one species.
+  // Counts for both species in one message ("Una gata y dos perros") is unambiguous evidence
+  // the user wants both insured, whatever petResolution says. Trusting petResolution here
+  // narrowed to a single product and dropped the other species from the quote silently.
   it('regression — reporting both species counts in one message ("Una gata y dos perros") asks gatos/perros/todos, never silently narrows to a single species', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DISCOVERY,
@@ -3236,7 +3217,7 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     );
   });
 
-  // Real live-test bug (2026-07-26): after the correct combined mixed-species quote
+  // After the correct combined mixed-species quote
   // above, "otro" searched for a totally unrelated THIRD product (e.g.
   // asistencia-veterinaria) and priced it against the raw cross-species petCount (3) —
   // wrong total, AND a consent mismatch: saying "sí" right after would silently confirm
@@ -3289,7 +3270,7 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     expect(sentText).not.toContain('245.400');
   });
 
-  // Real live-test bug (2026-07-26, screenshot): after narrowing a mixto household
+  // After narrowing a mixto household
   // ("1 gato + 1 perro") down to "solo gato" (petType: 'gato'), asking for "otro"
   // surfaced asistencia-veterinaria (eligibility.pet: 'any') priced against the STALE
   // combined petCount (2) instead of the narrowed single species (1) — the transcript
@@ -3344,7 +3325,7 @@ describe('AgentService — DISCOVERY mixed pets', () => {
 });
 
 // QUOTE_PRESENTED — switching species after narrowing a mixed-species quote
-// Real live-test bug (2026-07-26, screenshot): "solo perros" worked (narrowed the
+// "solo perros" worked (narrowed the
 // combined gato+perro quote down to just perros), but a FOLLOW-UP "solo gato" — trying
 // to switch to the OTHER species — just re-showed the SAME perros quote, and asking to
 // see "todos" (both) again didn't restore the combined quote either. Root cause: the
@@ -3427,7 +3408,7 @@ describe('AgentService — QUOTE_PRESENTED switching species in a mixed househol
 });
 
 // DATA_CAPTURE — pet-count collection respects a narrowed single-species purchase
-// Real live-test bug (2026-07-26, screenshot): after narrowing a mixed household ("1
+// After narrowing a mixed household ("1
 // gata + 2 perros") down to "solo perros", the per-pet details summary still showed 3
 // pets (Bruna the cat included) instead of 2 (only the dogs) — firstDataCaptureQuestion
 // and the pet-collection loop both used the raw combined context.petCount as "how many
@@ -3556,7 +3537,7 @@ describe('AgentService — DISCOVERY productCategory inference', () => {
   });
 });
 
-// DISCOVERY — catalog-honesty bridge (2026-07-26, Step 5)
+// DISCOVERY — catalog-honesty bridge
 // "Quiero asegurar mi carro" during DISCOVERY had no branch at all — no vehicular/
 // empresa product exists, so it silently extracted no category and looped forever on
 // the generic tier-1 question. QUOTE_PRESENTED already had this exact check
@@ -3727,7 +3708,7 @@ describe('AgentService — DISCOVERY asks species before quoting mascotas', () =
     await service.handleMessage({});
     expect(quoting.bestQuote).not.toHaveBeenCalled();
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    // 2026-08-18: this asserted "¿Cuántos gatos" — but the message already states both
+    // This asserted "¿Cuántos gatos" — but the message already states both
     // counts, so re-asking them was the repeated-question bug. The guarantee this test
     // exists for is unchanged: the species gate must not swallow the mixto path into a
     // blind quote (bestQuote above). It now lands on the which-pet clarification, which
@@ -3754,7 +3735,7 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
     expect(sentText).toMatch(/no logré entender|no te entendí|no entendí bien/i);
   });
 
-  // Real live-test bug: a user answering plain "no" to the opening question ("¿Tienes
+  // A user answering plain "no" to the opening question ("¿Tienes
   // familia o personas que dependen de ti?...") got the exact same question repeated
   // verbatim (the generic "no logré entender" fallback) instead of a warm pivot toward
   // covering the person themselves — "no dependents" is a valid, common answer.
@@ -3787,7 +3768,7 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
     expect(sentText).not.toMatch(/protegerte a ti mismo/i);
   });
 
-  // Real live-test bug (2026-07-26, screenshot): the symmetric case to the "no" pivot
+  // The symmetric case to the "no" pivot
   // above was missing — "Sí?" answering "¿Tienes familia o personas que dependen de ti?"
   // names no category on its own, so it fell through to "No logré entender bien eso."
   // plus the ENTIRE compound question repeated verbatim, reading as the agent ignoring a
@@ -3836,7 +3817,7 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
   });
 
   it('regression — quotes a named category even when coverage is empty (fallback NLP never fills coverage)', async () => {
-    // Real live-test bug: GroqNlpService.fallbackIntent() (used whenever Groq is
+    // GroqNlpService.fallbackIntent() (used whenever Groq is
     // unreachable, e.g. LLM_API_KEY unset) always returns coverage: [] — it has no
     // keyword extraction for coverage at all. hasEnoughInfo required BOTH productCategory
     // AND coverage.length, so a clear category signal ("vida, accidentes y asistencia
@@ -3862,7 +3843,7 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
   });
 
   it('regression — attempts a quote instead of looping forever on the unanswerable "ages" question', async () => {
-    // Real live-test bug: once coverage and beneficiaries are both known (usually from a
+    // Once coverage and beneficiaries are both known (usually from a
     // spurious Groq default — its schema example shows "beneficiaries": 1) but
     // productCategory was never extracted, STATE_RESPONSES[DISCOVERY] asks "¿En qué rango
     // de edades están?" forever — no field in the intent schema captures a human
@@ -3888,9 +3869,9 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
     expect(saveCall?.[1]).toBe(ConversationState.QUOTE_PRESENTED);
   });
 
-  // Real live-test bug (2026-07-26, screenshot): the guard above required BOTH coverage
+  // The guard above required BOTH coverage
   // AND beneficiaries before attempting a best-effort quote — matching the OLD "rango de
-  // edades" text's own trigger condition from before the 2026-07-26 cleanup that swapped
+  // Edades" text's own trigger condition from before the cleanup that swapped
   // its copy for "¿Cuántas personas son en tu familia o grupo familiar?" but left this
   // guard's condition untouched. Coverage getting set WITHOUT beneficiaries (e.g. a vague
   // "proteger a mi familia" message) fell through this gap straight to that dead text —
@@ -3915,7 +3896,7 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
   });
 });
 
-// DISCOVERY — dependents question (2026-07-26 Step 3)
+// DISCOVERY — dependents question
 // Gated on `discoveryFilter`, set ONLY in the AUTHORIZATION→isAffirmative branch — every
 // hand-built context in the existing suite never sets it, so this MUST be a strict
 // opt-in with zero effect on any test that predates this feature.
@@ -4040,7 +4021,7 @@ describe('AgentService — DISCOVERY dependents question (Step 3)', () => {
   });
 });
 
-// DISCOVERY — urgency capture (2026-07-26, Matriz 2 C05)
+// DISCOVERY — urgency capture
 // Already inferred by the NLP layer from words like "urgente"/"ya" — no new question,
 // just wiring an existing-but-dead field into context and, from there, into scoring.
 describe('AgentService — DISCOVERY urgency capture', () => {
@@ -4122,7 +4103,7 @@ describe('AgentService — DISCOVERY lost-context resilience', () => {
   });
 });
 
-// Post-purchase cross-sell decline (2026-07-24 live bug)
+// Post-purchase cross-sell decline
 // After a purchase, wompi-webhook.controller.ts asks "¿Quieres proteger algo más?" and
 // resets the conversation to DISCOVERY. A decline ("No, está bien así.") used to fall
 // through DISCOVERY's generic "no entendí" acknowledgment — the agent literally
@@ -4144,7 +4125,7 @@ describe('AgentService — DISCOVERY polite decline of the post-purchase cross-s
     );
   });
 
-  // Real live-test bug: Groq's isNegative classification has no prompt example covering
+  // Groq's isNegative classification has no prompt example covering
   // elliptical negations like these, and misclassified both as isNegative=false — the
   // decline went unrecognized, the one-shot awaitingCrossSellResponse flag was consumed
   // anyway, and the conversation kept cycling (generic "no entendí" re-ask) instead of
@@ -4168,16 +4149,9 @@ describe('AgentService — DISCOVERY polite decline of the post-purchase cross-s
     );
   });
 
-  // Real live-test bug (2026-07-25): user answered the cross-sell offer with "terminar",
-  // and the question "came back" instead of ending. Root cause traced to groq-nlp.service.ts:
-  // before this fix "terminar" wasn't in either the Groq prompt's abandonIntent examples or
-  // the fallback isAbandonText list, so intent.abandonIntent came back false — meaning the
-  // top-level abandonIntent check in processMessage (which already has the correct
-  // hasCompletedPurchase → COMPLETED branching from an earlier fix) never fired, and
-  // "terminar" fell through to handleDiscovery's clearlyDeclines check (isNegative ||
-  // /^no\b/), which it also doesn't match (it's an exit word, not a negation). This test
-  // covers the full path with abandonIntent now correctly true — the actual gap was in NLP
-  // classification, already fixed in groq-nlp.service.ts (see the "terminar" additions there).
+  // "terminar" is an exit word, not a negation, so handleDiscovery's clearlyDeclines check
+  // never matched it and the cross-sell question came back instead of ending. It belongs to
+  // the top-level abandonIntent branch; the classification gap itself lives in groq-nlp.
   it('regression — "terminar" (abandonIntent, not isNegative) ends the conversation via the top-level check instead of re-asking', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DISCOVERY,
@@ -4227,7 +4201,7 @@ describe('AgentService — DISCOVERY polite decline of the post-purchase cross-s
     );
   });
 
-  // Real live-test bug (2026-07-26): "No, la póliza está mal." is an unambiguous decline
+  // "No, la póliza está mal." is an unambiguous decline
   // with ZERO real category words in it -- but Groq occasionally hallucinates SOME
   // productCategory from text like this anyway. The old check trusted intent.productCategory
   // directly, so the hallucination silently defeated the decline, cleared the one-shot flag,
@@ -4286,12 +4260,12 @@ describe('AgentService FUZZ — cédula validation', () => {
   });
 });
 
-// Real live-test bug: dictating a cédula digit-by-digit by voice ("uno, dos, tres...")
+// Dictating a cédula digit-by-digit by voice ("uno, dos, tres...")
 // gets transcribed with commas between each individual digit ("1, 2, 3, 4, 5, 6, 7, 8,
 // 9") — the existing \b\d{6,10}\b regex needs a CONTIGUOUS digit run, so this never
 // matched at all. Must NOT affect the existing, intentionally-rejected typed-formatted
 // cases ("12.345.678", "1234 5678") — those use multi-digit groups, not lone digits.
-describe('AgentService — cédula dictated digit-by-digit with commas (2026-07-24 live bug)', () => {
+describe('AgentService — cédula dictated digit-by-digit with commas', () => {
   it.each([
     ['1, 2, 3, 4, 5, 6, 7, 8, 9', '123456789'],
     ['1, 2, 3, 4, 5, 6', '123456'],
@@ -4333,7 +4307,7 @@ describe('AgentService — cédula dictated digit-by-digit with commas (2026-07-
 describe('AgentService FUZZ — confirmation variants', () => {
   const confirmVariants = ['sí', 'si', 'Sí', 'Si', 'SÍ', 'SI', 'Sí.', 'sí!', 'sí,', ' sí '];
 
-  // 2026-07-26: "sí" no longer jumps straight to DISCOVERY — it asks a one-shot
+  // "sí" no longer jumps straight to DISCOVERY — it asks a one-shot
   // affiliate-ID question first (see "AgentService — affiliate ID lookup"), so this
   // fuzz now confirms each variant is recognized as isAffirmative (autorizado:true),
   // not the full two-step transition to DISCOVERY.
@@ -4348,7 +4322,7 @@ describe('AgentService FUZZ — confirmation variants', () => {
   });
 });
 
-// 2026-07-24: "not let user record integers or special characters in fields where it's
+// "not let user record integers or special characters in fields where it's
 // not allowed" — random-input fuzzing for the nombre field, on top of the fixed-list
 // regression tests above.
 describe('AgentService FUZZ — nombre never accepts digits/symbols', () => {
@@ -4432,7 +4406,7 @@ describe('AgentService INVARIANT — underwriting question matches catalog flag 
   );
 });
 
-// 30s "come back to chat" reminder (2026-07-25 feature request)
+// 30s "come back to chat" reminder
 // This app is otherwise fully stateless (driven only by incoming Telegram messages) — the
 // reminder is the one place with an in-memory timer, scoped per conversation id. Every
 // incoming message must cancel any reminder pending for THIS conversation (proof the user
@@ -4456,7 +4430,7 @@ describe('AgentService — 30s reminder scheduling', () => {
     expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1', 'telegram', false);
   });
 
-  // Real live-test bug (2026-07-26): a real Wompi payment link is valid for 30 minutes
+  // A real Wompi payment link is valid for 30 minutes
   // ("El link vence en 30 minutos"), but the conversation auto-abandoned on the regular
   // 4-minute window regardless — closing the chat while the link was still payable.
   it('schedules with hasPendingPayment=true when the context has an active checkoutUrl', async () => {
@@ -4511,13 +4485,13 @@ describe('AgentService — 30s reminder scheduling', () => {
   });
 });
 
-// Terminal-state restart (2026-07-26 live-test bug)
+// Terminal-state restart
 // ReminderService's auto-close message explicitly promises "cuando quieras continuar,
 // aquí estoy — 24/7" — but only an EXACT hola/ayuda/inicio/start match ever restarted an
 // ABANDONED/REJECTED conversation. A real follow-up question fell through to the static
 // STATE_RESPONSES[currentState] text with no nextState, so the SAME terminal row got
 // reused forever — every later message got the identical canned reply, no matter what it
-// said. Live screenshot: two different follow-up questions in a row both got "Entendido.
+// Said. two different follow-up questions in a row both got "Entendido.
 // Cuando quieras retomar, aquí estoy — 24/7, sin esperas." verbatim.
 describe('AgentService — terminal-state restart', () => {
   it('restarts (shows the GREETING text) on an ordinary follow-up message when state is ABANDONED, not just on a greeting keyword', async () => {
@@ -4530,7 +4504,7 @@ describe('AgentService — terminal-state restart', () => {
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
     expect(sentText).not.toContain('Entendido');
     expect(sentText).toContain('Asegura');
-    // 2026-07-26 fix: nextState is AUTHORIZATION, not GREETING — the GREETING text already
+    // Fix: nextState is AUTHORIZATION, not GREETING — the GREETING text already
     // folds in the authorization ask (same one-shot pattern as case GREETING itself), so
     // routing back through GREETING again would repeat that same text a second time on
     // the user's very next message (see the regression test below).
@@ -4556,7 +4530,7 @@ describe('AgentService — terminal-state restart', () => {
     expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.AUTHORIZATION, expect.anything());
   });
 
-  // Real live-test bug (2026-07-26, screenshot): after "Hola." restarted an ABANDONED
+  // After "Hola." restarted an ABANDONED
   // conversation, the user's very next message — even an immediate "Sí." — got the
   // IDENTICAL "¡Hola!... Escríbeme 'sí' para empezar." text a second time before the
   // authorization question was ever actually evaluated, forcing a THIRD message just to
@@ -4596,7 +4570,7 @@ describe('AgentService — terminal-state restart', () => {
     expect(conversations.saveState).not.toHaveBeenCalled();
   });
 
-  // 2026-07-26 feature request: a COMPLETED customer asking about their OWN,
+  // A COMPLETED customer asking about their OWN,
   // already-purchased policy used to get the same generic "¡Todo listo!" text no matter
   // what was asked — answer with the real purchased product instead.
   describe('AgentService — post-purchase policy inquiry (COMPLETED)', () => {
@@ -4669,7 +4643,7 @@ describe('AgentService — terminal-state restart', () => {
     });
   });
 
-  // 2026-07-26 persistent memory — "la siguiente conversación nunca debe empezar desde
+  // Persistent memory — "la siguiente conversación nunca debe empezar desde
   // cero" (Diseño preguntas.docx). Durable profile facts survive an ABANDONED/REJECTED
   // restart; session-scoped state (the quote in progress, one-shot gates) still resets.
   describe('persistent memory across a restart', () => {
@@ -4712,14 +4686,14 @@ describe('AgentService — terminal-state restart', () => {
         policyIds: ['pol-1'],
         lastMessages: expect.any(Array),
       }));
-      // Real live-test bug (2026-07-26): a stale petType/petSpeciesCounts silently
+      // A stale petType/petSpeciesCounts silently
       // surviving a restart let a fresh "Mi mascota" tap skip straight to a one-species
       // quote with zero re-confirmation — these must now reset like productCategory does.
       expect(savedContext.petType).toBeUndefined();
       expect(savedContext.petSpeciesCounts).toBeUndefined();
     });
 
-    // Real live-test bug (2026-07-26, screenshot): reproduces the exact reported symptom
+    // Reproduces the exact reported symptom
     // end-to-end — a conversation restarted from ABANDONED with a stale mixed-species
     // profile left over from an earlier, unrelated mascotas inquiry. Tapping "Mi mascota"
     // fresh must ask the species question again, never jump straight to a one-species
@@ -4792,7 +4766,7 @@ describe('AgentService — terminal-state restart', () => {
   });
 });
 
-// Stuck-loop circuit breaker + human escalation (2026-07-26 live-test feedback)
+// Stuck-loop circuit breaker + human escalation
 // "If the agent doesn't have the info about the insurance asked, redirect the chat to a
 // human." Only turns explicitly flagged unclearReply (DISCOVERY's genuinely-stuck
 // fallback, QUOTE_PRESENTED's neutral re-show) count toward the streak — a real
@@ -4932,7 +4906,7 @@ describe('AgentService — stuck-loop circuit breaker + human escalation', () =>
   });
 });
 
-// Comprehensive end-to-end live-test scenarios (2026-07-26)
+// Comprehensive end-to-end live-test scenarios
 // Each scenario below chains multiple real service.handleMessage() calls, manually
 // threading each turn's saved context into the next buildService() call — the same
 // convention already used by the mixed-species regression test above (this codebase has

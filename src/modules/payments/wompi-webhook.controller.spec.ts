@@ -182,7 +182,7 @@ describe('WompiWebhookController — APPROVED payment', () => {
     expect(telegram.sendText).toHaveBeenCalledWith('999888777', expect.stringContaining('activo'));
   });
 
-  // 2026-07-24 feedback: the real Wompi payment approval — the actual "successfully
+  // The real Wompi payment approval — the actual "successfully
   // paid" moment — gets the same branded success-checkmark video as the selfie and
   // Tarjeta Colsubsidio moments.
   it('sends the branded success animation on approval', async () => {
@@ -220,7 +220,7 @@ describe('WompiWebhookController — APPROVED payment', () => {
   });
 });
 
-describe('WompiWebhookController — post-purchase cross-sell (2026-07-24 "restore the flow")', () => {
+describe('WompiWebhookController — post-purchase cross-sell', () => {
   // The mid-quote cross-sell interruption was removed from AgentService — a purchase now
   // always completes (payment + PDF) before anything else is offered. This is where that
   // "something else" gets offered: once the policy is issued, the agent follows up with
@@ -238,7 +238,7 @@ describe('WompiWebhookController — post-purchase cross-sell (2026-07-24 "resto
     );
   });
 
-  // Real live-test bug: conversations that had already completed a real, Wompi-approved
+  // Conversations that had already completed a real, Wompi-approved
   // purchase ended up with conversations.state = 'abandoned' after the customer later
   // declined to buy anything more — neither policyId/policyIds (purchase-specific, reset
   // for the next one) nor awaitingCrossSellResponse (a one-shot flag) survive long enough
@@ -253,7 +253,7 @@ describe('WompiWebhookController — post-purchase cross-sell (2026-07-24 "resto
     expect(discoveryCall?.[2]).toEqual(expect.objectContaining({ hasCompletedPurchase: true }));
   });
 
-  // 2026-07-25 feature request: the post-purchase cross-sell offer ("¿Quieres proteger
+  // The post-purchase cross-sell offer ("¿Quieres proteger
   // algo más?") is sent from this webhook, not from a Telegram message — AgentService's
   // own reminder scheduling in handleMessage never runs for it, so this is the other
   // place that must arm the 30s "come back to chat" reminder.
@@ -292,7 +292,7 @@ describe('WompiWebhookController — post-purchase cross-sell (2026-07-24 "resto
     expect(discoveryCall?.[2].petCount).toBeUndefined();
   });
 
-  // 2026-07-24 KYC feedback: phone verification (Telegram's native contact-share button)
+  // KYC feedback: phone verification (Telegram's native contact-share button)
   // is a one-time identity check, not a per-purchase one — a returning customer buying a
   // second product in the same conversation must not be asked to re-verify.
   it('preserves phoneVerified/verifiedPhone into the new DISCOVERY context, same as identity fields', async () => {
@@ -361,7 +361,7 @@ describe('WompiWebhookController — multi-product purchase (one payment, severa
     expect(telegram.sendText).toHaveBeenCalledWith('999888777', expect.stringContaining('2 pólizas'));
   });
 
-  // 2026-07-24 gamification feedback: same celebratory personalization as the
+  // Gamification feedback: same celebratory personalization as the
   // single-policy STATE_RESPONSES[POLICY_ISSUED] message.
   it('regression — the multi-policy confirmation is also personalized with name and pet names', async () => {
     const policies = [

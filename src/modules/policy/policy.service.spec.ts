@@ -83,7 +83,7 @@ describe('PolicyService.issue', () => {
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ pets }));
   });
 
-  // Real live-test bug: a mixed household (1 cat + 2 dogs) issued TWO policies (one per
+  // A mixed household (1 cat + 2 dogs) issued TWO policies (one per
   // species product) but both PDFs showed ALL 3 pets — the cat's certificate listed the
   // dogs and vice versa, because issue() stored the ENTIRE context.pets array verbatim
   // for every policy regardless of which species-restricted product it was for.

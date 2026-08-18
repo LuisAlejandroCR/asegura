@@ -63,7 +63,7 @@ describe('PdfService — petCount pricing display', () => {
     expect(lines.total).toBeNull();
   });
 
-  // Real bug found 2026-07-24: PolicyService.issue() stores monthly_premium as the
+  // PolicyService.issue() stores monthly_premium as the
   // ALREADY-multiplied total locked in at issuance (computeTotalPremium(product,
   // petCount) — see policy.service.spec.ts's "uses the premium LOCKED IN at issuance"
   // regression test), and generateFinalPdf forwards that same total straight through.

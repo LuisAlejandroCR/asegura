@@ -103,10 +103,10 @@ describe('ReminderService', () => {
     expect(() => service.cancel('never-scheduled')).not.toThrow();
   });
 
-  // 2026-07-25 feature request: a conversation that goes quiet through the nudge AND the
+  // A conversation that goes quiet through the nudge AND the
   // extra 3-minute grace period afterward gets auto-closed, so it doesn't sit open forever.
   describe('auto-close after the nudge also goes unanswered', () => {
-    // Real live-test bug (screenshot, 2026-07-26): the auto-close updated the DB but
+    // The auto-close updated the DB but
     // never told the user anything — from the chat's own point of view, nothing
     // happened at all no matter how long they waited after the nudge. The whole point
     // of "chat ended due to lack of information" was a visible outcome.
@@ -185,7 +185,7 @@ describe('ReminderService', () => {
     });
   });
 
-  // Real live-test bug (2026-07-26, screenshot): a real Wompi payment link is valid for
+  // A real Wompi payment link is valid for
   // 30 minutes ("El link vence en 30 minutos"), but the conversation auto-abandoned on
   // the regular 4-minute (60s nudge + 180s grace) window regardless — closing the chat
   // while the link was still perfectly payable.

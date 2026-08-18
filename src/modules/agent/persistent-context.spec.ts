@@ -83,7 +83,7 @@ describe('pickPersistentFields', () => {
     expect(PERSISTENT_FIELDS).not.toContain('awaitingAffiliateId');
   });
 
-  // Real live-test bug (2026-07-26, screenshot): tapping "Mi mascota" on a FRESH
+  // Tapping "Mi mascota" on a FRESH
   // restarted conversation jumped straight to a stale one-species quote with zero
   // re-confirmation — petType (narrowed to 'perro' by an earlier, unrelated inquiry) and
   // petSpeciesCounts silently satisfied every gate in handleDiscovery's mixto flow.

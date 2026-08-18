@@ -141,7 +141,7 @@ describe('STATE_RESPONSES — POLICY_ISSUED', () => {
     expect(STATE_RESPONSES[ConversationState.POLICY_ISSUED](empty)).toContain('activo');
   });
 
-  // 2026-07-24 gamification feedback: celebratory milestone copy at policy issuance —
+  // Gamification feedback: celebratory milestone copy at policy issuance —
   // the biggest "you did it" moment in the flow — personalized with the user's first
   // name and, for a mascotas purchase, each pet's name.
   it('regression — greets the user by first name when known', () => {

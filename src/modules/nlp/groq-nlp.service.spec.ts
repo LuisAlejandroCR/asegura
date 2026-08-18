@@ -37,7 +37,7 @@ describe('GroqNlpService — boot-time configuration warning', () => {
   });
 });
 
-// 2026-07-26 live-test bug: a real Groq free-tier TPM rate limit (429) hit mid-
+// A real Groq free-tier TPM rate limit (429) hit mid-
 // conversation degraded that turn straight to the weaker keyword-only fallbackIntent(),
 // with zero attempt to recover, even though Groq's own error body says "Please try again
 // in 2.1s". One short, fixed retry should recover most of these before giving up.
@@ -163,7 +163,7 @@ describe('GroqNlpService.postProcess — pet type detection', () => {
     expect(postProcess(service, intent, 'un gato, dos perros y yo solo').petType).toBe('mixto');
   });
 
-  // Real live-test bug: "Somos dos perros, una gatica y yo." — hasCat here checked only
+  // "Somos dos perros, una gatica y yo." — hasCat here checked only
   // 'gato'/'gata'/'michi'/'felino', missing the "gatica" diminutive that hasCatExt
   // (petResolution, a few lines below) already recognized. This silently overrode a
   // correct mixto classification back to 'perro', dropping the cat entirely and quoting
@@ -173,7 +173,7 @@ describe('GroqNlpService.postProcess — pet type detection', () => {
     expect(postProcess(service, intent, 'somos dos perros, una gatica y yo').petType).toBe('mixto');
   });
 
-  // Real live-test bug (2026-07-24): "Somos dos perritos, una gata y yo." — hasDog only
+  // "Somos dos perritos, una gata y yo." — hasDog only
   // checked 'perro'/'perra'/'canino', missing the extremely common "perrito"/"perritos"
   // diminutive (affectionate, everyday Spanish for dogs, especially in casual voice
   // messages). This silently classified a mixed household as 'gato' only, dropping both
@@ -193,7 +193,7 @@ describe('GroqNlpService.postProcess — pet type detection', () => {
     expect(postProcess(service, intent, 'quiero el seguro').petType).toBe('gato');
   });
 
-  // 2026-07-26 live-test bug: "ambos" was incorrectly nullified → re-asked first
+  // "ambos" was incorrectly nullified → re-asked first
   // question. "todos", "para todos", "ambos" all mean "both types" — mixto is correct.
   it('preserves mixto for "para todos" (means both types)', () => {
     const intent = baseMascotas('mixto');
@@ -206,12 +206,12 @@ describe('GroqNlpService.postProcess — pet type detection', () => {
   });
 });
 
-// Real live-test bug (screenshot, 2026-07-25/26): "No, pero no tengo gatos. No sé por
+// "No, pero no tengo gatos. No sé por
 // qué pensaste que tenía gatos..." — an explicit correction DENYING a pet — kept getting
 // read as CONFIRMING a cat, because hasCat/hasDog were bare substring checks with no
 // awareness of a preceding negation. "no tengo gatos" contains "gato" just like "tengo
 // un gato" does.
-describe('GroqNlpService.postProcess — negated pet mentions are not confirmations (2026-07-26 live bug)', () => {
+describe('GroqNlpService.postProcess — negated pet mentions are not confirmations', () => {
   const service = makeService();
 
   it('does not set petType gato for "no tengo gatos"', () => {
@@ -269,7 +269,7 @@ describe('GroqNlpService.fallbackIntent — intent extraction', () => {
     expect(fallback(service, 'tengo un gato y un perro').petType).toBe('mixto');
   });
 
-  // Real live-test bug (fallback path — used when Groq itself is unreachable): "una
+  // "una
   // gatica" matched no category key at all before ('gato'/'gata' aren't substrings of
   // 'gatica'), so the whole household got silently classified as dogs-only.
   it('regression — detects mixto in fallback for the "gatica" diminutive', () => {
@@ -284,7 +284,7 @@ describe('GroqNlpService.fallbackIntent — intent extraction', () => {
     expect(fallback(service, 'somos dos perritos, una gata y yo').petType).toBe('mixto');
   });
 
-  // Same 2026-07-26 live bug as postProcess above, but on the path used when Groq's API
+  // Same live bug as postProcess above, but on the path used when Groq's API
   // itself is unreachable — "no tengo gatos" must not fall back to classifying mascotas/
   // gato just because "gato" is a substring of the denial.
   it('regression — "no tengo gatos" does not classify as mascotas category', () => {
@@ -303,7 +303,7 @@ describe('GroqNlpService.fallbackIntent — intent extraction', () => {
     expect(fallback(service, 'lo veo después').abandonIntent).toBe(true);
   });
 
-  // Real lesson from a second live-test conversation (2026-07-24): a user genuinely
+  // Real lesson from a second live-test conversation: a user genuinely
   // asking for help ("no lo sé, qué me ofreces?") could be misread as wanting to abandon
   // the conversation entirely — abandonIntent used to fire on ANY message merely
   // containing "no" as a substring, immediately routing to ABANDONED (see
@@ -328,7 +328,7 @@ describe('GroqNlpService.fallbackIntent — intent extraction', () => {
     expect(fallback(service, 'quiero cancelar todo').abandonIntent).toBe(true);
   });
 
-  // Real live-test bug (screenshot, 2026-07-25): "terminar" sent right after a quote was
+  // "terminar" sent right after a quote was
   // shown wasn't recognized as an exit signal at all (missing from this list AND from the
   // Groq prompt's abandonIntent examples), so it fell through to a neutral re-show of the
   // same quote card instead of ending the conversation.
@@ -372,8 +372,8 @@ describe('GroqNlpService.fallbackIntent — pet name/age/breed extraction', () =
   });
 });
 
-// Multi-pet "Name, age, breed." period-separated extraction (2026-07-24 live bug)
-// Real live-test bug: a 3-pet voice message ("Bruna, 10 años, criollo. Ramón, 3 años,
+// Multi-pet "Name, age, breed." period-separated extraction
+// A 3-pet voice message ("Bruna, 10 años, criollo. Ramón, 3 años,
 // cocker. Pancha, 10 años, doberman.") only yielded 2 pets — Bruna was silently dropped
 // (Groq's own extraction under-counted a compound sentence), and the user's later
 // attempt to provide the "missing" pet re-stated Pancha instead, producing a literal
@@ -398,7 +398,7 @@ describe('GroqNlpService.fallbackIntent — "Name, age, breed." period-separated
     expect(result.pets).toEqual([{ name: 'Rocky', age: '5 años', breed: 'labrador' }]);
   });
 
-  // Real live-test bug: sending pets one message at a time, each in this same
+  // Sending pets one message at a time, each in this same
   // comma-triple shape, but with the age spoken as a WORD ("tres años", "ocho años") —
   // very common in voice dictation — instead of a digit. extractPetAge only recognized
   // digit-form ages, so the age silently fell through into breed instead ("Ramón — no
@@ -412,7 +412,7 @@ describe('GroqNlpService.fallbackIntent — "Name, age, breed." period-separated
     ]);
   });
 
-  // Real live-test bug (2026-07-26, screenshot): the user clarified "Solo es Bruna."
+  // The user clarified "Solo es Bruna."
   // ("it's only Bruna" — i.e. there's just ONE pet, not two) right after describing
   // Bruna — but the trailing clause "Solo es Bruna" has no comma, so the old parser
   // accepted its leading capitalized word ("Solo") as a second pet's name with no age or
@@ -434,7 +434,7 @@ describe('GroqNlpService.fallbackIntent — "Name, age, breed." period-separated
 // compound sentence — the SAME deterministic-wins-over-LLM policy already applied to
 // petCount/petType above, now extended to the pets list itself since an undercount here
 // corrupts who's actually insured on the final policy.
-describe('GroqNlpService.postProcess — pets undercount override (2026-07-24 live bug)', () => {
+describe('GroqNlpService.postProcess — pets undercount override', () => {
   const service = makeService();
   const text = 'Bruna, 10 años, criollo. Ramón, 3 años, cocker. Pancha, 10 años, doberman.';
 
@@ -475,16 +475,9 @@ describe('GroqNlpService.postProcess — pets undercount override (2026-07-24 li
     expect(result.pets).toEqual([{ name: 'Rocky', age: '5 años', breed: 'labrador' }]);
   });
 
-  // Real live-test regression introduced by the fix above: Groq's OWN prompt tells it to
-  // use the singular petName/petAge/petBreed fields (not pets[]) for a message describing
-  // ONE pet, and pets[] legitimately comes back empty in that case. The override must
-  // never treat "deterministic found 1, Groq's pets[] has 0" as evidence of an undercount
-  // — that's the expected shape for a single-pet message, and clobbering it with the
-  // single-clause deterministic parser corrupts perfectly good data. Live bug: sending
-  // pets one at a time ("Ramón, tres años, dobermana.") came back with age "no
-  // especificada" and breed "tres años, dobermana" in the final summary — the
-  // deterministic parser's OWN weaker single-clause read overwrote Groq's correct
-  // singular-field extraction.
+  // Groq's own prompt tells it to use the singular petName/petAge/petBreed fields for a
+  // one-pet message, so an empty pets[] is the expected shape there, not an undercount.
+  // Overriding it let the weaker single-clause deterministic parser corrupt good data.
   it('regression — never overrides when Groq legitimately used the singular fields for a one-pet message (pets: [])', () => {
     const groqIntent = makeIntentWithPets([]);
     const result = postProcess(service, groqIntent, 'Ramón, tres años, dobermana.');
@@ -571,13 +564,13 @@ describe('GroqNlpService — wantsAlternative (fallback)', () => {
   });
 });
 
-// Real live-test bug (2026-07-25): user said "Otra opción." right after a quote was
+// User said "Otra opción." right after a quote was
 // shown. Groq (the primary path, not the fallback) classified it as isAffirmative=true
 // instead of wantsAlternative — the conversation jumped straight to phone verification /
 // purchase confirmation instead of showing a different product. postProcess had no
 // deterministic override for wantsAlternative at all (only the fallback path did), so a
 // wrong LLM guess went straight through uncorrected.
-describe('GroqNlpService.postProcess — wantsAlternative deterministic override (2026-07-25 live bug)', () => {
+describe('GroqNlpService.postProcess — wantsAlternative deterministic override', () => {
   const service = makeService();
 
   function wronglyAffirmative(): InsuranceIntent {
@@ -615,7 +608,7 @@ describe('GroqNlpService.postProcess — wantsAlternative deterministic override
   });
 });
 
-// Real live-test bug (2026-07-26): "No, no quiero Ezequial porque ya tengo. Explícame de
+// "No, no quiero Ezequial porque ya tengo. Explícame de
 // qué se trata." has no '?'/'¿' (ASR drops it), so the question-mark guardrail doesn't
 // save it, and it names no alternative product, so wantsAlternativeText's override
 // doesn't fire either. isAffirmativeText's bare 'quiero'/'me interesa' substrings have no
@@ -623,7 +616,7 @@ describe('GroqNlpService.postProcess — wantsAlternative deterministic override
 // leave isAffirmative=true on an explicit decline and route straight to phone-
 // verification/KYC for the product just declined. Same override pattern as
 // wantsAlternative just above: a deterministic decline phrase always wins.
-describe('GroqNlpService.postProcess — negated desire deterministic override (2026-07-26 live bug)', () => {
+describe('GroqNlpService.postProcess — negated desire deterministic override', () => {
   const service = makeService();
 
   function wronglyAffirmative(): InsuranceIntent {
@@ -657,13 +650,13 @@ describe('GroqNlpService.postProcess — negated desire deterministic override (
   });
 });
 
-// Real live-test bug (2026-07-26): "Quiero ese." (a clear, unambiguous confirmation, no
+// "Quiero ese." (a clear, unambiguous confirmation, no
 // question mark) got re-shown the same quote instead of advancing to phone verification.
 // Every existing override in postProcess only ever turns isAffirmative OFF (question
 // mark, wantsAlternative, denied desire) — nothing corrected Groq's own occasional
 // under-detection back to true. fallbackIntent already trusts isAffirmativeText as its
 // primary signal; the primary (Groq) path needed the same deterministic floor.
-describe('GroqNlpService.postProcess — positive confirmation deterministic floor (2026-07-26 live bug)', () => {
+describe('GroqNlpService.postProcess — positive confirmation deterministic floor', () => {
   const service = makeService();
 
   function wronglyNegative(): InsuranceIntent {
@@ -710,7 +703,7 @@ describe('GroqNlpService.postProcess — positive confirmation deterministic flo
     expect(result.wantsAlternative).toBe(true);
   });
 
-  // Real live-test bug (2026-07-26, screenshot): the floor above requires
+  // The floor above requires
   // `!intent.wantsAlternative` to fire, but Groq occasionally ALSO misclassifies
   // "Quiero ese." with wantsAlternative=true — its own few-shot example for
   // wantsAlternative literally contains the phrase "no ese, otro", a plausible source of
@@ -732,7 +725,7 @@ describe('GroqNlpService.postProcess — positive confirmation deterministic flo
   });
 });
 
-describe('GroqNlpService.fallbackIntent — negated desire deterministic override (2026-07-26 live bug)', () => {
+describe('GroqNlpService.fallbackIntent — negated desire deterministic override', () => {
   const service = makeService();
 
   it('regression — "No, no quiero Ezequial porque ya tengo. Explícame de qué se trata." → isAffirmative=false, isNegative=true', () => {
@@ -831,7 +824,7 @@ describe('GroqNlpService.postProcess — productCategory inference from petType'
     expect(postProcess(service, noCategory(), 'no sé qué quiero todavía').productCategory).toBeNull();
   });
 
-  // Real live-test bug (2026-07-26): this used to assert productCategory stays null for
+  // This used to assert productCategory stays null for
   // "necesito proteger a mi familia" — true for MASCOTAS specifically (no pet keyword
   // here), but wrong to generalize: "familia" is (and always was, in fallbackIntent) a
   // real vida keyword. Tapping the F01 "❤️ Mi familia" button got "No logré entender
@@ -914,7 +907,7 @@ describe('GroqNlpService.postProcess — isAffirmative question-mark guardrail',
     expect(postProcess(service, affirmativeIntent(), 'sí, me interesa').isAffirmative).toBe(true);
   });
 
-  // Real live-test bug (2026-07-24): during a pet-details correction loop, "¿Sí está
+  // During a pet-details correction loop, "¿Sí está
   // bien?" and "sí?" got forced to isAffirmative=false by this same guardrail — but
   // these are genuine confirmations phrased as a tag question (a common Spanish
   // pattern), not a follow-up question like "¿me interesan los descuentos?". The user
@@ -953,7 +946,7 @@ describe('GroqNlpService.fallbackIntent — isAffirmative question-mark guardrai
 });
 
 // Colombian slang affirmatives (regression)
-// Real live-test bug: "generalo" (Colombian slang for "generate it") was not recognized
+// "generalo" (Colombian slang for "generate it") was not recognized
 // as a confirmation, so the payment-link prompt repeated verbatim instead of proceeding.
 
 describe('GroqNlpService.fallbackIntent — Colombian slang affirmatives', () => {
@@ -971,7 +964,7 @@ describe('GroqNlpService.fallbackIntent — Colombian slang affirmatives', () =>
   });
 });
 
-// Real live-test bug (2026-07-24): after a quote card, "Dame ese" (voice-transcribed,
+// After a quote card, "Dame ese" (voice-transcribed,
 // Colombian Spanish for "give me that one" — a clear purchase confirmation) was not
 // recognized as an affirmative. handleQuotation's fallback branch then re-showed the
 // IDENTICAL quote card instead of advancing to phone verification — reading to the user
@@ -983,8 +976,8 @@ describe('GroqNlpService.fallbackIntent — deictic confirmations ("dame ese", "
     'Dame ese',
     'dame ese',
     'Deme ese',
-    // "quiero ese" was named in this describe block's own title since 2026-07-24 but
-    // never actually tested — a real gap, closed 2026-07-26.
+    // "quiero ese" was named in this describe block's own title but
+    // Never actually tested — a real gap.
     'Quiero ese',
     'quiero ese',
     'Quiero esa',
@@ -1002,7 +995,7 @@ describe('GroqNlpService.fallbackIntent — deictic confirmations ("dame ese", "
     expect(result.isNegative).toBe(true);
   });
 
-  // Real live-test bug (2026-07-26, screenshot): the deictic-confirmation override must
+  // The deictic-confirmation override must
   // win over wantsAlternativeText too — nothing in "quiero ese"/"dame ese" itself would
   // trip wantsAlternativeText, but this guards the override's own completeness the same
   // way the postProcess regression test does for the primary path.
@@ -1012,8 +1005,8 @@ describe('GroqNlpService.fallbackIntent — deictic confirmations ("dame ese", "
   });
 });
 
-// Deterministic petCount extraction (2026-07-24 regression)
-// Real live-test bug: "Tengo dos mascotas y yo." was quoted and charged for 3 mascotas,
+// Deterministic petCount extraction
+// "Tengo dos mascotas y yo." was quoted and charged for 3 mascotas,
 // not 2 — petCount had zero deterministic validation, unlike petType/petResolution
 // (both cross-checked against the raw text regardless of what the LLM returned).
 // petCount directly multiplies the price (computeTotalPremium), so trusting an 8B
@@ -1060,7 +1053,7 @@ describe('GroqNlpService.postProcess — deterministic petCount extraction', () 
     expect(postProcess(service, intent, 'tengo una gata').petCount).toBe(1);
   });
 
-  // Real live-test bug (2026-07-24): "Somos dos perritos, una gata y yo." — neither
+  // "Somos dos perritos, una gata y yo." — neither
   // "perritos" (diminutive) nor "gata" (feminine) matched the old masculine/canonical-only
   // pattern, so this exact live message got NO deterministic count at all, falling back
   // fully to the LLM's unvalidated guess.
@@ -1096,7 +1089,7 @@ describe('GroqNlpService.fallbackIntent — deterministic petCount extraction', 
   });
 });
 
-// Step 3: `dependents` extraction (2026-07-26)
+// Step 3: `dependents` extraction
 // Not in Groq's JSON schema at all — this deterministic extraction is the ONLY source
 // for this field in both the primary (postProcess) and fallback paths.
 describe('GroqNlpService.fallbackIntent — dependents extraction', () => {
@@ -1182,7 +1175,7 @@ describe('GroqNlpService.fallbackIntent — F01 button label invariant (Step 4)'
   });
 });
 
-// Real live-test bug (2026-07-26, screenshot): tapping "❤️ Mi familia" got "No logré
+// Tapping "❤️ Mi familia" got "No logré
 // entender bien eso." plus the DISCOVERY question repeated verbatim, instead of
 // proceeding with productCategory='vida'. The invariant above only ever proved
 // fallbackIntent honors the F01 label promise — but Groq itself (the PRIMARY path,
@@ -1191,7 +1184,7 @@ describe('GroqNlpService.fallbackIntent — F01 button label invariant (Step 4)'
 // productCategory guardrail used to only ever infer 'mascotas' in that case, leaving
 // vida/asistencia/accidentes buttons with no floor to fall back on at all. This proves
 // the SAME promise holds for postProcess when Groq returns productCategory=null.
-describe('GroqNlpService.postProcess — F01 button label invariant, primary path (2026-07-26 regression)', () => {
+describe('GroqNlpService.postProcess — F01 button label invariant, primary path', () => {
   const service = makeService();
 
   function groqReturnedNull(): InsuranceIntent {

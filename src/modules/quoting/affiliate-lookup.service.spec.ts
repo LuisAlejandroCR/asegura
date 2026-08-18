@@ -142,7 +142,7 @@ describe('AffiliateLookupService', () => {
     fs.unlinkSync(csvPath);
   });
 
-  // 2026-07-26 updated: FAMILIA NUCLEAR INTEGRAL and FAMILIA MONOPARENTAL now set
+  // Updated: FAMILIA NUCLEAR INTEGRAL and FAMILIA MONOPARENTAL now set
   // dependents=1 (conservative floor), PAREJA CONYUGAL and empty still don't.
   it('maps FAMILIA_NUCLEAR_INTEGRAL and MONOPARENTAL to dependents=1, other segments remain unmapped', async () => {
     const csvPath = writeTempCsv([
@@ -178,7 +178,7 @@ describe('AffiliateLookupService', () => {
     fs.unlinkSync(csvPath);
   });
 
-  // 2026-07-26 feature request: "capture the complete row... so the agent will know all
+  // "capture the complete row... so the agent will know all
   // about the registered user" — the SI/NO usage-history flags, EMPRESA_FOCO's "X"/blank
   // marker, CIUDAD_AFILIADO, and PET_COUNT (only meaningful alongside a prior sale).
   it('captures the full row: booleans (SI/NO), EMPRESA_FOCO ("X"/blank), city, and demographic fields', async () => {

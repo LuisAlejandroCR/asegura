@@ -165,7 +165,7 @@ describe('QuotingService INVARIANTS', () => {
 describe('QuotingService — budget scoring from RANGO_SALARIAL', () => {
   const service = makeService();
 
-  // Real bug found 2026-07-24, cross-checking against the actual affiliate data
+  // Cross-checking against the actual affiliate data
   // (Usos_Productos_Afiliados_SIN_ID / the synthetic CSV built from its real marginal
   // distribution): budgetFromSalary's keys ('hasta 2 smlv', 'entre 2 y 4 smlv', ...)
   // never matched ANY real RANGO_SALARIAL value — the real bands are finer-grained
@@ -208,7 +208,7 @@ describe('QuotingService — budget scoring from RANGO_SALARIAL', () => {
   });
 });
 
-// beneficiaries reason text (2026-07-24, findings from an external test session)
+// Beneficiaries reason text
 // Real observed bug: "Te lo recomiendo porque: Cubre a 1 personas." — ungrammatical
 // (singular "1" with plural "personas"), and Groq's own JSON schema shows
 // "beneficiaries": 1 as an EXAMPLE value in the prompt, so the LLM often defaults to 1
@@ -235,18 +235,11 @@ describe('QuotingService — "Cubre a N personas" reason text', () => {
 describe('QuotingService — category cross-sell map (locked-in current behavior)', () => {
   const service = makeService();
 
-  // isRelatedCategory(a, b) reads as: "product category `a` is also relevant when the
-  // signal is `b`". The map is intentionally asymmetric: vida<->accidentes cross-sell
-  // both ways; asistencia is relevant to a vida signal (life insurance + exequial is a
-  // natural pairing) but NOT the reverse; mascotas cross-sells to human coverage via a
-  // separate code path (mentionsPersonalCoverage in agent.service.ts), not this map.
-  //
-  // 2026-07-24 UPDATE: the businessPriority tie-breaker (+10) now changes which
-  // related-category product wins the contested last top-3 slot for a vida signal — 4 of
-  // the 8 asistencia-or-accidentes candidates are prioritized products, so an asistencia
-  // product now wins that slot instead of accidentes (previously decided by catalog
-  // array order alone). The two tests below were updated to match; see the
-  // "business-priority boost" describe block above for the feature itself.
+  // isRelatedCategory(a, b) reads as "category `a` is also relevant when the signal is `b`",
+  // and is asymmetric on purpose: vida<->accidentes cross-sell both ways; asistencia is
+  // relevant to a vida signal but not the reverse; mascotas cross-sells through
+  // mentionsPersonalCoverage in agent.service.ts, not this map. The businessPriority
+  // tie-breaker decides the contested last top-3 slot, so asistencia wins it over accidentes.
   it('an accidentes signal does NOT surface vida products — 3 direct accidentes matches already fill the top-3 cap', () => {
     const scores = service.score({ productCategory: 'accidentes' });
     expect(scores).toHaveLength(3);
@@ -273,22 +266,11 @@ describe('QuotingService — category cross-sell map (locked-in current behavior
   });
 });
 
-// Real live-test bug (2026-07-26, screenshot) + product decision (confirmed with the
-// user): tapping the F01 "❤️ Mi familia" button (productCategory='vida') with 2
-// dependents known returned "Asistencias médicas familiares" (GEA, category
-// 'asistencia') as the FIRST quote. Investigating with the REAL catalog and every
-// realistic dependents/budget/coverage combination never found a case where a
-// related-category product outscores an exact match under the CURRENT scoring
-// constants — an exact match's own tier/family/business-priority bonuses keep it ahead
-// (see quoting.service.spec.ts git history for the combos tried). The live transcript's
-// actual root cause is more likely that Groq classified the button tap's category
-// directly instead of leaving it null (see agent.service.ts's F01_CATEGORY_MAP fix).
-// This describe block hardens `bestQuote()` against the SCORING half of the failure
-// mode regardless — confirmed with the user as the desired invariant ("never substitute
-// the tapped category") — using a controlled fake catalog to force the exact scenario,
-// since the real catalog's current weights don't happen to reach it today. A related-
-// category product may still surface later via "otro" (score()'s own top-3, unaffected).
-describe('QuotingService.bestQuote — never substitutes an explicit category choice (2026-07-26)', () => {
+// bestQuote() must never substitute the category the user explicitly chose, even when a
+// related-category product would outscore it. The real catalog's weights never reach that
+// case today, so this forces it with a controlled fake. "otro" can still surface a related
+// category later, through score()'s own top-3.
+describe('QuotingService.bestQuote — never substitutes an explicit category choice', () => {
   const service = makeService();
 
   it('regression — an exact-category match always wins bestQuote even when a related-category product scores strictly higher', () => {
@@ -356,7 +338,7 @@ describe('QuotingService INVARIANT — every NLP-reachable category yields a rec
   });
 });
 
-// 2026-07-24 business feedback: 7 products are now prioritized for sale (direct-sell,
+// Business feedback: 7 products are now prioritized for sale (direct-sell,
 // require only basic cédula/nombre/correo) — vida, asistencias-multiples, exequial,
 // accidentes-exequial, asistencias-medicas, medicina-prepagada-gatos,
 // medicina-prepagada-perros. When multiple same-category products otherwise tie, a
@@ -388,7 +370,7 @@ describe('QuotingService — business-priority boost', () => {
   });
 });
 
-// 2026-07-24 business feedback: "Seguro de vida" and both "Medicina prepagada"
+// Business feedback: "Seguro de vida" and both "Medicina prepagada"
 // (gatos/perros) products need conditional underwriting — age, pre-existing illnesses,
 // and clinical history — before they can be sold. Every other product is direct-sell
 // (cédula/nombre/correo only).
@@ -399,7 +381,7 @@ describe('QuotingService — conditional underwriting flag', () => {
   });
 });
 
-// 2026-07-25 hyper-personalization tier — ported from a teammate's Python prototype
+// Hyper-personalization tier — ported from a teammate's Python prototype
 // (feature/motor-python-hiperpersonalizacion, analytics/reglas_negocio.py), reworked to
 // use only signals the live conversation actually collects. The branch's age/pensioner
 // tier (exequial for 55+) could NOT be ported: AffiliateSignals.edad is declared in the
@@ -544,7 +526,7 @@ describe('QuotingService — hyper-personalization tier (dependents/income)', ()
   });
 });
 
-// "why this product" reason ordering (2026-07-26 Step 1)
+// "why this product" reason ordering
 // Reasons used to surface in PUSH order: the exact-category branch pushed NO reason at
 // all, the related-category branch pushed a raw slug (`Categoría: vida`), and the
 // persuasive tier sentences were pushed LAST — so `formatQuote`'s `reasons[0]`
@@ -643,7 +625,7 @@ describe('QuotingService — dependents field precedence (Step 2)', () => {
   });
 });
 
-// Urgency wakes non-underwriting products (2026-07-26, Matriz 2 C05)
+// Urgency wakes non-underwriting products
 // Already inferred by the NLP layer from words like "urgente"/"ya" (InsuranceIntent.
 // urgency), but never previously read here. requiresUnderwriting products (vida,
 // medicina-prepagada-*) genuinely take longer to activate (age/illness info required

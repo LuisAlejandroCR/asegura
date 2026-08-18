@@ -27,7 +27,7 @@ function makeCtx(message: Record<string, unknown>) {
 describe('TelegramAdapter.normalize — unsupported media', () => {
   const adapter = new TelegramAdapter(makeConfig());
 
-  // 2026-07-24: a plain photo is no longer generically "unsupported" — the cosmetic
+  // A plain photo is no longer generically "unsupported" — the cosmetic
   // selfie-KYC step needs to receive one as a valid answer (see AgentService's
   // awaitingSelfie step). It carries width/height instead of a bare `true`, and
   // AgentService decides what that means based on conversation state (expected selfie
@@ -57,7 +57,7 @@ describe('TelegramAdapter.normalize — unsupported media', () => {
     expect(result.messageId).toBe(4242);
   });
 
-  // 2026-07-26 stuck-loop escalation feature — a human being handed the conversation
+  // Stuck-loop escalation feature — a human being handed the conversation
   // needs to know who to look for in Telegram (@handle), not just an opaque numeric id.
   it('captures the sender\'s Telegram @username when present', async () => {
     const result = await adapter.normalize(makeCtx({ from: { id: 222, username: 'alejoo_o' }, text: 'hola' }));
@@ -181,7 +181,7 @@ describe('TelegramAdapter — transcribeVoice error handling', () => {
   });
 });
 
-describe('TelegramAdapter.sendText — typing pacing (2026-07-24 gamification feedback)', () => {
+describe('TelegramAdapter.sendText — typing pacing', () => {
   // Real feedback: a bot that instantly dumps text feels like an IVR menu, not a
   // conversation. A brief "typing..." indicator + pause reads as alive — no buttons or
   // menus involved (AGENTS.md rule 10 stays intact, this is pure pacing).
@@ -210,7 +210,7 @@ describe('TelegramAdapter.sendText — typing pacing (2026-07-24 gamification fe
   }, 10000);
 });
 
-describe('TelegramAdapter.normalize — contact sharing (2026-07-24 KYC feedback)', () => {
+describe('TelegramAdapter.normalize — contact sharing', () => {
   const adapter = new TelegramAdapter(makeConfig());
 
   it('a contact shared via the native request_contact button sets the contact field', async () => {
@@ -237,7 +237,7 @@ describe('TelegramAdapter.normalize — contact sharing (2026-07-24 KYC feedback
   });
 });
 
-describe('TelegramAdapter.sendContactRequest (2026-07-24 KYC feedback)', () => {
+describe('TelegramAdapter.sendContactRequest', () => {
   function mockSendableBot() {
     return { api: { sendChatAction: jest.fn().mockResolvedValue(undefined), sendMessage: jest.fn().mockResolvedValue(undefined) } };
   }
@@ -262,10 +262,10 @@ describe('TelegramAdapter.sendContactRequest (2026-07-24 KYC feedback)', () => {
   }, 10000);
 });
 
-// 2026-07-26 Step 4 hybrid buttons — mirrors sendContactRequest's structure exactly.
+// Step 4 hybrid buttons — mirrors sendContactRequest's structure exactly.
 // Reply keyboard ONLY, never InlineKeyboard: a tap arrives back as ordinary text on the
 // same webhook, so it's a shortcut over the NLP path, not a separate callback_query flow.
-describe('TelegramAdapter.sendChoices (2026-07-26 hybrid buttons)', () => {
+describe('TelegramAdapter.sendChoices', () => {
   function mockSendableBot() {
     return { api: { sendChatAction: jest.fn().mockResolvedValue(undefined), sendMessage: jest.fn().mockResolvedValue(undefined) } };
   }
@@ -304,10 +304,10 @@ describe('TelegramAdapter.sendChoices (2026-07-26 hybrid buttons)', () => {
   });
 });
 
-// 2026-07-24 feedback: "is there a way to show an animated successfully check pass
+// "is there a way to show an animated successfully check pass
 // inside the chat?" — Telegram's native message reactions render with a small built-in
 // animation and need no hosted asset (GIF/sticker), unlike sendAnimation/sendSticker.
-// 2026-07-24 feedback: a real branded success-checkmark video (src/assets/success-check.mp4)
+// A real branded success-checkmark video (src/assets/success-check.mp4)
 // for the selfie-confirmed and payment-confirmed moments — heavier than a reaction, so
 // used only where the user explicitly asked for it.
 describe('TelegramAdapter.sendAnimation', () => {
@@ -355,7 +355,7 @@ describe('TelegramAdapter.reactToMessage', () => {
     expect(bot.api.setMessageReaction).toHaveBeenCalledWith(222, 4242, [{ type: 'emoji', emoji: '✅' }], expect.anything());
   });
 
-  // 2026-07-24 feedback: the phone/contact-share confirmation gets a "big" reaction
+  // The phone/contact-share confirmation gets a "big" reaction
   // (Telegram's is_big flag triggers a much larger animated burst) instead of the small
   // one used elsewhere.
   it('passes is_big through as the 4th setMessageReaction argument when requested', async () => {

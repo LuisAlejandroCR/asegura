@@ -3,7 +3,7 @@
 
 import { matchBreed, classifyPetsBySpecies, DOG_BREEDS, CAT_BREEDS } from './breed-matcher';
 
-// Real live-test bug: a mixed household's final PDFs both listed all 3 pets instead of
+// A mixed household's final PDFs both listed all 3 pets instead of
 // each policy only listing its own species — PolicyService.issue() needed a way to
 // classify which of context.pets belongs to which species.
 describe('classifyPetsBySpecies', () => {

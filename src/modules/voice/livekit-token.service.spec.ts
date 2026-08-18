@@ -54,7 +54,7 @@ describe('LiveKitTokenService — configured', () => {
     expect(a.roomName).not.toBe(b.roomName);
   });
 
-  // Live bug (2026-08-18): voz.html sat on "Te escucho…" forever. The worker registered
+  // Voz.html sat on "Te escucho…" forever. The worker registered
   // with LiveKit fine, but ServerOptions sets agentName: 'asegura-voice', and LiveKit
   // DISABLES automatic dispatch as soon as a worker is named — it only joins rooms it is
   // explicitly dispatched to. This token carried a VideoGrant and nothing else, so the
