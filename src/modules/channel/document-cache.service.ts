@@ -11,9 +11,7 @@ interface CachedDocument {
   expiresAt: number;
 }
 
-// 10 minutes is generous for Twilio to fetch the media once (it typically does so within
-// seconds of the send API call returning) while keeping the exposure window short — this
-// is a public, unauthenticated URL by necessity (Twilio's servers fetch it, not the user).
+// A public, unauthenticated URL by necessity (Twilio's servers fetch it): keep it short-lived.
 const TTL_MS = 10 * 60_000;
 
 @Injectable()
@@ -26,8 +24,7 @@ export class DocumentCacheService {
     return token;
   }
 
-  // Not deleted on first read — Twilio may retry the media fetch, and a 404 on retry
-  // would silently drop the document. Expired entries are swept lazily on the next get().
+  // Not deleted on first read — Twilio may retry the fetch, and a 404 would drop the document.
   get(token: string): CachedDocument | null {
     const entry = this.store.get(token);
     if (!entry) return null;

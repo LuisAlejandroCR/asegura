@@ -1,7 +1,5 @@
-// channel-registry.service.ts: resolves a NormalizedMessage['channel'] string to the
-// IChannelAdapter that owns it. AgentService and wompi-webhook.controller.ts both need
-// this — a message/payment can arrive on either channel, and each conversation's replies
-// must go back out the same one it came in on, never hardcoded to Telegram.
+// channel-registry.service.ts: resolves a channel name to the adapter that owns it, so
+// replies always go back out the channel the message came in on.
 import { Injectable } from '@nestjs/common';
 import { IChannelAdapter } from './types';
 import { TelegramAdapter } from './telegram-adapter.service';

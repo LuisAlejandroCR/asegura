@@ -1,4 +1,5 @@
-// telegram-webhook.guard.ts: validates x-telegram-bot-api-secret-token header
+// telegram-webhook.guard.ts: validates the x-telegram-bot-api-secret-token header on
+// every inbound webhook call, in constant time.
 import {
   CanActivate,
   ExecutionContext,
@@ -17,9 +18,7 @@ export class TelegramWebhookGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<Request>();
     const secret = this.config.get<string>('TELEGRAM_WEBHOOK_SECRET');
 
-    // Dev convenience bypass — opt-in only via the explicit 'development' value, never a
-    // fallback like "anything that isn't 'production'". An unset/misconfigured NODE_ENV
-    // (e.g. a staging deploy nobody flagged as 'production') must fail closed, not open.
+    // Dev bypass only on the explicit 'development' value: an unset NODE_ENV fails closed.
     if (!secret) {
       if (this.config.get('NODE_ENV') === 'development') return true;
       throw new UnauthorizedException('TELEGRAM_WEBHOOK_SECRET not configured');

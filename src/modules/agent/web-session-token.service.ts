@@ -1,9 +1,6 @@
-// web-session-token.service.ts: mints and verifies short-lived tokens that let a browser
-// (AseguraWeb — texto.html/voz.html) act on an EXISTING Telegram/WhatsApp conversation
-// without a new login step. HMAC-signed, same pattern as wompi.service.ts's webhook
-// signature check (createHmac + timingSafeEqual) — no new dependency (no JWT library).
-// Same optional-integration contract as LiveKitTokenService: disabled without a crash
-// when JWT_SECRET is unset.
+// web-session-token.service.ts: mints and verifies short-lived HMAC tokens that let a
+// browser act on an EXISTING Telegram/WhatsApp conversation without a new login step.
+// Disabled, not fatal, when JWT_SECRET is unset.
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
@@ -16,10 +13,8 @@ interface SignedPayload extends WebSessionPayload {
   exp: number;
 }
 
-// Long enough for a full discovery→quote→data-capture→Wompi-checkout session (checkout
-// alone can take several minutes on a slow connection), short enough that a token leaked
-// via browser history/referrer isn't useful for long — same reasoning as
-// LiveKitTokenService.TOKEN_TTL_SECONDS and Wompi's PAYMENT_LINK_EXPIRY_MINUTES.
+// Long enough for a full discovery→checkout session, short enough that a leaked token
+// (browser history, referrer) stops being useful quickly.
 const TOKEN_TTL_MS = 90 * 60 * 1000;
 
 @Injectable()

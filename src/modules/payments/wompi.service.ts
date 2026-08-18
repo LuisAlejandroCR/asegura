@@ -1,4 +1,5 @@
-// wompi.service.ts: Wompi payment links and webhook validation
+// wompi.service.ts: creates Wompi payment links and verifies the signature of the webhook
+// events they generate. Disabled, not fatal, when the WOMPI_* vars are missing.
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, timingSafeEqual } from 'crypto';
@@ -34,9 +35,7 @@ export class WompiService {
       throw new Error('Wompi not configured');
     }
 
-    // Wompi requires ISO 8601 with a "T" separator, no milliseconds, no "Z" — e.g.
-    // "2040-12-10T14:30:00" (confirmed against docs.wompi.co). A previous version
-    // replaced "T" with a space, which Wompi's API rejects with a 422.
+    // Wompi wants ISO 8601 with a "T", no milliseconds, no "Z" — a space separator gets a 422.
     const expiresAt = params.expiresInMinutes
       ? new Date(Date.now() + params.expiresInMinutes * 60_000)
           .toISOString()
@@ -78,10 +77,8 @@ export class WompiService {
     return { checkoutUrl, paymentLinkId };
   }
 
-  // Wompi's own docs (docs.wompi.co/docs/colombia/eventos/) warn that the field set/order
-  // in signature.properties "pueden variar en el tiempo y en cada evento" — a previous
-  // version hardcoded transaction.id + transaction.status + transaction.amount_in_cents,
-  // which would have silently rejected every real webhook whose properties differed.
+  // Wompi's docs warn the field set and order in signature.properties can vary per event, so
+  // the checksum is built from the properties the event itself declares, never a fixed list.
   validateWebhookSignature(event: WompiWebhookEvent): boolean {
     if (!this.eventsSecret) return false;
 

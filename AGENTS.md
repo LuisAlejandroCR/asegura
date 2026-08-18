@@ -39,6 +39,18 @@
 > * Never commit or push.
 > * Always leave the exact commit command ready for the human.
 >
+> ## Comments — applies to every file, new and old
+>
+> * **Header, 2–3 lines, always.** First line of the file:
+>   `// <filename>: <what this file does>`. Two or three lines total, no more.
+> * **Inside the file, keep only what the code cannot say.** A trap, a non-obvious
+>   decision, a bug that would come back. If a comment restates the code, delete it.
+> * **No session history in code.** Dates, session numbers, "live bug 2026-07-26",
+>   rationale narratives — that is `docs/memoria.md`. Code keeps the rule, not the story.
+> * **No commented-out code.** Git remembers it.
+> * **`.md` files: be concise.** Same test — say it once, drop the retelling.
+> * When editing an old file, bring it to this shape before adding to it.
+>
 > ## SDD
 >
 > 1. Specify → `docs/plan.md`

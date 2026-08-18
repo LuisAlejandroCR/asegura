@@ -9,8 +9,8 @@ import { Conversation, ConversationContext, ConversationState } from './types';
 export class ConversationService {
   private readonly logger = new Logger(ConversationService.name);
 
-  // In-memory cache keyed by `${userId}:${channel}` — survives transient Supabase failures
-  // and eliminates the race condition where rapid messages each trigger a fresh DB lookup.
+  // Keyed by `${userId}:${channel}`. Absorbs transient Supabase failures and stops two rapid
+  // messages from each creating their own conversation row.
   private readonly cache = new Map<string, Conversation>();
 
   constructor(private readonly supabase: SupabaseService) {}
@@ -20,8 +20,8 @@ export class ConversationService {
   }
 
   async findByUser(userId: string, channel: string): Promise<Conversation | null> {
-    // maybeSingle() returns { data: null, error: null } for 0 rows — no PGRST116 noise.
-    // limit(1) + order ensures a single deterministic row even if the unique index is missing.
+    // maybeSingle() returns { data: null, error: null } for 0 rows; order+limit keep the result
+    // deterministic even if the unique index is missing.
     const { data, error } = await this.supabase.db
       .from('conversations')
       .select('*')
@@ -37,8 +37,7 @@ export class ConversationService {
     return data as Conversation | null;
   }
 
-  // Used by the Wompi webhook to resolve which Telegram user/channel owns a policy's
-  // conversation, so the payment confirmation can be pushed to them proactively.
+  // Used by the Wompi webhook to resolve who owns a policy's conversation.
   async findById(conversationId: string): Promise<Conversation | null> {
     const { data, error } = await this.supabase.db
       .from('conversations')
@@ -80,7 +79,6 @@ export class ConversationService {
     const update: Record<string, unknown> = { state, updated_at: new Date().toISOString() };
     if (context) update.context = context;
 
-    // Update in-memory cache first — context is available immediately for the next message
     for (const [key, conv] of this.cache.entries()) {
       if (conv.id === id) {
         this.cache.set(key, { ...conv, state, context: (context ?? conv.context) as ConversationContext });
@@ -101,8 +99,6 @@ export class ConversationService {
   async getOrCreate(userId: string, channel: string): Promise<Conversation> {
     const key = this.cacheKey(userId, channel);
 
-    // Cache hit — avoids a DB round-trip and prevents the race condition where two
-    // rapid messages both see 0 rows and each call create(), duplicating the conversation.
     const cached = this.cache.get(key);
     if (cached) return cached;
 

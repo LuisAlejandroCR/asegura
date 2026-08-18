@@ -1,7 +1,6 @@
-// web-session.controller.ts: the HTTP surface AseguraWeb (texto.html/voz.html) calls.
-// No auth beyond the signed token itself + the global ThrottlerModule (same trust model
-// as voice.controller.ts) — a leaked token only grants access to the one conversation it
-// was minted for, for its TTL window (web-session-token.service.ts).
+// web-session.controller.ts: the HTTP surface AseguraWeb (texto.html/voz.html) calls. The
+// signed token is the only credential — it grants access to the one conversation it was
+// minted for, for its TTL. Nothing rate-limits this endpoint yet.
 import { Body, Controller, Get, Param, Post, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AgentService, WebReply } from './agent.service';
@@ -14,11 +13,8 @@ interface WebSessionSnapshot {
   progress: { step: number; totalSteps: number; label: string };
   transcript: Array<{ role: 'user' | 'agent'; text: string }>;
   channel: string;
-  // Plan-17 §12 — only set for WhatsApp (with TWILIO_WHATSAPP_NUMBER configured): the mic
-  // test (plan 17 §2) confirmed WhatsApp's in-app browser always escalates to the external
-  // system browser, so once checkout completes, the browser is stranded outside the chat
-  // and needs an explicit way back. Telegram's in-app browser IS the chat — no equivalent
-  // needed, so this stays undefined there; texto.html/voz.html just show "close this tab".
+  // WhatsApp only: its in-app browser escalates to the system browser, so after checkout
+  // the page needs an explicit way back. Telegram's in-app browser IS the chat.
   returnUrl?: string;
 }
 
@@ -36,8 +32,7 @@ export class WebSessionController {
     private readonly config: ConfigService,
   ) {}
 
-  // Read-only — lets texto.html/voz.html restore a refreshed page without advancing the
-  // conversation (never calls AgentService.handleWebMessage, which DOES advance it).
+  // Read-only: restores a refreshed page without advancing the conversation.
   @Get(':token')
   async getSession(@Param('token') token: string): Promise<WebSessionSnapshot> {
     const payload = this.tokens.verify(token);

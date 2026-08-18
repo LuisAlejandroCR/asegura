@@ -1,4 +1,5 @@
-// auth.guard.ts: validates Supabase JWT Bearer tokens — used on protected endpoints
+// auth.guard.ts: validates a Supabase JWT Bearer token and attaches the user to the
+// request. Not currently applied to any endpoint.
 import {
   CanActivate,
   ExecutionContext,

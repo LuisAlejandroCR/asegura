@@ -1,4 +1,5 @@
-// http-exception.filter.ts: global error handler — never exposes stack to clients
+// http-exception.filter.ts: global error handler. Clients get a status and a safe message;
+// the stack stays in the logs.
 import {
   ArgumentsHost,
   Catch,
@@ -30,8 +31,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     const line = `${request.method} ${request.url} → ${status}: ${message}`;
 
-    // A 4xx is the caller's mistake (bad URL, bad payload), not a server fault — logging it
-    // as ERROR with an Express stack buries real 5xx incidents in noise.
+    // A 4xx is the caller's mistake, not a server fault — logging it as ERROR with a stack
+    // buries real 5xx incidents in noise.
     if (status >= 400 && status < 500) {
       this.logger.warn(line);
     } else {

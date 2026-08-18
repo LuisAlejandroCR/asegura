@@ -1,4 +1,5 @@
-// env.validation.ts: strict startup validation — app won't boot if required env vars are missing
+// env.validation.ts: startup validation of every env var. A missing required var, or a
+// half-configured group, exits the process here instead of failing at the first request.
 import { plainToInstance } from 'class-transformer';
 import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, validateSync } from 'class-validator';
 import { Logger } from '@nestjs/common';
@@ -131,11 +132,7 @@ class EnvironmentVariables {
   @IsOptional()
   JWT_SECRET: string;
 
-  // 2026-08-12 — AseguraWeb's own base URL (apps/web, e.g. https://asegura-app.vercel.app),
-  // used to build the texto.html/voz.html links sent from chat (plan-17 §11) and Wompi's
-  // redirect_url for the web-session checkout path. Unset: the chat-side modality question
-  // is skipped entirely and behavior is identical to today — same graceful-degrade
-  // convention as every other optional integration in this file.
+  // AseguraWeb's own base URL (apps/web). Unset: the chat never offers the web link.
   @IsString()
   @IsOptional()
   WEB_APP_URL: string;
@@ -144,20 +141,14 @@ class EnvironmentVariables {
   @IsOptional()
   ADMIN_CHAT_ID: string;
 
-  // 2026-07-26 — path to the synthetic affiliate CSV for AffiliateLookupService.
-  // Defaults to the repo root, where the file is actually committed (public, non-PII
-  // synthetic data — confirmed via `git log`). Only needs setting if that file ever
-  // moves. Missing/absent file: the service warns and disables itself gracefully at
-  // boot, same as every other optional integration here.
+  // Path to the synthetic affiliate CSV. Missing file: the lookup disables itself at boot.
   @IsString()
   @IsOptional()
   AFFILIATE_CSV_PATH: string;
 }
 
-// Groups of env vars that must be configured all-or-nothing. Each is independently
-// @IsOptional() above so the feature can be entirely disabled, but a PARTIAL group (e.g.
-// a typo'd Railway var name) used to boot successfully and only fail at the first real
-// request, at runtime, instead of at startup where an operator would actually notice.
+// Groups that must be configured all-or-nothing. Each key is @IsOptional() on its own, so a
+// partial group (a typo'd name in Railway) used to boot fine and fail at the first request.
 const ALL_OR_NOTHING_GROUPS: { label: string; keys: (keyof EnvironmentVariables)[] }[] = [
   { label: 'Twilio WhatsApp', keys: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_WHATSAPP_NUMBER'] },
   { label: 'LiveKit', keys: ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'] },
@@ -176,13 +167,8 @@ function crossFieldErrors(validated: EnvironmentVariables): string[] {
     }
   }
 
-  // Regression: main.ts calls config.getOrThrow('TELEGRAM_WEBHOOK_SECRET') as soon as
-  // PUBLIC_URL is set (webhook mode) — that throw happened deep inside the unawaited
-  // bootstrap() call with no .catch(), so PUBLIC_URL set without TELEGRAM_WEBHOOK_SECRET
-  // crashed the process silently before it ever bound to a port. Caught here instead, at
-  // startup, with a message that actually explains what's missing. (Renamed from HOST —
-  // that name is too generic and easy to confuse with a bind-address/host convention;
-  // this variable is the app's public base URL, used only to build the webhook URL.)
+  // main.ts calls getOrThrow('TELEGRAM_WEBHOOK_SECRET') as soon as PUBLIC_URL is set, deep
+  // inside bootstrap() — that throw killed the process before it ever bound to a port.
   if (validated.PUBLIC_URL && !validated.TELEGRAM_WEBHOOK_SECRET) {
     errors.push('PUBLIC_URL is set (webhook mode) but TELEGRAM_WEBHOOK_SECRET is missing — required to verify incoming Telegram requests.');
   }
@@ -201,9 +187,7 @@ export function validate(config: Record<string, unknown>) {
     const detail = [...errors.map(String), ...groupErrors].join('\n');
     Logger.error(`Config validation failed:\n${detail}`);
 
-    // Logger.error writes to stdout — a pipe in a container, so async — and the exit below
-    // drops it, losing the reason exactly when it is all that matters. writeSync(2) is
-    // unbuffered and always lands. Duplicated on purpose: twice beats not at all.
+    // Logger.error writes to stdout — a pipe in a container, so async — and the exit drops it.
     try {
       fs.writeSync(2, `Config validation failed:\n${detail}\n`);
     } catch {

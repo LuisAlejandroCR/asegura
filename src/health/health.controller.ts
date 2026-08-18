@@ -1,4 +1,5 @@
-// health.controller.ts: GET /health — verifies DB connectivity and service configuration
+// health.controller.ts: GET /health — pings the database and reports which optional
+// integrations are configured.
 import { Controller, Get } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../database/supabase.service';
@@ -25,8 +26,7 @@ export class HealthController {
 
   private async pingDb(): Promise<boolean> {
     try {
-      // Supabase SDK returns error object (no throw) for table-not-found;
-      // network errors throw — so any response means the API is reachable.
+      // The SDK returns an error object (no throw) for table-not-found; only network errors throw.
       await this.supabase.db.from('conversations').select('id').limit(1);
       return true;
     } catch {

@@ -1,15 +1,12 @@
 // livekit-token.service.ts: issues short-lived LiveKit room-join tokens for AseguraWeb's
-// browser voice client. Deliberately scoped to just the LiveKit auth handshake — linking
-// a room to an existing Telegram/WhatsApp conversation's context (plan 17 Fase 1: signed
-// link from chat, GET /web-session/:token) is separate, still-open work, not built here.
+// browser voice client, with the dispatch that summons the named voice worker into the room.
 import { randomUUID } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AccessToken, RoomAgentDispatch, RoomConfiguration, VideoGrant } from 'livekit-server-sdk';
 
 // Must match ServerOptions.agentName in src/voice-agent/main.ts. Naming a worker turns OFF
-// LiveKit's automatic dispatch, so a named agent joins ONLY rooms it was explicitly sent
-// to — that's why voz.html hung on "Te escucho…" with a healthy, registered worker.
+// automatic dispatch — it joins only rooms it was explicitly sent to.
 const VOICE_AGENT_NAME = 'asegura-voice';
 
 export interface VoiceSession {
@@ -18,9 +15,7 @@ export interface VoiceSession {
   roomName: string;
 }
 
-// Long enough for a real conversation, short enough that a leaked token (e.g. via
-// browser history) isn't useful for long — same reasoning as Wompi's
-// PAYMENT_LINK_EXPIRY_MINUTES.
+// Long enough for a real conversation, short enough that a leaked token expires fast.
 const TOKEN_TTL_SECONDS = 30 * 60;
 
 @Injectable()
@@ -45,9 +40,7 @@ export class LiveKitTokenService {
     return this.enabled;
   }
 
-  // `identity` defaults to a fresh random id — the browser has no prior identity to
-  // reuse here (no signed link from chat yet, see the file header). One room per
-  // session: no reason for two AseguraWeb tabs to ever share a room.
+  // One room per session; identity falls back to a random id when no chat session is linked.
   async createSession(identity: string = randomUUID()): Promise<VoiceSession | null> {
     if (!this.enabled) return null;
 
@@ -58,9 +51,8 @@ export class LiveKitTokenService {
     });
     const grant: VideoGrant = { room: roomName, roomJoin: true, canPublish: true, canSubscribe: true };
     at.addGrant(grant);
-    // Token-based dispatch: LiveKit sends the agent when the first participant creates the
-    // room. Safe here because createSession mints a brand-new room every time — a token's
-    // dispatch config is ignored for a room that already exists.
+    // Safe because createSession always mints a NEW room: a token's dispatch config is
+    // ignored for a room that already exists.
     at.roomConfig = new RoomConfiguration({
       agents: [new RoomAgentDispatch({ agentName: VOICE_AGENT_NAME })],
     });

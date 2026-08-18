@@ -47,9 +47,8 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // AseguraWeb runs on another domain, so every call from texto.html/voz.html is
-  // cross-origin. A CORS mismatch leaves no backend trace — the request arrives and is
-  // answered, the browser just discards it — so log the configured origins at boot.
+  // A CORS mismatch leaves no backend trace — the request arrives and is answered, the
+  // browser just discards it — so log the configured origins at boot.
   logger.log(`CORS origins: ${corsOrigins.length ? corsOrigins.join(', ') : '(none — every cross-origin request is rejected)'}`);
 
   const webAppUrl = config.get<string>('WEB_APP_URL', '');
@@ -89,28 +88,21 @@ async function bootstrap() {
   }
 
   const port = config.get<number>('PORT', 3000);
-  // Explicit 0.0.0.0: in a container the external router reaches the container IP, not
-  // loopback, and a 127.0.0.1 bind looks like a 502 with the process up and no errors.
+  // Explicit 0.0.0.0: a 127.0.0.1 bind in a container looks like a 502 with the process up.
   await app.listen(port, '0.0.0.0');
-  // Boot loads the 500k-row affiliate CSV before listening, so this is the real peak
-  // against the container limit. A kernel OOM is SIGKILL — nothing to catch or log —
-  // so printing the headroom every boot is the only way to see it coming.
+  // Peak rss: the 500k-row CSV loads before listen, and a kernel OOM (SIGKILL) logs nothing.
   const rssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
   logger.log(`Asegura running on port ${port} (rss ${rssMb} MB)`);
 }
 
 bootstrap().catch((err) => {
-  // Without this, a throw anywhere in bootstrap() (e.g. a missing required env var
-  // discovered deep in setup) becomes an unhandled promise rejection — silent on some
-  // Node versions, fatal-but-uninformative on others. Log clearly and exit intentionally.
   new Logger('Bootstrap').error(`Fatal error during startup: ${err}`);
   if (err instanceof Error && err.stack) {
     new Logger('Bootstrap').error(err.stack);
   }
 
-  // process.exit() drops pending writes, and in a container stdout is a pipe (async), so
-  // the line above was discarded 1 time out of 1 — the error handler ate its own message.
-  // exitCode lets the loop drain; the unref'd timer only fires if something else hangs it.
+  // process.exit() drops pending writes and stdout is an async pipe in a container, so the
+  // line above was lost 1 time out of 1. exitCode lets the loop drain; the timer is a backstop.
   process.exitCode = 1;
   setTimeout(() => process.exit(1), 2000).unref();
 });

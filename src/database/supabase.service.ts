@@ -1,4 +1,5 @@
-// supabase.service.ts: singleton Supabase client using service role key
+// supabase.service.ts: the single Supabase client for the whole app, built with the
+// service role key (the backend is the only caller; RLS is not the boundary here).
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';

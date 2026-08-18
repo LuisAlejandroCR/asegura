@@ -1,9 +1,6 @@
-// downloads.controller.ts: serves the ephemeral buffers DocumentCacheService holds —
-// the only way Twilio's WhatsApp API can fetch a document/animation this app generates
-// in memory (its Messages API takes a URL, never a raw upload, unlike Telegram's
-// sendDocument). Deliberately unauthenticated: Twilio's servers fetch it directly, and
-// the random token is the only credential — same trust model as the PDF's own
-// verification QR code (rule: never invented, never a second source of truth).
+// downloads.controller.ts: serves the ephemeral buffers DocumentCacheService holds — the
+// only way Twilio's WhatsApp API can fetch a document this app generates in memory (its
+// API takes a URL, never an upload). Unauthenticated: the random token is the credential.
 import { Controller, Get, Param, NotFoundException, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { DocumentCacheService } from './document-cache.service';
