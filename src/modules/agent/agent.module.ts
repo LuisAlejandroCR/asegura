@@ -13,6 +13,8 @@ import { ConversationModule } from './conversation.module';
 import { AgentService } from './agent.service';
 import { WebSessionController } from './web-session.controller';
 import { WebSessionTokenService } from './web-session-token.service';
+import { WebLinkController } from './web-link.controller';
+import { WebLinkCodeService } from './web-link-code.service';
 
 @Module({
   imports: [ChannelModule, NlpModule, DatabaseModule, QuotingModule, PolicyModule, PaymentsModule, ConversationModule],
@@ -20,8 +22,8 @@ import { WebSessionTokenService } from './web-session-token.service';
   // ChannelModule for why (it needs AgentService directly; ChannelModule can't import
   // AgentModule back without a cycle). WebSessionController lives here for the same
   // reason (it needs AgentService.handleWebMessage directly).
-  controllers: [TwilioWebhookController, WebSessionController],
-  providers: [AgentService, WebSessionTokenService],
+  controllers: [TwilioWebhookController, WebSessionController, WebLinkController],
+  providers: [AgentService, WebSessionTokenService, WebLinkCodeService],
   exports: [AgentService],
 })
 export class AgentModule {}

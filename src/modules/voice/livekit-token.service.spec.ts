@@ -47,6 +47,21 @@ describe('LiveKitTokenService — configured', () => {
     expect(a.roomName).not.toBe(b.roomName);
   });
 
+  // Live bug (2026-08-18): voz.html sat on "Te escucho…" forever. The worker registered
+  // with LiveKit fine, but ServerOptions sets agentName: 'asegura-voice', and LiveKit
+  // DISABLES automatic dispatch as soon as a worker is named — it only joins rooms it is
+  // explicitly dispatched to. This token carried a VideoGrant and nothing else, so the
+  // browser joined an empty room and waited for an agent nobody had asked for.
+  it('dispatches the voice agent into the room — without this the browser joins a room no agent is ever sent to', async () => {
+    const { TokenVerifier } = await import('livekit-server-sdk');
+    const service = new LiveKitTokenService(config);
+    const session = await service.createSession('afiliado-123');
+
+    const verifier = new TokenVerifier('APItest', 'secrettest');
+    const claims = await verifier.verify(session.token);
+    expect(claims.roomConfig?.agents?.[0]?.agentName).toBe('asegura-voice');
+  });
+
   it('the issued token actually grants roomJoin for the returned room, not a different one', async () => {
     const { TokenVerifier } = await import('livekit-server-sdk');
     const service = new LiveKitTokenService(config);

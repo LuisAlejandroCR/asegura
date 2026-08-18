@@ -5,7 +5,12 @@
 import { randomUUID } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AccessToken, VideoGrant } from 'livekit-server-sdk';
+import { AccessToken, RoomAgentDispatch, RoomConfiguration, VideoGrant } from 'livekit-server-sdk';
+
+// Must match ServerOptions.agentName in src/voice-agent/main.ts. Naming a worker turns OFF
+// LiveKit's automatic dispatch, so a named agent joins ONLY rooms it was explicitly sent
+// to — that's why voz.html hung on "Te escucho…" with a healthy, registered worker.
+const VOICE_AGENT_NAME = 'asegura-voice';
 
 export interface VoiceSession {
   url: string;
@@ -53,6 +58,12 @@ export class LiveKitTokenService {
     });
     const grant: VideoGrant = { room: roomName, roomJoin: true, canPublish: true, canSubscribe: true };
     at.addGrant(grant);
+    // Token-based dispatch: LiveKit sends the agent when the first participant creates the
+    // room. Safe here because createSession mints a brand-new room every time — a token's
+    // dispatch config is ignored for a room that already exists.
+    at.roomConfig = new RoomConfiguration({
+      agents: [new RoomAgentDispatch({ agentName: VOICE_AGENT_NAME })],
+    });
 
     return { url: this.url, token: await at.toJwt(), roomName };
   }

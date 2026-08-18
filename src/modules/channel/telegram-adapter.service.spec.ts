@@ -196,7 +196,7 @@ describe('TelegramAdapter.sendText — typing pacing (2026-07-24 gamification fe
 
     await adapter.sendText('222', 'hola');
     expect(bot.api.sendChatAction).toHaveBeenCalledWith(222, 'typing');
-    expect(bot.api.sendMessage).toHaveBeenCalledWith(222, 'hola', { parse_mode: 'Markdown' });
+    expect(bot.api.sendMessage).toHaveBeenCalledWith(222, 'hola', { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } });
   }, 10000);
 
   it('still sends the message even if the typing indicator call fails', async () => {
@@ -206,7 +206,7 @@ describe('TelegramAdapter.sendText — typing pacing (2026-07-24 gamification fe
     (adapter as any).bot = bot;
 
     await adapter.sendText('222', 'hola');
-    expect(bot.api.sendMessage).toHaveBeenCalledWith(222, 'hola', { parse_mode: 'Markdown' });
+    expect(bot.api.sendMessage).toHaveBeenCalledWith(222, 'hola', { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } });
   }, 10000);
 });
 

@@ -75,6 +75,30 @@ describe('AUTHORIZATION → DISCOVERY entry — WEB_APP_URL configured', () => {
     expect(sentText).toContain('texto.html');
   });
 
+  // 2026-08-18: the chat message used to carry the signed session token in full view, so a
+  // screenshot or a forwarded message handed over a working session. The chat now gets a
+  // short single-use code on the backend's own host; PUBLIC_URL is what makes that host
+  // knowable, so without it the long link stays (degrade, never send a link that 404s).
+  it('sends a short single-use link instead of the raw session token when PUBLIC_URL is set', async () => {
+    const { service, telegram, conversations, config } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { awaitingWebModalityChoice: true },
+    });
+    withWebAppUrl(config);
+    config.get.mockImplementation((key: string) => {
+      if (key === 'WEB_APP_URL') return 'https://asegura-app.vercel.app';
+      if (key === 'PUBLIC_URL') return 'https://asegura-production.up.railway.app';
+      return undefined;
+    });
+    conversations.getOrCreate.mockResolvedValue({ id: 'conv-1', user_id: 'u1', channel: 'telegram', state: ConversationState.DISCOVERY, context: { awaitingWebModalityChoice: true } });
+    telegram.normalize.mockResolvedValue({ userId: 'u1', channel: 'telegram', channelId: '1', text: 'escribir', timestamp: new Date() });
+    await service.handleMessage({});
+    const [, sentText] = telegram.sendText.mock.calls[0];
+    expect(sentText).toMatch(/https:\/\/asegura-production\.up\.railway\.app\/s\/[23456789ABCDEFGHJKMNPQRSTVWXYZ]{8}/);
+    expect(sentText).not.toContain('token=');
+    expect(sentText).not.toContain('texto.html');
+  });
+
   // Live bug (2026-08-18): the question itself is "¿hablar o escribir?", so people answer
   // by naming BOTH ("escribir, no hablar" / "escribir mejor que hablar"). Voice won on a
   // bare mention, so the choice was recorded inverted. The damage surfaces at the very END:

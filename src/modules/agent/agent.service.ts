@@ -12,6 +12,7 @@ import { ChannelRegistry } from '../channel/channel-registry.service';
 import { ReminderService } from '../channel/reminder.service';
 import { DocumentCacheService } from '../channel/document-cache.service';
 import { WebSessionTokenService } from './web-session-token.service';
+import { WebLinkCodeService } from './web-link-code.service';
 import { NormalizedMessage } from '../channel/types';
 import { ConversationService } from './conversation.service';
 import { ConversationState, ConversationContext, Conversation, PetDetail, DocumentType } from './types';
@@ -143,6 +144,10 @@ export class AgentService {
     // Defaulted to a fresh instance built from the SAME config param above — matches the
     // other optional-integration defaults in this constructor.
     private readonly webSessionTokens: WebSessionTokenService = new WebSessionTokenService(config),
+    // Shortens those links before they hit the chat, so the session token isn't sitting in
+    // plain sight in a message that gets screenshotted or forwarded. Defaulted like the
+    // services above so the test helper keeps working without passing one.
+    private readonly webLinkCodes: WebLinkCodeService = new WebLinkCodeService(),
     // Default keeps buildService() in agent.service.test-helpers.ts working unchanged
     // when it doesn't pass one — Nest's DI still injects the real shared singleton.
     @Inject('IProductRepository')
@@ -785,6 +790,17 @@ export class AgentService {
   // top of handleDiscovery resolves that reply and falls back to these SAME F01 choices
   // once it's answered (or unrecognized) — or immediately, if AseguraWeb isn't
   // configured, which is today's exact behavior, byte-for-byte unchanged.
+  // Swaps a long signed AseguraWeb URL for a short single-use one on the backend's own
+  // host, so the session token never sits in plain view in a chat message. The short host
+  // MUST be the backend (it serves /s/:code) — WEB_APP_URL points at the static site, which
+  // has no such route. With PUBLIC_URL unset there is no host to build, so the long link
+  // goes out unchanged: a visible token beats a link that 404s.
+  private shortLink(destination: string): string {
+    const publicUrl = this.config.get<string>('PUBLIC_URL');
+    if (!publicUrl) return destination;
+    return `${publicUrl.replace(/\/$/, '')}/s/${this.webLinkCodes.mint(destination)}`;
+  }
+
   private offerDiscoveryEntry(prefix: string, context: ConversationContext): ProcessResult {
     if (this.config.get<string>('WEB_APP_URL')) {
       return {
@@ -833,8 +849,9 @@ export class AgentService {
 
     const modality: 'voz' | 'texto' = wantsVoice ? 'voz' : 'texto';
     const verb = wantsVoice ? 'hablar' : 'escribir';
+    const destination = `${webAppUrl.replace(/\/$/, '')}/${modality}.html?token=${token}`;
     return {
-      text: `Perfecto, puedes ${verb} aquí: ${webAppUrl.replace(/\/$/, '')}/${modality}.html?token=${token}\n\n` +
+      text: `Perfecto, puedes ${verb} aquí: ${this.shortLink(destination)}\n\n` +
         'Cuando termines, vuelve al chat — o sigue escribiéndome aquí si prefieres.',
       // webModality persists (never cleared here) — createPaymentLinkFlow reads it later
       // to mint a fresh token and set Wompi's redirect_url (plan-17 §12), so checkout

@@ -149,7 +149,13 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
     if (!this.bot) return;
     await this.bot.api.sendChatAction(Number(userId), 'typing').catch(() => undefined);
     await new Promise((resolve) => setTimeout(resolve, TelegramAdapter.TYPING_DELAY_MS));
-    await this.bot.api.sendMessage(Number(userId), text, { parse_mode: 'Markdown' });
+    // Previews disabled: Telegram FETCHES every link it previews, and the agent's links are
+    // now single-use /s/<code> — a preview crawl would spend the person's one use before
+    // they ever tap it. Nothing here benefits from a preview card anyway.
+    await this.bot.api.sendMessage(Number(userId), text, {
+      parse_mode: 'Markdown',
+      link_preview_options: { is_disabled: true },
+    });
   }
 
   // Telegram's native request_contact reply keyboard — a single tap shares the tapping
