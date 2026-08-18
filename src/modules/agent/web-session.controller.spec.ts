@@ -37,7 +37,7 @@ function makeDeps(overrides: { verify?: any; channel?: string; configValues?: Re
 
 describe('WebSessionController — GET :token', () => {
   it('rejects an invalid/expired token with 401, never touching ConversationService', async () => {
-    const { controller, conversations, tokens } = makeDeps({ verify: () => null });
+    const { controller, conversations } = makeDeps({ verify: () => null });
     await expect(controller.getSession('bad-token')).rejects.toThrow(UnauthorizedException);
     expect(conversations.findById).not.toHaveBeenCalled();
   });

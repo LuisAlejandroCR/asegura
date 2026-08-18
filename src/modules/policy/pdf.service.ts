@@ -1,7 +1,7 @@
 // pdf.service.ts: renders the branded policy PDF with pdfkit — holder details, premium box,
 // pets table, coverages and a verification QR.
 import { Injectable, Logger } from '@nestjs/common';
-import * as PDFDocument from 'pdfkit';
+import PDFDocument from 'pdfkit';
 import * as QRCode from 'qrcode';
 import * as path from 'path';
 

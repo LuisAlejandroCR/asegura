@@ -14,7 +14,7 @@ enum Environment {
 class EnvironmentVariables {
   @IsEnum(Environment)
   @IsNotEmpty()
-  NODE_ENV: Environment;
+  NODE_ENV!: Environment;
 
   @IsNumber()
   @IsOptional()
@@ -22,101 +22,101 @@ class EnvironmentVariables {
 
   @IsString()
   @IsNotEmpty()
-  CORS_ORIGIN: string;
+  CORS_ORIGIN!: string;
 
   @IsString()
   @IsNotEmpty()
-  SUPABASE_URL: string;
+  SUPABASE_URL!: string;
 
   @IsString()
   @IsNotEmpty()
-  SUPABASE_SERVICE_ROLE_KEY: string;
+  SUPABASE_SERVICE_ROLE_KEY!: string;
 
   @IsString()
   @IsOptional()
-  LLM_BASE_URL: string;
+  LLM_BASE_URL!: string;
 
   @IsString()
   @IsOptional()
-  LLM_API_KEY: string;
+  LLM_API_KEY!: string;
 
   @IsString()
   @IsOptional()
-  LLM_MODEL: string;
+  LLM_MODEL!: string;
 
   @IsString()
   @IsOptional()
-  PUBLIC_URL: string;
+  PUBLIC_URL!: string;
 
   @IsString()
   @IsOptional()
-  TELEGRAM_BOT_TOKEN: string;
+  TELEGRAM_BOT_TOKEN!: string;
 
   @IsString()
   @IsOptional()
-  TELEGRAM_WEBHOOK_SECRET: string;
+  TELEGRAM_WEBHOOK_SECRET!: string;
 
   @IsString()
   @IsOptional()
-  TWILIO_ACCOUNT_SID: string;
+  TWILIO_ACCOUNT_SID!: string;
 
   @IsString()
   @IsOptional()
-  TWILIO_AUTH_TOKEN: string;
+  TWILIO_AUTH_TOKEN!: string;
 
   @IsString()
   @IsOptional()
-  TWILIO_WHATSAPP_NUMBER: string;
+  TWILIO_WHATSAPP_NUMBER!: string;
 
   @IsString()
   @IsOptional()
-  LIVEKIT_URL: string;
+  LIVEKIT_URL!: string;
 
   @IsString()
   @IsOptional()
-  LIVEKIT_API_KEY: string;
+  LIVEKIT_API_KEY!: string;
 
   @IsString()
   @IsOptional()
-  LIVEKIT_API_SECRET: string;
+  LIVEKIT_API_SECRET!: string;
 
   @IsString()
   @IsOptional()
-  ELEVENLABS_API_KEY: string;
+  ELEVENLABS_API_KEY!: string;
 
   @IsString()
   @IsOptional()
-  ELEVENLABS_VOICE_ID: string;
+  ELEVENLABS_VOICE_ID!: string;
 
   @IsString()
   @IsOptional()
-  WOMPI_ENVIRONMENT: string;
+  WOMPI_ENVIRONMENT!: string;
 
   @IsString()
   @IsOptional()
-  WOMPI_PRIVATE_KEY: string;
+  WOMPI_PRIVATE_KEY!: string;
 
   @IsString()
   @IsOptional()
-  WOMPI_EVENTS_SECRET: string;
+  WOMPI_EVENTS_SECRET!: string;
 
   @IsString()
   @IsOptional()
-  JWT_SECRET: string;
+  JWT_SECRET!: string;
 
   // AseguraWeb's own base URL (apps/web). Unset: the chat never offers the web link.
   @IsString()
   @IsOptional()
-  WEB_APP_URL: string;
+  WEB_APP_URL!: string;
 
   @IsString()
   @IsOptional()
-  ADMIN_CHAT_ID: string;
+  ADMIN_CHAT_ID!: string;
 
   // Path to the synthetic affiliate CSV. Missing file: the lookup disables itself at boot.
   @IsString()
   @IsOptional()
-  AFFILIATE_CSV_PATH: string;
+  AFFILIATE_CSV_PATH!: string;
 }
 
 // Groups that must be configured all-or-nothing. Each key is @IsOptional() on its own, so a

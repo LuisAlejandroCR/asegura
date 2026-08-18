@@ -29,7 +29,7 @@ describe('Ley 1581 consent on the voice channel', () => {
   });
 
   it('stays speakable — TTS reads it aloud, so no markdown and no URLs', () => {
-    expect(VOICE_GREETING).not.toMatch(/https?:\/\/|[*_\[\]`]/);
+    expect(VOICE_GREETING).not.toMatch(/https?:\/\/|[*_[\]`]/);
   });
 
   it('instructions forbid cotizar and personal questions before authorization', () => {

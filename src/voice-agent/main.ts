@@ -4,9 +4,7 @@
 import { type JobContext, ServerOptions, cli, defineAgent, voice } from '@livekit/agents';
 import * as openai from '@livekit/agents-plugin-openai';
 import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
-// Namespace import, not default: allowSyntheticDefaultImports without esModuleInterop makes
-// `import dotenv from` type-check but emit `.default.config()`, which dotenv's CJS lacks.
-import * as dotenv from 'dotenv';
+import dotenv from 'dotenv';
 import { VOICE_GREETING, createVoiceAgent } from './agent';
 
 dotenv.config();

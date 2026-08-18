@@ -98,7 +98,7 @@ describe('ReminderService', () => {
   });
 
   it('cancel() on a conversation with no scheduled timer is a no-op, not a throw', () => {
-    const { registry, telegram } = makeChannels();
+    const { registry } = makeChannels();
     const service = new ReminderService(registry, makeConversations());
     expect(() => service.cancel('never-scheduled')).not.toThrow();
   });
@@ -126,7 +126,7 @@ describe('ReminderService', () => {
     });
 
     it('closes as "insufficient_info" when no productCategory was ever captured', async () => {
-      const { registry, telegram } = makeChannels();
+      const { registry } = makeChannels();
       const conversations = makeConversations({ state: ConversationState.DISCOVERY, context: {} });
       const service = new ReminderService(registry, conversations);
 
@@ -141,7 +141,7 @@ describe('ReminderService', () => {
     });
 
     it('closes as "no_response" when a productCategory was already captured', async () => {
-      const { registry, telegram } = makeChannels();
+      const { registry } = makeChannels();
       const conversations = makeConversations({
         state: ConversationState.QUOTE_PRESENTED,
         context: { productCategory: 'mascotas' },
@@ -172,7 +172,7 @@ describe('ReminderService', () => {
     });
 
     it('a reply during the grace period (cancel) prevents the auto-close', async () => {
-      const { registry, telegram } = makeChannels();
+      const { registry } = makeChannels();
       const conversations = makeConversations();
       const service = new ReminderService(registry, conversations);
 
@@ -220,7 +220,7 @@ describe('ReminderService', () => {
     });
 
     it('hasPendingPayment defaults to false — unchanged 4-minute behavior when omitted', async () => {
-      const { registry, telegram } = makeChannels();
+      const { registry } = makeChannels();
       const conversations = makeConversations({ state: ConversationState.DISCOVERY, context: {} });
       const service = new ReminderService(registry, conversations);
 

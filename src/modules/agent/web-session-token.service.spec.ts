@@ -39,7 +39,7 @@ describe('WebSessionTokenService — configured', () => {
   it('rejects a token whose payload segment was edited after signing', () => {
     const service = new WebSessionTokenService(config);
     const token = service.sign({ conversationId: 'conv-42' }) as string;
-    const [payloadB64, sig] = token.split('.');
+    const [, sig] = token.split('.');
     const tamperedPayload = Buffer.from(JSON.stringify({ conversationId: 'conv-99', exp: Date.now() + 999_999 })).toString('base64url');
     expect(service.verify(`${tamperedPayload}.${sig}`)).toBeNull();
   });

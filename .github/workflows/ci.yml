@@ -25,6 +25,18 @@ jobs:
 
       - run: npx tsc --noEmit
 
+      - run: pnpm run lint
+
       - run: pnpm run build
 
       - run: pnpm run test
+
+      # apps/web used to be built only by Vercel, so a broken page reached production green.
+      - name: Build AseguraWeb
+        run: pnpm --filter asegura-web run build
+
+      # Informational: 8 high advisories sit in runtime deps today (multer, lodash, js-yaml,
+      # brace-expansion), none reachable from user input. Blocking on it would just be ignored.
+      - name: Dependency audit (runtime only)
+        run: pnpm audit --prod --audit-level=high
+        continue-on-error: true

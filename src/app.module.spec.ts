@@ -1,7 +1,7 @@
 // app.module.spec.ts: proves the global rate limiter is actually wired and that the routes
 // which must never be throttled (signed webhooks, Railway's healthcheck) are exempt.
 import { APP_GUARD } from '@nestjs/core';
-import { ExecutionContext } from '@nestjs/common';
+import { ExecutionContext, Type } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { HealthController } from './health/health.controller';
@@ -28,7 +28,7 @@ const { AppModule } = require('./app.module') as typeof import('./app.module');
 // Mirrors AppModule's ThrottlerModule.forRoot so the numbers under test are the shipped ones.
 const GLOBAL_LIMIT = 100;
 
-function contextFor(classRef: Function, method: string, ip: string): ExecutionContext {
+function contextFor(classRef: Type<unknown>, method: string, ip: string): ExecutionContext {
   const res = { header: jest.fn() };
   const req = { ip, headers: {} };
   return {
@@ -57,7 +57,7 @@ describe('global rate limiting', () => {
     await moduleRef.close();
   });
 
-  async function allowedCalls(classRef: Function, method: string, ip: string, n: number) {
+  async function allowedCalls(classRef: Type<unknown>, method: string, ip: string, n: number) {
     let allowed = 0;
     for (let i = 0; i < n; i++) {
       try {
@@ -98,7 +98,7 @@ describe('global rate limiting', () => {
     ['health', HealthController, 'check'],
   ])('never throttles %s', async (_name, classRef, method) => {
     const attempts = GLOBAL_LIMIT * 3;
-    expect(await allowedCalls(classRef as Function, method as string, '4.4.4.4', attempts))
+    expect(await allowedCalls(classRef as Type<unknown>, method as string, '4.4.4.4', attempts))
       .toBe(attempts);
   });
 });

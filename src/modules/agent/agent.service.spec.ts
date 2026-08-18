@@ -4,7 +4,7 @@
 
 import { ConversationState, ConversationContext } from './types';
 import { ProductCatalog } from '../quoting/product-catalog.service';
-import { makeMessage, makeIntent, makeConversation, buildService } from './agent.service.test-helpers';
+import { makeMessage, makeIntent, buildService } from './agent.service.test-helpers';
 
 // Read from the runtime catalog, not a fixture copy: a price that drifts in the YAML
 // has to break a test, not pass one.
@@ -826,7 +826,7 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
   });
 
   it('invalid cédula (too short) shows error', async () => {
-    const { service, telegram, conversations } = buildService({
+    const { service, telegram } = buildService({
       state: ConversationState.DATA_CAPTURE,
       context: {},
     });
@@ -1455,7 +1455,7 @@ describe('AgentService — payment method choice (Tarjeta Colsubsidio vs Link de
   // the plain link de pago (the always-available, no-ambiguity option) instead of
   // looping — this must never be allowed to strand a purchase that's otherwise ready.
   it('regression — defaults to link de pago and proceeds when the answer names neither option (never loops)', async () => {
-    const { service, telegram, wompi, conversations } = buildService({
+    const { service, telegram, wompi } = buildService({
       state: ConversationState.DATA_CAPTURE,
       context: {
         cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com',
@@ -2145,7 +2145,7 @@ describe('AgentService — QUOTE_PRESENTED back-reference resolution', () => {
   });
 
   it('does not fire when the reference resolves to the CURRENT product (falls through to isAffirmative normally)', async () => {
-    const { service, telegram, conversations } = buildService({
+    const { service, telegram } = buildService({
       state: ConversationState.QUOTE_PRESENTED,
       context: { quoteProductId: asistenciasMedicas.id, shownProductIds: [asistenciasMedicas.id] },
       intent: makeIntent({ isAffirmative: true, productCategory: null }),
@@ -3521,7 +3521,7 @@ describe('AgentService — DISCOVERY productCategory inference', () => {
   });
 
   it('regression — ages answer does not loop back to ages question', async () => {
-    const { service, telegram, conversations, quoting } = buildService({
+    const { service, telegram, quoting } = buildService({
       state: ConversationState.DISCOVERY,
       // All three discovery answers given: coverage, beneficiaries, productCategory via petType
       context: { petType: 'gato', coverage: ['medicina veterinaria'], beneficiaries: 2 },

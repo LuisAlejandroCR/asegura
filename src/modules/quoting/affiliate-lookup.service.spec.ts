@@ -224,8 +224,11 @@ describe('AffiliateLookupService', () => {
   it('defaults to Usos_Productos_Afiliados_SIMULADO.csv at the repo root when AFFILIATE_CSV_PATH is unset', async () => {
     const expectedDefault = path.join(process.cwd(), 'Usos_Productos_Afiliados_SIMULADO.csv');
     // Intercept existsSync to prove the service asked for the right default path,
-    // without actually parsing the real 500k-row file in a unit test.
-    const existsSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(false);
+    // without actually parsing the real 500k-row file in a unit test. Spied on the module
+    // require() returns, not on the `import * as fs` binding: under esModuleInterop that
+    // binding is a per-file wrapper whose properties cannot be redefined.
+    const fsModule = require('fs') as typeof fs;
+    const existsSpy = jest.spyOn(fsModule, 'existsSync').mockReturnValue(false);
     const service = new AffiliateLookupService(makeConfig());
     await service.onApplicationBootstrap();
 

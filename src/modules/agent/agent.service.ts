@@ -185,7 +185,7 @@ export class AgentService {
         resolved = shownProducts.find((p) => Math.abs(p.basePremium - amount) <= 1000) ?? null;
       }
       if (!resolved && AgentService.CHEAPER_OPTION_PATTERN.test(text)) {
-        const current = this.catalog.getProduct(context.quoteProductId);
+        const current = context.quoteProductId ? this.catalog.getProduct(context.quoteProductId) : undefined;
         resolved = shownProducts
           .filter((p) => !current || p.basePremium < current.basePremium)
           .sort((a, b) => a.basePremium - b.basePremium)[0] ?? null;
@@ -1093,7 +1093,7 @@ export class AgentService {
       };
     }
 
-    const currentProduct = this.catalog.getProduct(context.quoteProductId);
+    const currentProduct = context.quoteProductId ? this.catalog.getProduct(context.quoteProductId) : undefined;
 
     // No branch here checked abandonIntent, and processMessage's top-level check deliberately
     // excludes QUOTE_PRESENTED — so "salir" just re-showed the card.
@@ -1379,7 +1379,7 @@ export class AgentService {
   private static readonly FILLER_WORDS = ['gracias', 'ok', 'okay', 'vale', 'listo', 'dale', 'bueno', 'ya'];
 
   // A name is letters only (including ñ and accents), never digits — "2+2" was once accepted.
-  private static readonly NAME_REGEX = /^[a-zA-ZÀ-ÖØ-öø-ÿ]+(?:['’\-][a-zA-ZÀ-ÖØ-öø-ÿ]+|\s+[a-zA-ZÀ-ÖØ-öø-ÿ]+)*$/;
+  private static readonly NAME_REGEX = /^[a-zA-ZÀ-ÖØ-öø-ÿ]+(?:['’-][a-zA-ZÀ-ÖØ-öø-ÿ]+|\s+[a-zA-ZÀ-ÖØ-öø-ÿ]+)*$/;
 
   // NAME_REGEX allows "Mi nombre es Michelle Gómez" (all letters), so the lead-in restating the
   // question got stored verbatim. Strip it before validating.
@@ -2124,7 +2124,7 @@ export class AgentService {
     const isPet = product.category === 'mascotas';
     // Uses the same species-aware helper as buildMixedSpeciesQuote, so every call site prices a
     // mixed household by its own per-species counts.
-    const effectivePetCount = context ? this.petCountForProduct(context, product) : context?.petCount;
+    const effectivePetCount = context ? this.petCountForProduct(context, product) : undefined;
     const petCount = (isPet && effectivePetCount && effectivePetCount > 0) ? effectivePetCount : null;
     const pricePerUnit = product.basePremium;
     const total = computeTotalPremium(product, effectivePetCount ?? undefined);
