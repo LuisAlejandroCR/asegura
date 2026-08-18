@@ -31,7 +31,7 @@ export default defineAgent({
         language: 'es',
       }),
       llm: openai.LLM.withGroq({
-        model: process.env.LLM_MODEL || 'llama-3.1-8b-instant',
+        model: process.env.LLM_MODEL || 'openai/gpt-oss-120b',
         apiKey: requireEnv('LLM_API_KEY'),
       }),
       tts: new elevenlabs.TTS({

@@ -77,7 +77,7 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 | Capa | Tecnología |
 |------|-----------|
 | Backend | NestJS + TypeScript |
-| NLP | Groq (llama-3.1-8b-instant) + Whisper (voz) |
+| NLP | Groq (openai/gpt-oss-120b) + Whisper (voz) |
 | Base de datos | Supabase (Postgres) |
 | Canal MVP | Telegram |
 | Canal WhatsApp | Twilio WhatsApp Sandbox (pruebas internas) |

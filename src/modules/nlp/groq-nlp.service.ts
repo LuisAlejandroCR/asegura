@@ -16,7 +16,7 @@ export class GroqNlpService implements INlpProvider {
 
   constructor(private readonly config: ConfigService) {
     this.apiKey = config.get<string>('LLM_API_KEY', '');
-    this.model = config.get<string>('LLM_MODEL', 'llama-3.1-8b-instant');
+    this.model = config.get<string>('LLM_MODEL', 'openai/gpt-oss-120b');
 
     // WompiService and TelegramAdapter both warn at boot when their required vars are
     // missing — this was the one optional integration that stayed silent either way, with
