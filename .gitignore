@@ -49,3 +49,5 @@ __pycache__/
 analytics/afiliados_con_oferta.csv
 analytics/afiliados_prep.csv
 analytics/ofertas_clientes.csv
+
+AGENTS.md
