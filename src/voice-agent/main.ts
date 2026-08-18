@@ -7,7 +7,7 @@ import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
 // Namespace import, not default: allowSyntheticDefaultImports without esModuleInterop makes
 // `import dotenv from` type-check but emit `.default.config()`, which dotenv's CJS lacks.
 import * as dotenv from 'dotenv';
-import { createVoiceAgent } from './agent';
+import { VOICE_GREETING, createVoiceAgent } from './agent';
 
 dotenv.config();
 
@@ -57,11 +57,9 @@ async function runSession(ctx: JobContext): Promise<void> {
     await session.start({ agent: createVoiceAgent(), room: ctx.room });
     await ctx.connect();
 
-    // Spoken, not read from STATE_RESPONSES[GREETING]: real-time voice is a different channel
-    // and has no Ley 1581 text flow yet.
-    await session.generateReply({
-      instructions: 'Saluda brevemente como Asegura y pregunta qué le gustaría proteger.',
-    });
+    // say(), not generateReply(): the Ley 1581 notice has to come out word for word. The
+    // consent gate itself lives in the agent instructions — this worker holds no state.
+    session.say(VOICE_GREETING);
 }
 
 // Only start the worker when this file runs directly, never as a side effect of an import.
