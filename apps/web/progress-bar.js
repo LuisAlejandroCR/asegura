@@ -1,10 +1,6 @@
-// progress-bar.js: shared quest rail for AseguraWeb (texto.html and voz.html) — plan-17 §15
-// picked a persistent progress indicator over pop-ups because it's ALWAYS visible and
-// directly attacks abandono by answering "¿cuánto falta?". 2026-08-13: the thin bar read as
-// a form's completion meter, so it became a rail of numbered stage nodes — the same shape a
-// game uses for level select. Same data, same exports: renders from the {step, totalSteps,
-// label} that progressFor() (backend, conversation-state.machine.ts) returns, and never
-// invents its own stage list.
+// progress-bar.js: the shared stage rail for texto.html and voz.html — always visible, so
+// it answers "¿cuánto falta?" without a pop-up. Renders from the {step, totalSteps, label}
+// the backend returns and never invents its own stage list.
 
 const sinMovimiento = () =>
   window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
@@ -18,8 +14,8 @@ export function tick(patron = 12) {
 export function renderProgress(el, { step, totalSteps, label }) {
   const total = Math.max(totalSteps, 1);
   const actual = Math.min(Math.max(step, 1), total);
-  // Fill runs node-center to node-center, so stage 1 is 0% and the last stage is 100% —
-  // step/total would leave the final node visually unfinished at "¡Listo!".
+// Fill runs node-center to node-center, so stage 1 is 0% and the last is 100% — step/total
+// would leave the final node visually unfinished at "¡Listo!".
   const pct = total > 1 ? ((actual - 1) / (total - 1)) * 100 : 100;
 
   const previo = Number(el.dataset.step || 0);
@@ -53,8 +49,7 @@ export function renderProgress(el, { step, totalSteps, label }) {
   return avanzo;
 }
 
-// Injected once per page — kept here instead of duplicated in both HTML files' <style>
-// blocks. Uses the same --amarillo/--azul tokens both pages' :root already defines.
+// Injected once per page instead of duplicated in both HTML files' <style> blocks.
 export function injectProgressStyles() {
   if (document.getElementById('ap-progress-styles')) return;
   const style = document.createElement('style');

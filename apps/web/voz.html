@@ -1,4 +1,6 @@
 <!doctype html>
+<!-- voz.html: AseguraWeb's voice page — connects the browser to a LiveKit room created by
+     POST /voice/session, where the separate voice worker joins and talks. -->
 <html lang="es">
 <head>
 <meta charset="utf-8">
@@ -443,14 +445,13 @@
 <script type="module">
 import { Room, RoomEvent } from 'livekit-client';
 import { renderProgress, injectProgressStyles } from './progress-bar.js';
-// api-base.js normalizes VITE_API_URL (adds https:// when missing, strips trailing slash);
-// without the env var it falls back to same-origin, which on Vercel is a guaranteed 404.
+// api-base.js normalizes VITE_API_URL (adds the scheme, strips the trailing slash); without
+// the env var it falls back to same-origin, which on Vercel is a guaranteed 404.
 import { apiFetch } from './api-base.js';
 
-// Enlazado desde el chat (plan 17 §11) — identifica esta sesión de voz con la
-// conversación real de Telegram/WhatsApp. El worker de voz (proceso Node aparte, sin DI
-// de NestJS) todavía no lo consume — ver plan-17 §10 "fuera de alcance de este pase";
-// por ahora solo se guarda y se manda al backend para cuando se conecte esa pieza.
+// Linked from the chat, this identifies the voice session with the real Telegram/WhatsApp
+// conversation. The voice worker (a separate Node process, no NestJS DI) doesn't consume it
+// yet; it is only stored and sent to the backend for when that piece is wired.
 const webToken = new URLSearchParams(location.search).get('token');
 
 (() => {
@@ -472,11 +473,9 @@ const webToken = new URLSearchParams(location.search).get('token');
 
   injectProgressStyles();
 
-  // Plan-17 §12 — mismo mecanismo que texto.html: si el token de sesión ya trae un pago
-  // pendiente o confirmado al cargar (el usuario volvió tras pagar, o vino de texto.html),
-  // se muestra esa pantalla en vez del orbe. Sin token, o mientras la sesión sigue en
-  // discovery/cotización, la barra queda estática (el worker de voz aún no manda estado
-  // real — ver el comentario del `webToken` arriba) y el orbe funciona como siempre.
+  // If the session token already carries a pending or confirmed payment on load, that screen
+  // is shown instead of the orb. Without a token the bar stays static and the orb behaves as
+  // it always has — the voice worker doesn't publish real state yet.
   function burstConfetti() {
     const box = document.getElementById('confeti');
     box.replaceChildren();
@@ -587,12 +586,9 @@ const webToken = new URLSearchParams(location.search).get('token');
   };
 
   // ── Hoja de resumen ────────────────────────────────────
-  // Se pinta con lo que el agente publique por el data channel de LiveKit
-  // (RoomEvent.DataReceived más abajo) — nunca con un valor inventado aquí, mismo
-  // comprobante de la regla #5 que ya exigía la versión de demo. El lado que FALTA:
-  // que src/voice-agent (el worker) efectivamente publique ese mensaje después de
-  // llamar la herramienta `cotizar` — no está cableado todavía (requiere el Room
-  // del lado de @livekit/rtc-node, API distinta a livekit-client; ver docs/memoria.md).
+  // Painted from what the agent publishes over LiveKit's data channel, never from a value
+  // invented here (rule #5). MISSING: the worker doesn't publish that message yet — it needs
+  // the Room from @livekit/rtc-node, a different API from livekit-client.
   const pintarResumen = (cotizacion) => {
     const campo = (c) => hoja.querySelector(`[data-campo="${c}"]`);
 
@@ -619,8 +615,7 @@ const webToken = new URLSearchParams(location.search).get('token');
     setEstado('resumen');
     pintarResumen(cotizacion);
     hoja.showModal();
-    // El agente sigue hablando por su cuenta si decide leer el resumen en voz —
-    // esta hoja es un refuerzo visual, no le quita el turno.
+    // The agent keeps talking if it reads the summary aloud — this sheet reinforces, not replaces.
   };
 
   const decoder = new TextDecoder();
@@ -662,8 +657,7 @@ const webToken = new URLSearchParams(location.search).get('token');
     });
 
     room.on(RoomEvent.TrackSubscribed, (track) => {
-      // La voz del agente llega como pista de audio remota — nunca hay video en
-      // esta sesión, así que cualquier pista de audio suscrita es Asegura hablando.
+      // There is never video here, so any subscribed audio track is Asegura speaking.
       if (track.kind === 'audio') {
         const el = track.attach();
         el.autoplay = true;
@@ -690,8 +684,7 @@ const webToken = new URLSearchParams(location.search).get('token');
       await room.connect(sesion.url, sesion.token);
       await room.localParticipant.setMicrophoneEnabled(true);
     } catch (err) {
-      // Plan 17 §2: el navegador in-app de WhatsApp puede simplemente no dar acceso
-      // al micrófono — este es exactamente el caso que ese test de 30 min cubre.
+      // WhatsApp's in-app browser can simply refuse microphone access — see mic-test.html.
       console.error('No se pudo activar el micrófono:', err);
       setEstado('error', 'No pudimos acceder a tu micrófono. Revisa los permisos e intenta de nuevo.');
       room.disconnect();
@@ -706,8 +699,7 @@ const webToken = new URLSearchParams(location.search).get('token');
     }
   });
 
-  // Idempotente: el guardia de 'resumen' no reconecta solo — el usuario sigue en
-  // la misma sesión de voz, que nunca se pausó (a diferencia de la demo anterior).
+  // Idempotent: the 'resumen' guard doesn't reconnect, the voice session never paused.
   const cerrarResumen = () => {
     if (hoja.open) hoja.close();
     if (cuerpo.dataset.estado === 'resumen') setEstado('escuchando');
@@ -720,9 +712,8 @@ const webToken = new URLSearchParams(location.search).get('token');
   btnPagar.addEventListener('click', () => {
     setEstado('pagando');
     hoja.close();
-    // Real: Payment Link de Wompi con redirect_url. Plan 17 §5:
-    //   · pago confirmado SOLO por webhook firmado, nunca por redirect
-    //   · pausar reminder.service.ts o marca ABANDONED a los 4 min
+    // Real Wompi Payment Link with redirect_url: payment is confirmed ONLY by the signed
+    // webhook, never by the redirect.
   });
 
   btnFin.addEventListener('click', () => {

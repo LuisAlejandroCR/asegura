@@ -19,11 +19,9 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    // Never auto-open. The DISPLAY heuristic this replaces still failed under WSLg, which
-    // sets DISPLAY without installing xdg-open: `open` rejects with ENOENT, and since
-    // nothing awaits it the unhandled rejection kills the whole dev server. Auto-open was
-    // never useful here anyway — texto.html/voz.html need a ?token= to do anything, so the
-    // opened root page is the wrong URL regardless.
+// Never auto-open: under WSLg, DISPLAY is set without xdg-open, so `open` rejects with
+// ENOENT and the unhandled rejection kills the dev server. The root page is the wrong URL
+// anyway — texto.html/voz.html need a ?token= to do anything.
     open: false,
   },
 });

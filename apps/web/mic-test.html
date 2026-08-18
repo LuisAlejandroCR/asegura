@@ -1,4 +1,6 @@
 <!doctype html>
+<!-- mic-test.html: standalone microphone probe for the in-app browsers (Telegram, WhatsApp)
+     that AseguraWeb's voice page has to work inside. -->
 <html lang="es">
 <head>
 <meta charset="utf-8">
@@ -61,8 +63,8 @@
   const resultado = document.getElementById('resultado');
   const diag = document.getElementById('diagnostico');
 
-  // Info visible ANTES de tocar el botón — algunos navegadores in-app ni siquiera
-  // exponen mediaDevices, y eso ya es una respuesta útil sin necesitar el permiso.
+// Shown BEFORE the permission prompt: some in-app browsers don't even expose mediaDevices,
+// which is already a useful answer.
   const info = [
     `<b>Contexto seguro (HTTPS)</b>: ${window.isSecureContext ? 'sí' : 'NO'}`,
     `<b>navigator.mediaDevices existe</b>: ${!!navigator.mediaDevices}`,

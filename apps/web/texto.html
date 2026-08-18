@@ -1,4 +1,6 @@
 <!doctype html>
+<!-- texto.html: AseguraWeb's chat page — reads and posts to /web-session/:token, renders the
+     agent's replies, the quote card and the fixed payment bar. -->
 <html lang="es">
 <head>
 <meta charset="utf-8">
@@ -643,15 +645,12 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
-// El agente emite un markdown mínimo y acotado: *negrita*, _cursiva_ y [texto](url). Sin
-// esto, la burbuja muestra los asteriscos crudos — lo primero que delata "formulario".
-// Los links se apartan ANTES de aplicar negrita/cursiva: un `_` dentro de una URL se comía
-// el enlace.
+// The agent emits a minimal markdown: *bold*, _italic_ and [text](url). Links are set aside
+// BEFORE bold/italic, or a `_` inside a URL ate the link.
 function formatear(texto) {
   const enlaces = [];
-  // Marcador delimitado por NUL: el texto ya pasó por escapeHtml, así que no puede traer
-  // uno propio. Un marcador legible tipo " 0 " sí colisionaba — cualquier " 3 " del mensaje
-  // se habría convertido en un enlace inexistente.
+// NUL-delimited marker: the text already passed through escapeHtml, so it can't carry one
+// of its own. A readable marker like " 0 " collided with any " 3 " in the message.
   const conMarcas = escapeHtml(texto).replace(
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
     (_m, etiqueta, url) => {
@@ -717,11 +716,9 @@ function hideTyping() {
   if (escribiendoEl) { escribiendoEl.remove(); escribiendoEl = null; }
 }
 
-// El total sube contando. Redondea a la centena mientras corre para que no titile el
-// último dígito, y aterriza siempre en la cifra exacta que mandó el backend.
-// El DOM ya se pinta con la cifra REAL: esta función solo la baja a 0 dentro del primer
-// frame. Así, si requestAnimationFrame nunca corre (pestaña en segundo plano, que es
-// justo donde se detectó), lo que queda en pantalla es la prima correcta y no un "$0".
+// The total counts up, rounding to the hundred while it runs so the last digit doesn't
+// flicker. The DOM is painted with the REAL figure first and this only drops it to 0 inside
+// the first frame — if rAF never runs (background tab), what stays on screen is correct.
 function contarHasta(el, valor) {
   if (sinMovimiento || valor <= 0) return;
   const inicio = performance.now();
@@ -802,10 +799,8 @@ function mostrarBarraPago(checkoutUrl) {
   barraPago.classList.add('visible');
 }
 
-// La barra NO se esconde al mandar otro mensaje. El backend manda `checkoutUrl` una sola
-// vez; si el usuario pregunta algo después ("¿esto es seguro?"), esconderla lo dejaría sin
-// forma de pagar. El botón de pago del diseño anterior sobrevivía en el scroll del chat por
-// ser una burbuja más — una barra fija necesita esta regla explícita.
+// The bar does NOT hide when another message is sent: the backend sends checkoutUrl once, so
+// hiding it after a follow-up question would leave the person with no way to pay.
 
 // Ícono por palabra clave. Las 5 primeras son las categorías del filtro F01 que el backend
 // ya manda; el resto son las respuestas recurrentes del flujo. Sin coincidencia: sin ícono.
@@ -870,10 +865,8 @@ function showError(titulo, texto) {
   footer.style.display = 'none';
 }
 
-// ── Post-checkout: nunca confía en el redirect en sí — solo en que el estado real
-// (obtenido de GET /web-session/:token) haya avanzado a POLICY_ISSUED/COMPLETED. Wompi
-// redirige de vuelta apenas "termina el proceso de pago", que no es lo mismo que
-// "aprobado" — la confirmación real sigue siendo SOLO el webhook firmado.
+// Post-checkout: never trusts the redirect itself, only that the real state advanced to
+// POLICY_ISSUED/COMPLETED. Wompi redirects when the process ENDS, not when it is approved.
 let pollTimer = null;
 function showPostCheckout(snapshot) {
   chat.style.display = 'none';
@@ -1084,9 +1077,8 @@ selfieInput.addEventListener('change', () => {
     for (const m of snapshot.transcript ?? []) addBubble(m.role, m.text);
     textoEl.focus();
   } catch (err) {
-    // Llegar acá NO significa link inválido — el 401 ya se manejó arriba. Esto es el
-    // backend caído o CORS, y decir "pide un link nuevo" manda al usuario a un bucle:
-    // el link nuevo falla igual.
+// Reaching here does NOT mean the link is invalid — the 401 was handled above. This is the
+// backend down or CORS, and "pide un link nuevo" would send the person into a loop.
     console.error('No se pudo cargar la sesión:', err);
     showError(
       'No pudimos conectarnos',

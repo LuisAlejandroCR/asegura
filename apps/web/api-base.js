@@ -1,6 +1,6 @@
 // api-base.js: resolves the backend base URL for texto.html and voz.html.
-// VITE_API_URL is hand-typed in Vercel; a bare host ("host.railway.app", no scheme) is not
-// absolute, so fetch resolved it as a relative path and hit the static site — a silent 404.
+// VITE_API_URL is hand-typed in Vercel, and a bare host with no scheme is not absolute —
+// fetch resolved it as a relative path and hit the static site instead.
 export function resolveApiBase(raw) {
   const valor = (raw ?? '').trim();
   if (!valor) return ''; // same-origin: correct locally, the thing to fix in production
@@ -19,8 +19,7 @@ if (!API_URL && location.hostname !== 'localhost' && location.hostname !== '127.
 }
 
 // fetch collapses backend-down, CORS-blocked and same-origin-404 into one bodyless
-// TypeError, which the UI could only show as "No se pudo conectar". Same behavior
-// (4xx/5xx still return normally) — only the network error gains the likely cause.
+// TypeError, so only the network error gains a likely cause here; 4xx/5xx still return.
 export async function apiFetch(path, init) {
   const url = `${API_URL}${path}`;
   try {
