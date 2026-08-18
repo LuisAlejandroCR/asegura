@@ -35,10 +35,20 @@ export class ProductCatalog implements IProductRepository {
     'asistencia-veterinaria', 'medicina-prepagada-gatos', 'medicina-prepagada-perros',
   ];
 
+  // Files deliberately left out of the sellable catalog (no company/price yet). Collected
+  // instead of warned per-file: 13 WARN lines per boot buried the real signal, and the
+  // voice-agent worker forks several processes so it printed them all over again in each.
+  // A product that isn't priced yet is expected state, not something to act on — the
+  // count still surfaces, so a product silently dropping out stays visible.
+  private readonly skipped: string[] = [];
+
   constructor() {
     this.products = this.load();
     this.validate(this.products);
-    this.logger.log(`Product catalog loaded: ${this.products.length} products`);
+    const skippedNote = this.skipped.length
+      ? ` (${this.skipped.length} skipped, not yet priced: ${this.skipped.join(', ')})`
+      : '';
+    this.logger.log(`Product catalog loaded: ${this.products.length} products${skippedNote}`);
   }
 
   getProducts(): InsuranceProduct[] {
@@ -67,7 +77,7 @@ export class ProductCatalog implements IProductRepository {
       }
 
       if (raw?.company == null || typeof raw?.public_price !== 'number' || raw?.requires_quote !== false) {
-        this.logger.warn(`Skipping ${file}: not yet a real, priced product`);
+        this.skipped.push(file.replace(/\.yaml$/, ''));
         continue;
       }
 
