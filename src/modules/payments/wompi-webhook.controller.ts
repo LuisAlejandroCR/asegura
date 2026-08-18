@@ -160,7 +160,7 @@ export class WompiWebhookController {
 
     // Sent from here, not from a chat message, so handleMessage's own reminder scheduling
     // never runs for it.
-    this.reminders.schedule(conversation.id, conversation.user_id);
+    this.reminders.schedule(conversation.id, conversation.user_id, conversation.channel as 'telegram' | 'whatsapp');
   }
 
   private async notifyPaymentFailed(policy: Policy): Promise<void> {

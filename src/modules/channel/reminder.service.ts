@@ -3,7 +3,7 @@
 // so nobody gets closed out mid-payment.
 
 import { Injectable, Logger } from '@nestjs/common';
-import { TelegramAdapter } from './telegram-adapter.service';
+import { ChannelRegistry } from './channel-registry.service';
 import { ConversationService } from '../agent/conversation.service';
 import { ConversationState } from '../agent/types';
 
@@ -34,22 +34,22 @@ export class ReminderService {
   private readonly closeTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(
-    private readonly telegram: TelegramAdapter,
+    private readonly channels: ChannelRegistry,
     private readonly conversations: ConversationService,
   ) {}
 
   // Keyed by conversation id, not user id. hasPendingPayment switches to the long window so a
   // still-payable Wompi link is never abandoned mid-payment.
-  schedule(conversationId: string, userId: string, hasPendingPayment = false): void {
+  schedule(conversationId: string, userId: string, channel: 'telegram' | 'whatsapp', hasPendingPayment = false): void {
     this.cancel(conversationId);
     const nudgeTimer = setTimeout(() => {
       this.nudgeTimers.delete(conversationId);
-      void this.telegram.sendText(userId, REMINDER_TEXT);
+      void this.channels.get(channel).sendText(userId, REMINDER_TEXT);
 
       const closeDelay = hasPendingPayment ? PAYMENT_CLOSE_DELAY_MS : CLOSE_DELAY_MS;
       const closeTimer = setTimeout(() => {
         this.closeTimers.delete(conversationId);
-        void this.closeIfStillStalled(conversationId, userId);
+        void this.closeIfStillStalled(conversationId, userId, channel);
       }, closeDelay);
       this.closeTimers.set(conversationId, closeTimer);
     }, REMINDER_DELAY_MS);
@@ -69,12 +69,12 @@ export class ReminderService {
     }
   }
 
-  private async closeIfStillStalled(conversationId: string, userId: string): Promise<void> {
+  private async closeIfStillStalled(conversationId: string, userId: string, channel: 'telegram' | 'whatsapp'): Promise<void> {
     const conv = await this.conversations.findById(conversationId);
     if (!conv || TERMINAL_STATES.has(conv.state)) return;
 
     const reason = conv.context?.productCategory ? 'no_response' : 'insufficient_info';
-    await this.telegram.sendText(userId, TIMEOUT_CLOSE_TEXT)
+    await this.channels.get(channel).sendText(userId, TIMEOUT_CLOSE_TEXT)
       .catch((err) => this.logger.warn(`closeIfStillStalled sendText failed: ${err}`));
     await this.conversations.saveState(conversationId, ConversationState.ABANDONED, {
       ...conv.context,

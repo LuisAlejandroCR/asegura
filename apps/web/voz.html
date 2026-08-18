@@ -564,11 +564,19 @@ const webToken = new URLSearchParams(location.search).get('token');
     pagando:    'Abriendo el pago seguro…',
     terminado:  'Conversación terminada. Ya puedes volver al chat.',
     error:      'No se pudo conectar. Intenta de nuevo.',
+    sinAgente:  'El asesor de voz no responde. Vuelve al chat y escríbeme, o toca para reintentar.',
   };
 
   const pesos = (n) => '$' + n.toLocaleString('es-CO');
 
   let segundos = 0, cronometro = null, room = null;
+
+  // The room connects fine with no worker dispatched into it, so the UI used to sit on
+  // “Te escucho…” forever with nobody listening. Audio arriving is the only proof the
+  // agent is really there — a participant that joins but never speaks is the same dead end.
+  const ESPERA_AGENTE_MS = 15000;
+  let esperaAgente = null;
+  const cancelarEsperaAgente = () => { clearTimeout(esperaAgente); esperaAgente = null; };
 
   const setEstado = (e, textoExtra) => {
     cuerpo.dataset.estado = e;
@@ -632,6 +640,7 @@ const webToken = new URLSearchParams(location.search).get('token');
 
   // ── Conexión real a LiveKit ─────────────────────────────
   const conectar = async () => {
+    cancelarEsperaAgente();
     setEstado('conectando');
 
     let sesion;
@@ -654,11 +663,17 @@ const webToken = new URLSearchParams(location.search).get('token');
     room.on(RoomEvent.Connected, () => {
       arrancarReloj();
       setEstado('escuchando');
+      esperaAgente = setTimeout(() => {
+        setEstado('sinAgente');
+        room?.disconnect();
+        room = null;
+      }, ESPERA_AGENTE_MS);
     });
 
     room.on(RoomEvent.TrackSubscribed, (track) => {
       // There is never video here, so any subscribed audio track is Asegura speaking.
       if (track.kind === 'audio') {
+        cancelarEsperaAgente();
         const el = track.attach();
         el.autoplay = true;
         el.style.display = 'none';
@@ -677,6 +692,7 @@ const webToken = new URLSearchParams(location.search).get('token');
     room.on(RoomEvent.Disconnected, () => {
       clearInterval(cronometro);
       cronometro = null;
+      cancelarEsperaAgente();
       setEstado('terminado');
     });
 
@@ -685,6 +701,7 @@ const webToken = new URLSearchParams(location.search).get('token');
       await room.localParticipant.setMicrophoneEnabled(true);
     } catch (err) {
       // WhatsApp's in-app browser can simply refuse microphone access — see mic-test.html.
+      cancelarEsperaAgente();
       console.error('No se pudo activar el micrófono:', err);
       setEstado('error', 'No pudimos acceder a tu micrófono. Revisa los permisos e intenta de nuevo.');
       room.disconnect();
@@ -694,7 +711,7 @@ const webToken = new URLSearchParams(location.search).get('token');
 
   orbe.addEventListener('click', () => {
     const actual = cuerpo.dataset.estado;
-    if (actual === 'inactivo' || actual === 'error' || actual === 'terminado') {
+    if (actual === 'inactivo' || actual === 'error' || actual === 'sinAgente' || actual === 'terminado') {
       conectar();
     }
   });

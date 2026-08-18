@@ -4449,7 +4449,7 @@ describe('AgentService — 30s reminder scheduling', () => {
     });
     telegram.normalize.mockResolvedValue(makeMessage('¿ese es el único plan?'));
     await service.handleMessage({});
-    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1', false);
+    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1', 'telegram', false);
   });
 
   // Real live-test bug (2026-07-26): a real Wompi payment link is valid for 30 minutes
@@ -4463,7 +4463,7 @@ describe('AgentService — 30s reminder scheduling', () => {
     });
     telegram.normalize.mockResolvedValue(makeMessage('¿ya casi?'));
     await service.handleMessage({});
-    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1', true);
+    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1', 'telegram', true);
   });
 
   it('schedules with hasPendingPayment=false when there is no active checkoutUrl', async () => {
@@ -4474,7 +4474,7 @@ describe('AgentService — 30s reminder scheduling', () => {
     });
     telegram.normalize.mockResolvedValue(makeMessage('¿cómo pago?'));
     await service.handleMessage({});
-    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1', false);
+    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1', 'telegram', false);
   });
 
   it('does NOT schedule a reminder when a plain decline ends in ABANDONED', async () => {

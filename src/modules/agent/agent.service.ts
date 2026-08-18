@@ -296,7 +296,7 @@ export class AgentService {
     if (!AgentService.TERMINAL_STATES.has(finalState)) {
       // An unconfirmed Wompi link must not auto-abandon on the regular window.
       const finalContext = result.context ?? conv.context;
-      this.reminders.schedule(conv.id, msg.userId, !!finalContext?.checkoutUrl);
+      this.reminders.schedule(conv.id, msg.userId, conv.channel as 'telegram' | 'whatsapp', !!finalContext?.checkoutUrl);
     }
 
     return { conv, result };

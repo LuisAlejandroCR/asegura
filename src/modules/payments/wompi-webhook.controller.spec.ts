@@ -261,7 +261,7 @@ describe('WompiWebhookController — post-purchase cross-sell (2026-07-24 "resto
     const { controller, conversations, reminders } = buildController();
     conversations.findById.mockResolvedValue(makeConversation({ context: {} }));
     await controller.handleWebhook(makeEvent());
-    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', '999888777');
+    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', '999888777', 'telegram');
   });
 
   it('offers a generic follow-up and leaves productCategory unset when nothing was deferred', async () => {
