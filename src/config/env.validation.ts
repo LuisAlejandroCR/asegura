@@ -30,15 +30,7 @@ class EnvironmentVariables {
 
   @IsString()
   @IsNotEmpty()
-  SUPABASE_ANON_KEY: string;
-
-  @IsString()
-  @IsNotEmpty()
   SUPABASE_SERVICE_ROLE_KEY: string;
-
-  @IsString()
-  @IsOptional()
-  LLM_PROVIDER: string;
 
   @IsString()
   @IsOptional()
@@ -102,31 +94,11 @@ class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
-  WOMPI_PUBLIC_KEY: string;
-
-  @IsString()
-  @IsOptional()
   WOMPI_PRIVATE_KEY: string;
 
   @IsString()
   @IsOptional()
   WOMPI_EVENTS_SECRET: string;
-
-  @IsString()
-  @IsOptional()
-  WOMPI_INTEGRITY_KEY: string;
-
-  @IsString()
-  @IsOptional()
-  CELO_RPC_URL: string;
-
-  @IsString()
-  @IsOptional()
-  OPERATOR_PRIVATE_KEY: string;
-
-  @IsString()
-  @IsOptional()
-  POLICY_LEDGER_ADDRESS: string;
 
   @IsString()
   @IsOptional()
@@ -154,7 +126,6 @@ const ALL_OR_NOTHING_GROUPS: { label: string; keys: (keyof EnvironmentVariables)
   { label: 'LiveKit', keys: ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'] },
   { label: 'ElevenLabs', keys: ['ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID'] },
   { label: 'Wompi', keys: ['WOMPI_ENVIRONMENT', 'WOMPI_PRIVATE_KEY', 'WOMPI_EVENTS_SECRET'] },
-  { label: 'Celo', keys: ['CELO_RPC_URL', 'OPERATOR_PRIVATE_KEY', 'POLICY_LEDGER_ADDRESS'] },
 ];
 
 function crossFieldErrors(validated: EnvironmentVariables): string[] {

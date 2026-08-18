@@ -8,8 +8,12 @@
 // constructing a context with selectedProductIds already set, so it keeps working
 // correctly if that field is ever populated some other way.
 import { ConversationState } from './types';
-import { PRODUCTS } from '../quoting/products.data';
+import { ProductCatalog } from '../quoting/product-catalog.service';
 import { makeMessage, makeIntent, buildService } from './agent.service.test-helpers';
+
+// Read from the runtime catalog, not a fixture copy: a price that drifts in the YAML
+// has to break a test, not pass one.
+const PRODUCTS = new ProductCatalog().getProducts();
 
 describe('AgentService — multi-product purchase: pet details still collected when mascotas is not the primary category', () => {
   // Real gap: when mascotas isn't the first entry in selectedProductIds, a strict

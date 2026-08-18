@@ -4,13 +4,26 @@ import { APP_GUARD } from '@nestjs/core';
 import { ExecutionContext } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import { AppModule } from './app.module';
 import { HealthController } from './health/health.controller';
 import { WebSessionController } from './modules/agent/web-session.controller';
 import { TelegramWebhookController } from './modules/channel/telegram-webhook.controller';
 import { TwilioWebhookController } from './modules/channel/twilio-webhook.controller';
 import { WompiWebhookController } from './modules/payments/wompi-webhook.controller';
 import { VoiceController } from './modules/voice/voice.controller';
+
+// ConfigModule.forRoot() runs env validation while app.module.ts is being imported, and a
+// failure calls process.exit(1) — which killed the jest worker in CI, where there is no
+// .env. Hence the assignments before the require, and require instead of a hoisted import.
+for (const [key, value] of Object.entries({
+  NODE_ENV: 'test',
+  CORS_ORIGIN: 'http://localhost:3000',
+  SUPABASE_URL: 'https://example.supabase.co',
+  SUPABASE_ANON_KEY: 'anon-key',
+  SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+})) {
+  process.env[key] ??= value;
+}
+const { AppModule } = require('./app.module') as typeof import('./app.module');
 
 // Mirrors AppModule's ThrottlerModule.forRoot so the numbers under test are the shipped ones.
 const GLOBAL_LIMIT = 100;

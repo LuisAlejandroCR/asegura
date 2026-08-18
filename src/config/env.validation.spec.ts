@@ -9,7 +9,6 @@ function baseConfig(overrides: Record<string, unknown> = {}) {
     NODE_ENV: 'development',
     CORS_ORIGIN: 'http://localhost:3000',
     SUPABASE_URL: 'https://example.supabase.co',
-    SUPABASE_ANON_KEY: 'anon-key',
     SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
     ...overrides,
   };
@@ -116,28 +115,12 @@ describe('env.validation — Telegram webhook mode requirement', () => {
   });
 });
 
-describe('env.validation — Celo cross-field requirement', () => {
-  it('exits when only CELO_RPC_URL is set (partial Celo config)', () => {
+// The Celo group was removed with the vars themselves: nothing read them since blockchain
+// moved to future work, and a half-set group refused to boot for a feature that is gone.
+describe('env.validation — removed config never blocks the boot', () => {
+  it('ignores leftover Celo vars still set in a deployment', () => {
     const { exitSpy, restore } = withMockedExit();
     validate(baseConfig({ CELO_RPC_URL: 'https://forno.celo.org' }));
-    expect(exitSpy).toHaveBeenCalledWith(1);
-    restore();
-  });
-
-  it('passes when none of the Celo vars are set (feature disabled entirely)', () => {
-    const { exitSpy, restore } = withMockedExit();
-    validate(baseConfig());
-    expect(exitSpy).not.toHaveBeenCalled();
-    restore();
-  });
-
-  it('passes when all three Celo vars are set together', () => {
-    const { exitSpy, restore } = withMockedExit();
-    validate(baseConfig({
-      CELO_RPC_URL: 'https://forno.celo.org',
-      OPERATOR_PRIVATE_KEY: '0x' + '1'.repeat(64),
-      POLICY_LEDGER_ADDRESS: '0x' + '2'.repeat(40),
-    }));
     expect(exitSpy).not.toHaveBeenCalled();
     restore();
   });

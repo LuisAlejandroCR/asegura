@@ -3,7 +3,11 @@
 
 import { QuotingService } from './quoting.service';
 import { AffiliateSignals, IProductRepository, InsuranceProduct } from './types';
-import { PRODUCTS } from './products.data';
+import { ProductCatalog } from './product-catalog.service';
+
+// The runtime catalog, not a fixture copy of it: scoring must be exercised against the
+// same 11 products the app actually quotes.
+const PRODUCTS = new ProductCatalog().getProducts();
 
 function makeFakeCatalog(products: InsuranceProduct[] = PRODUCTS): IProductRepository {
   return {

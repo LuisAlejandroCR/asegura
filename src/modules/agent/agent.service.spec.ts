@@ -3,8 +3,12 @@
 // Each dated block names the real bug it locks down; keep that context when editing.
 
 import { ConversationState, ConversationContext } from './types';
-import { PRODUCTS } from '../quoting/products.data';
+import { ProductCatalog } from '../quoting/product-catalog.service';
 import { makeMessage, makeIntent, makeConversation, buildService } from './agent.service.test-helpers';
+
+// Read from the runtime catalog, not a fixture copy: a price that drifts in the YAML
+// has to break a test, not pass one.
+const PRODUCTS = new ProductCatalog().getProducts();
 
 // Unsupported input (images, long audio)
 
