@@ -94,7 +94,7 @@ describe('AUTHORIZATION → DISCOVERY entry — WEB_APP_URL configured', () => {
     telegram.normalize.mockResolvedValue({ userId: 'u1', channel: 'telegram', channelId: '1', text: 'escribir', timestamp: new Date() });
     await service.handleMessage({});
     const [, sentText] = telegram.sendText.mock.calls[0];
-    expect(sentText).toMatch(/https:\/\/asegura-production\.up\.railway\.app\/s\/[23456789ABCDEFGHJKMNPQRSTVWXYZ]{8}/);
+    expect(sentText).toMatch(/https:\/\/asegura-production\.up\.railway\.app\/s\/[23456789ABCDEFGHJKMNPQRSTVWXYZ]{6}/);
     expect(sentText).not.toContain('token=');
     expect(sentText).not.toContain('texto.html');
   });

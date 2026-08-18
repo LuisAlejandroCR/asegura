@@ -1,6 +1,5 @@
 // web-link-code.service.spec.ts: the short /s/<code> links sent in chat — the code is the
 // credential, so the tests that matter are "it works once" and "it stops working after".
-import { NotFoundException } from '@nestjs/common';
 import { WebLinkCodeService } from './web-link-code.service';
 import { WebLinkController } from './web-link.controller';
 
@@ -9,8 +8,8 @@ const DESTINATION = 'https://asegura-app.vercel.app/texto.html?token=signed-toke
 describe('WebLinkCodeService', () => {
   it('mints a short code that does not leak any part of the destination token', () => {
     const code = new WebLinkCodeService().mint(DESTINATION);
-    expect(code).toHaveLength(8);
-    expect(code).toMatch(/^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{8}$/);
+    expect(code).toHaveLength(6);
+    expect(code).toMatch(/^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{6}$/);
     // Ambiguous glyphs are excluded so a code read off a screen can't be retyped into a
     // DIFFERENT valid code.
     expect(code).not.toMatch(/[01OIL]/);
@@ -48,7 +47,7 @@ describe('WebLinkCodeService', () => {
 });
 
 describe('WebLinkController', () => {
-  const makeRes = () => ({ redirect: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() }) as any;
+  const makeRes = () => ({ redirect: jest.fn(), status: jest.fn().mockReturnThis(), type: jest.fn().mockReturnThis(), send: jest.fn() }) as any;
 
   it('redirects to the real AseguraWeb URL', () => {
     const codes = new WebLinkCodeService();
@@ -57,13 +56,26 @@ describe('WebLinkController', () => {
     expect(res.redirect).toHaveBeenCalledWith(302, DESTINATION);
   });
 
-  it('tells the person how to recover instead of showing a bare 404 on a spent code', () => {
+  // A JSON 404 reads as a crash to someone who just tapped a link mid-purchase.
+  it('renders the Asegura page, not a JSON 404, when the code is spent', () => {
     const codes = new WebLinkCodeService();
     const code = codes.mint(DESTINATION);
     const controller = new WebLinkController(codes);
     controller.redeem(code, makeRes());
-    expect(() => controller.redeem(code, makeRes())).toThrow(NotFoundException);
-    expect(() => controller.redeem(code, makeRes())).toThrow(/te enviamos uno nuevo/i);
+
+    const res = makeRes();
+    controller.redeem(code, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.type).toHaveBeenCalledWith('html');
+    const body = res.send.mock.calls[0][0] as string;
+    expect(body).toContain('<!doctype html>');
+    expect(body).toContain('Asegura');
+    expect(body).toMatch(/pídeme uno nuevo/i);
+    // Charset and viewport must survive: without them the accents mojibake and the card
+    // renders desktop-width on the phone this is always opened on.
+    expect(body).toContain('charset="utf-8"');
+    expect(body).toContain('width=device-width');
+    expect(res.redirect).not.toHaveBeenCalled();
   });
 
   // A chat client building a preview card must never spend the person's one use.
