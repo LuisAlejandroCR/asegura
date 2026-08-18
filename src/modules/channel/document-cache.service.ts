@@ -19,9 +19,23 @@ export class DocumentCacheService {
   private readonly store = new Map<string, CachedDocument>();
 
   put(buffer: Buffer, filename: string, contentType = 'application/pdf'): string {
+    this.sweep();
     const token = randomUUID();
     this.store.set(token, { buffer, filename, contentType, expiresAt: Date.now() + TTL_MS });
     return token;
+  }
+
+  // The only way to tell a swept entry from one that merely reads as expired.
+  get size(): number {
+    return this.store.size;
+  }
+
+  // A document nobody downloads is never looked up, so expiry has to be driven by writes too.
+  private sweep(): void {
+    const now = Date.now();
+    for (const [token, entry] of this.store) {
+      if (entry.expiresAt < now) this.store.delete(token);
+    }
   }
 
   // Not deleted on first read — Twilio may retry the fetch, and a 404 would drop the document.

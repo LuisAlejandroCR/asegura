@@ -37,3 +37,24 @@ describe('DocumentCacheService', () => {
     Date.now = realNow;
   });
 });
+
+// Expiry used to be checked only inside get(), so a document nobody ever downloaded stayed
+// in memory for the life of the process — and these are PDFs with personal data.
+describe('DocumentCacheService — expired entries do not survive on being ignored', () => {
+  it('drops an untouched expired document when the next one is stored', () => {
+    jest.useFakeTimers();
+    try {
+      const cache = new DocumentCacheService();
+      const abandoned = cache.put(Buffer.from('never downloaded'), 'poliza.pdf');
+
+      jest.advanceTimersByTime(10 * 60_000 + 1);
+      cache.put(Buffer.from('a later one'), 'otra.pdf');
+
+      // Reading it would have evicted it either way; the point is it was already gone.
+      expect(cache.get(abandoned)).toBeNull();
+      expect(cache.size).toBe(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});

@@ -47,11 +47,20 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
   private readonly logger = new Logger(AffiliateLookupService.name);
   private readonly bySerie = new Map<string, AffiliateRecord>();
   private loaded = false;
+  private ready?: Promise<void>;
 
   constructor(private readonly config: ConfigService) {}
 
-  async onApplicationBootstrap(): Promise<void> {
-    await this.load();
+  // Deliberately not awaited: Nest runs this before app.listen() binds the port, and parsing
+  // a 64 MB CSV there raced Railway's healthcheck. The lookup only enriches a quote, so the
+  // agent answers normally while it loads.
+  onApplicationBootstrap(): void {
+    this.ready = this.load();
+  }
+
+  // Whatever onApplicationBootstrap started, for callers that must have the data (tests).
+  whenReady(): Promise<void> {
+    return this.ready ?? Promise.resolve();
   }
 
   isEnabled(): boolean {

@@ -29,7 +29,8 @@ describe('AffiliateLookupService', () => {
       '2;F;20 a 35 años;Entre 6 y 8 SMLV;B',
     ]);
     const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
-    await service.onApplicationBootstrap();
+    service.onApplicationBootstrap();
+    await service.whenReady();
 
     expect(service.isEnabled()).toBe(true);
     expect(service.findBySerie('1')).toEqual({
@@ -48,7 +49,8 @@ describe('AffiliateLookupService', () => {
       '1;Entre 1 y 1.5 SMLV',
     ]);
     const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
-    await service.onApplicationBootstrap();
+    service.onApplicationBootstrap();
+    await service.whenReady();
 
     expect(service.findBySerie('999999')).toBeNull();
 
@@ -61,7 +63,8 @@ describe('AffiliateLookupService', () => {
       '42;Entre 4 y 6 SMLV',
     ]);
     const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
-    await service.onApplicationBootstrap();
+    service.onApplicationBootstrap();
+    await service.whenReady();
 
     expect(service.findBySerie('  42  ')).toEqual({ rangoSalarial: 'Entre 4 y 6 SMLV' });
 
@@ -75,7 +78,8 @@ describe('AffiliateLookupService', () => {
       '1;Entre 4 y 6 SMLV',
     ]);
     const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
-    await service.onApplicationBootstrap();
+    service.onApplicationBootstrap();
+    await service.whenReady();
 
     expect(service.findBySerie('1')).toEqual({ rangoSalarial: 'Entre 4 y 6 SMLV' });
 
@@ -88,7 +92,8 @@ describe('AffiliateLookupService', () => {
       '1;',
     ]);
     const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
-    await service.onApplicationBootstrap();
+    service.onApplicationBootstrap();
+    await service.whenReady();
 
     expect(service.findBySerie('1')).toEqual({});
 
@@ -101,7 +106,8 @@ describe('AffiliateLookupService', () => {
   // being unconfigured — never crash the app.
   it('disables gracefully (no throw) when the CSV file does not exist', async () => {
     const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: '/definitely/does/not/exist.csv' }));
-    await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
+    service.onApplicationBootstrap();
+    await expect(service.whenReady()).resolves.toBeUndefined();
     expect(service.isEnabled()).toBe(false);
     expect(service.findBySerie('1')).toBeNull();
   });
@@ -112,7 +118,8 @@ describe('AffiliateLookupService', () => {
       'M;Entre 1 y 1.5 SMLV',
     ]);
     const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
-    await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
+    service.onApplicationBootstrap();
+    await expect(service.whenReady()).resolves.toBeUndefined();
     expect(service.isEnabled()).toBe(false);
 
     fs.unlinkSync(csvPath);
@@ -124,7 +131,8 @@ describe('AffiliateLookupService', () => {
       '10;F;20 a 35 años;Entre 6 y 8 SMLV;A;AFILLIADO SIN GRUPO_FAMILIAR',
     ]);
     const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
-    await service.onApplicationBootstrap();
+    service.onApplicationBootstrap();
+    await service.whenReady();
 
     expect(service.findBySerie('10')).toEqual({
       rangoSalarial: 'Entre 6 y 8 SMLV', genero: 'F', rangoEdad: '20 a 35 años', categoria: 'A',
@@ -145,7 +153,8 @@ describe('AffiliateLookupService', () => {
       '4;Entre 1 y 1.5 SMLV;',
     ]);
     const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
-    await service.onApplicationBootstrap();
+    service.onApplicationBootstrap();
+    await service.whenReady();
 
     expect(service.findBySerie('1')).toEqual({ rangoSalarial: 'Entre 1 y 1.5 SMLV', segmentoGrupoFamiliar: 'FAMILIA NUCLEAR INTEGRAL', dependents: 1 });
     expect(service.findBySerie('2')).toEqual({ rangoSalarial: 'Entre 1 y 1.5 SMLV', segmentoGrupoFamiliar: 'FAMILIA MONOPARENTAL', dependents: 1 });
@@ -161,7 +170,8 @@ describe('AffiliateLookupService', () => {
       '1;;AFILLIADO SIN GRUPO_FAMILIAR',
     ]);
     const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
-    await service.onApplicationBootstrap();
+    service.onApplicationBootstrap();
+    await service.whenReady();
 
     expect(service.findBySerie('1')).toEqual({ segmentoGrupoFamiliar: 'AFILLIADO SIN GRUPO_FAMILIAR', dependents: 0 });
 
@@ -177,7 +187,8 @@ describe('AffiliateLookupService', () => {
       '5;F;36 a 45 años;Entre 1 y 1.5 SMLV;A;AFILLIADO SIN GRUPO_FAMILIAR;Joven;3 Empresarial Top;X;BOGOTA D.C.;NO;SI;NO;NO;SI',
     ]);
     const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
-    await service.onApplicationBootstrap();
+    service.onApplicationBootstrap();
+    await service.whenReady();
 
     expect(service.findBySerie('5')).toEqual({
       rangoSalarial: 'Entre 1 y 1.5 SMLV', genero: 'F', rangoEdad: '36 a 45 años', categoria: 'A',
@@ -196,7 +207,8 @@ describe('AffiliateLookupService', () => {
       '1103;Entre 1 y 1.5 SMLV;SI;WhatsApp;7;active;NO;medicina-prepagada-gatos;81800;1',
     ]);
     const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
-    await service.onApplicationBootstrap();
+    service.onApplicationBootstrap();
+    await service.whenReady();
 
     expect(service.findBySerie('1103')).toEqual({
       rangoSalarial: 'Entre 1 y 1.5 SMLV',
@@ -214,7 +226,8 @@ describe('AffiliateLookupService', () => {
       '1;Entre 1 y 1.5 SMLV;NO;',
     ]);
     const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
-    await service.onApplicationBootstrap();
+    service.onApplicationBootstrap();
+    await service.whenReady();
 
     expect(service.findBySerie('1')).toEqual({ rangoSalarial: 'Entre 1 y 1.5 SMLV', contactado: false });
 
@@ -230,9 +243,36 @@ describe('AffiliateLookupService', () => {
     const fsModule = require('fs') as typeof fs;
     const existsSpy = jest.spyOn(fsModule, 'existsSync').mockReturnValue(false);
     const service = new AffiliateLookupService(makeConfig());
-    await service.onApplicationBootstrap();
+    service.onApplicationBootstrap();
+    await service.whenReady();
 
     expect(existsSpy).toHaveBeenCalledWith(expectedDefault);
     expect(service.isEnabled()).toBe(false);
+  });
+});
+
+// Nest runs onApplicationBootstrap before app.listen() binds the port, so awaiting a 64 MB
+// parse there put startup in a race with Railway's healthcheck — the failure mode that cost
+// two sessions of deploy debugging.
+describe('AffiliateLookupService — loading does not block the port', () => {
+  it('returns from the bootstrap hook before the CSV has finished parsing', async () => {
+    const csvPath = writeTempCsv(['SERIE;RANGO_SALARIAL', '1;Entre 1 y 1.5 SMLV']);
+
+    const service = new AffiliateLookupService(makeConfig({ AFFILIATE_CSV_PATH: csvPath }));
+    const returned = service.onApplicationBootstrap();
+
+    // The hook hands control back synchronously; nothing is loaded yet.
+    expect(returned).toBeUndefined();
+    expect(service.isEnabled()).toBe(false);
+
+    await service.whenReady();
+    expect(service.isEnabled()).toBe(true);
+
+    fs.unlinkSync(csvPath);
+  });
+
+  it('whenReady() resolves even when the hook was never called', async () => {
+    const service = new AffiliateLookupService(makeConfig());
+    await expect(service.whenReady()).resolves.toBeUndefined();
   });
 });
