@@ -1,9 +1,6 @@
-// cotizar-tool.ts: the function tool that makes CLAUDE.md rule #5 ("NLP como asesor,
-// reglas como decisor") enforceable in a real-time voice session — where the model talks
-// straight to the user, with no text-based state machine gating what gets said. The model
-// NEVER computes or states a price itself; it calls this tool and only reads back what
-// QuotingService actually returns. cotizarLogic is exported separately from the LiveKit
-// tool() wrapper so it's testable with plain Jest, no LiveKit runtime required.
+// cotizar-tool.ts: the tool that makes rule #5 ("NLP como asesor, reglas como decisor")
+// enforceable in a live voice session — the model never states a price it didn't get from
+// here. cotizarLogic is exported separately so it is testable without the LiveKit runtime.
 import { tool } from '@livekit/agents';
 import { z } from 'zod';
 import { QuotingService } from '../modules/quoting/quoting.service';
@@ -18,8 +15,8 @@ export interface CotizarResult {
   razon?: string;
 }
 
-// Real productCategory union — kept identical to InsuranceIntent's (nlp/types.ts) so a
-// voice-gathered profile and a text-gathered one score through the exact same engine.
+// Kept identical to InsuranceIntent's union so a voice-gathered profile scores through the
+// exact same engine as a text-gathered one.
 const CATEGORIES = ['vida', 'hogar', 'accidentes', 'asistencia', 'mascotas'] as const;
 
 export const cotizarParams = z.object({

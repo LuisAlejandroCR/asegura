@@ -1,9 +1,6 @@
-// breed-matcher.ts: fuzzy-matches noisy/mis-transcribed breed names against a dictionary
-// of common pet breeds. Voice transcription regularly mangles breed names (e.g. Whisper
-// transcribed "Cocker" as "caken") — this maps the noisy input back to the closest known
-// breed when the two are close enough, and leaves the raw input alone otherwise (a
-// genuinely unlisted or unrecognizable breed shouldn't be silently forced into the wrong
-// common one).
+// breed-matcher.ts: fuzzy-matches noisy or mis-transcribed breed names against a dictionary
+// of common breeds (Whisper turns "Cocker" into "caken"), and leaves the raw input alone
+// when nothing is close enough.
 
 const DOG_BREEDS = [
   'Labrador', 'Golden Retriever', 'Pastor Alemán', 'Bulldog', 'Bulldog Francés',
@@ -19,16 +16,14 @@ const CAT_BREEDS = [
   'Británico de pelo corto', 'Abisinio', 'Himalayo', 'Bombay', 'Azul Ruso',
 ];
 
-// Valid answers, not "corrected" to a purebred name — but also not species-specific, so
-// a pet with one of these breeds can't be classified by breed alone (see
-// classifyPetsBySpecies below).
+// Valid answers, not "corrected" to a purebred name — but not species-specific either, so
+// breed alone can't classify them (see classifyPetsBySpecies below).
 const AMBIGUOUS_BREEDS = ['Criollo', 'Mestizo', 'Común'];
 
 const KNOWN_BREEDS = [...DOG_BREEDS, ...CAT_BREEDS, ...AMBIGUOUS_BREEDS];
 
-// Fuzzy match is loose on purpose: breed is descriptive only (doesn't affect price,
-// eligibility, or coverage in this catalog), so failing to fix an obviously garbled
-// transcription and printing it verbatim on a legal document is the worse outcome.
+// Loose on purpose: breed is descriptive only (no effect on price, eligibility or coverage),
+// so printing a garbled transcription on a legal document is the worse outcome.
 const MATCH_THRESHOLD = 0.5;
 
 function normalize(s: string): string {
@@ -57,16 +52,14 @@ function matchBreed(input: string | null | undefined): string {
   if (!input || !input.trim()) return 'no especificada';
 
   const normalizedInput = normalize(input);
-  // No actual letters at all (pure digits/symbols) — never print raw garbage on the
-  // final policy PDF, treat it the same as "not provided".
+  // No letters at all: treat pure digits/symbols as "not provided" rather than print garbage.
   if (!normalizedInput) return 'no especificada';
 
   let bestMatch: string | null = null;
   let bestScore = Infinity;
 
   for (const breed of KNOWN_BREEDS) {
-    // Check the full breed name AND each individual word (e.g. "Cocker Spaniel" also
-    // matches on just "Cocker") so a single-word transcription can still find it.
+    // Match the full name and each word, so "Cocker" alone still finds "Cocker Spaniel".
     const candidates = [breed, ...breed.split(' ')];
     for (const candidate of candidates) {
       const normalizedCandidate = normalize(candidate);
@@ -84,13 +77,9 @@ function matchBreed(input: string | null | undefined): string {
   return bestMatch && bestScore <= MATCH_THRESHOLD ? bestMatch : input.trim();
 }
 
-// Real live-test bug: a mixed household (1 cat + 2 dogs) issued two species-specific
-// policies (medicina-prepagada-gatos/perros), but both final PDFs listed ALL 3 pets —
-// PolicyService.issue() stored the whole context.pets array verbatim for every policy.
-// Classifies each pet by its (already breed-matched) breed name: an exact dog/cat breed
-// is unambiguous; an ambiguous breed (Criollo/Mestizo/Común, or a genuinely unrecognized
-// one) falls back to whichever species still has unfilled slots per speciesCounts — so
-// classification always lands on a real species instead of silently dropping a pet.
+// Classifies each pet by its already-matched breed so a species-restricted policy lists
+// only its own pets. An ambiguous breed (Criollo/Mestizo) falls back to whichever species
+// still has unfilled slots, so classification never drops a pet.
 function classifyPetsBySpecies(
   pets: { name: string; age: string; breed: string }[],
   speciesCounts?: { gato?: number; perro?: number },
@@ -108,9 +97,7 @@ function classifyPetsBySpecies(
     if (s) return s;
     if (gatoRemaining > 0) { gatoRemaining--; return 'gato'; }
     if (perroRemaining > 0) { perroRemaining--; return 'perro'; }
-    // No species counts to fall back on (e.g. missing/zeroed speciesCounts) — default to
-    // gato rather than throw; this only matters for a genuinely ambiguous breed on a
-    // household this function otherwise can't classify at all.
+    // No counts to fall back on: default to gato rather than throw.
     return 'gato';
   });
 }

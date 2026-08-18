@@ -1,15 +1,13 @@
 // twilio-whatsapp-adapter.service.ts: the WhatsApp (Twilio) implementation of
-// IChannelAdapter. Talks to the Messages REST API directly via fetch + Basic Auth — no
-// Twilio SDK dependency, same lean-fetch convention this codebase already uses for Wompi
-// and Groq. Field names verified against Twilio's own webhook-request docs (2026-08-12).
+// IChannelAdapter. Talks to the Messages REST API with fetch + Basic Auth, no SDK — the
+// same lean-fetch convention this codebase uses for Wompi and Groq.
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { readFile } from 'fs/promises';
 import { IChannelAdapter, NormalizedMessage } from './types';
 import { DocumentCacheService } from './document-cache.service';
 
-// Twilio's raw webhook body — application/x-www-form-urlencoded, parsed by Nest's default
-// body parser into a plain object of strings. Only the fields this adapter reads.
+// Twilio's form-encoded webhook body, parsed by Nest — only the fields this adapter reads.
 interface TwilioIncomingMessage {
   MessageSid?: string;
   From?: string; // "whatsapp:+15551234567"
@@ -85,16 +83,13 @@ export class TwilioWhatsAppAdapter implements IChannelAdapter {
       timestamp: new Date(),
       metadata: { messageSid: body.MessageSid },
       ...(unsupportedInput && { unsupportedInput }),
-      // WhatsApp itself verifies the sending phone number — there's no request_contact
-      // equivalent here, but none is needed: every inbound message already proves the
-      // phone. Populated unconditionally so AgentService's phoneVerified gate (built for
-      // Telegram's opt-in contact share) is satisfied for free on this channel.
+      // WhatsApp verifies the sending number itself, so every inbound message already proves
+      // the phone. Populated unconditionally to satisfy AgentService's phoneVerified gate.
       contact: { phoneNumber: userId, firstName: body.ProfileName ?? '' },
     };
   }
 
-  // Twilio media URLs require the same Account SID/Auth Token as the REST API to fetch —
-  // unlike Telegram's file URLs, they're not publicly readable.
+  // Twilio media URLs need the same credentials as the REST API; they are not public.
   private async transcribeVoice(mediaUrl: string): Promise<string> {
     const llmKey = this.config.get<string>('LLM_API_KEY');
     if (!llmKey) {
@@ -161,8 +156,7 @@ export class TwilioWhatsAppAdapter implements IChannelAdapter {
 
   async sendAnimation(userId: string, filePath: string): Promise<void> {
     if (!this.publicUrl) return;
-    // Same URL constraint as sendDocument — read the local asset once and serve it via
-    // the same ephemeral download token, never allowed to break the real flow if it fails.
+    // Same URL constraint as sendDocument — the local asset is served via a download token.
     try {
       const buffer = await readFile(filePath);
       const token = this.docs.put(buffer, 'video.mp4', 'video/mp4');
@@ -172,29 +166,23 @@ export class TwilioWhatsAppAdapter implements IChannelAdapter {
     }
   }
 
-  // No request_contact equivalent — see the comment on normalize()'s `contact` field.
-  // Sent as plain text; the channel itself already proves the phone.
+  // No request_contact equivalent: plain text, since the channel already proves the phone.
   async sendContactRequest(userId: string, text: string): Promise<void> {
     await this.send(userId, { Body: text });
   }
 
-  // WhatsApp message reactions exist on the platform but sending one isn't part of
-  // Twilio's standard Messages API — purely cosmetic even on Telegram, so a safe no-op
-  // here rather than an unverified implementation.
+  // Reactions are not part of Twilio's Messages API — a safe no-op beats an unverified guess.
   async reactToMessage(_userId: string, _messageId: number, _emoji: string, _isBig?: boolean): Promise<void> {
     return;
   }
 
-  // Freeform Quick Reply buttons require a pre-approved Meta Content Template — out of
-  // MVP/sandbox scope. Degrades to a plain numbered-free text list: the same category
-  // keywords still match via GroqNlpService.matchCategoryKeyword if the user retypes one.
+  // Quick Reply buttons need a pre-approved Meta template, out of sandbox scope. Degrades to
+  // a plain list — the category keywords still match if the person retypes one.
   async sendChoices(userId: string, text: string, choices: string[]): Promise<void> {
     await this.send(userId, { Body: `${text}\n\n${choices.join('\n')}` });
   }
 
-  // The Sandbox's webhook URL is set once in the Twilio console (Messaging > Try it out),
-  // not programmatically per-app like Telegram's setWebhook — a real WhatsApp Sender
-  // (non-sandbox) does support this via the Messaging Service API, out of MVP scope.
+  // The Sandbox's webhook URL is set once in the Twilio console, not programmatically.
   async setWebhook(): Promise<void> {
     this.logger.log('Twilio WhatsApp webhook is configured in the Twilio console, not via this app — see .env.example');
   }

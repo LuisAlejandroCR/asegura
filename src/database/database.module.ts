@@ -1,4 +1,5 @@
-// database.module.ts: global Supabase module — available everywhere without explicit import
+// database.module.ts: the global Supabase module, available everywhere without an
+// explicit import.
 import { Global, Module } from '@nestjs/common';
 import { SupabaseService } from './supabase.service';
 

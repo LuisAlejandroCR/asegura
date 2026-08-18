@@ -1,35 +1,21 @@
-// affiliate-lookup.service.ts: This script is for looking up an affiliate's full
-// historical row by SERIE from the synthetic affiliate CSV, so the agent can honor
-// "nunca preguntar lo que ya sabemos" (Diseño preguntas.docx, Nivel 1) for every signal
-// Colsubsidio already has on file, not just income.
-//
-// Optional integration, same pattern as Wompi/Telegram/LLM: a missing file logs a warning
-// and disables the feature, never crashes. The synthetic CSV lives at the PUBLIC repo root
-// (docs/ is gitignored) so it deploys with the code. Path comes from an env var so the
-// file can move without a code change.
+// affiliate-lookup.service.ts: looks up an affiliate's full historical row by SERIE in the
+// synthetic CSV, so the agent never asks for something Colsubsidio already has on file.
+// Optional: a missing file logs a warning and disables the feature instead of crashing.
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 
-// 2026-07-26 feature request: "capture the complete row... so the agent will know all
-// about the registered user" — every field is captured verbatim from the CSV (rule #12
-// — never invented, always the literal value on file), even where nothing downstream
-// reads it yet. Fields already wired into live scoring/DISCOVERY are documented as such;
-// the rest are captured for context/persistence, ready for a future consumer.
+// Every field is captured verbatim from the CSV (rule #12), even where nothing downstream
+// reads it yet. The ones already wired into scoring are marked below.
 export interface AffiliateRecord {
   // ── Already consumed live (QuotingService.budgetFromSalary, dependents question skip)
   rangoSalarial?: string;
-  // "AFILLIADO SIN GRUPO_FAMILIAR" (no registered family group, ~58% of real rows)
-  // confidently means dependents=0 — DISCOVERY's dependents question can be skipped
-  // entirely. Other SEGMENTO_GRUPO_FAMILIAR values ("FAMILIA NUCLEAR INTEGRAL", etc.)
-  // confirm a family EXISTS but not the exact count, so they're deliberately NOT mapped
-  // to a number here (rule #12) — the question still gets asked for those.
+  // "AFILLIADO SIN GRUPO_FAMILIAR" (~58% of real rows) confidently means dependents=0. The
+  // other segments confirm a family exists but not a count, so they map to no number.
   dependents?: number;
-  // A real, already-known pet count — same "never ask what we already know" principle
-  // as dependents above. Only present on rows where CONTACTADO="SI" and a pet product
-  // was actually sold (see productoIdPrevio) — same confidence level as dependents.
+  // A pet count already on file — same "never ask what we already know" principle.
   petCount?: number;
 
   // ── Captured, persisted, not yet wired into any scoring rule (available for future use)
@@ -46,8 +32,7 @@ export interface AffiliateRecord {
   drogueria?: boolean;
   agencias?: boolean;
   vivienda?: boolean;
-  // Historical contact/sales outcome from a PRIOR (non-Telegram) commercial attempt —
-  // only populated on rows where CONTACTADO="SI" in the source CSV.
+  // Outcome of a prior, non-Telegram commercial attempt; only on rows with CONTACTADO="SI".
   contactado?: boolean;
   canalContacto?: string;
   diasPrimeraRespuesta?: number;
@@ -73,19 +58,15 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
     return this.loaded;
   }
 
-  // SERIE in the synthetic CSV is a plain sequential row number (1..500000), not a real
-  // Colsubsidio affiliate identifier — this is a hackathon proof-of-concept lookup
-  // mechanism, not a production identity system. `serie.trim()` only (no digit-
-  // stripping here) so callers control normalization; agent.service.ts strips
-  // non-digits before calling this, matching cedula's "solo dígitos" convention.
+  // SERIE is a sequential row number in this synthetic CSV, not a real Colsubsidio id.
+  // trim() only: callers own normalization (agent.service.ts strips non-digits first).
   findBySerie(serie: string): AffiliateRecord | null {
     return this.bySerie.get(serie.trim()) ?? null;
   }
 
   private async load(): Promise<void> {
-    // Repo root, not docs/ — the CSV is committed there (public, non-PII synthetic
-    // data), which is what `process.cwd()` resolves to when the app runs (nest-cli
-    // doesn't relocate non-.ts assets, same convention as pdf.service.ts's IMAGES_DIR).
+    // Repo root, which is what process.cwd() resolves to at runtime — nest-cli doesn't
+    // relocate non-.ts assets.
     const csvPath = this.config.get<string>(
       'AFFILIATE_CSV_PATH',
       path.join(process.cwd(), 'Usos_Productos_Afiliados_SIMULADO.csv'),
@@ -113,17 +94,14 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
       crlfDelay: Infinity,
     });
 
-    // Column-name → index map (not fixed positional indices) so the parser tolerates a
-    // narrower header (e.g. this file's own unit tests, which use small fixture CSVs
-    // with only a few columns) and stays correct if the real CSV's column order ever
-    // changes upstream.
+    // Column-name → index map, not fixed positions: tolerates a narrower header (the unit
+    // fixtures) and survives an upstream column reorder.
     let columnIndex: Record<string, number> = {};
     let serieIdx = -1;
     let isHeader = true;
 
-    // split()/trim() return NEW strings per row: 500k rows held ~7.5M string objects for
-    // only 372 distinct values (every column but SERIE is categorical). Heap 277 → 134 MB.
-    // Matters because this runs pre-listen: running out kills the boot, not just the lookup.
+    // split()/trim() return NEW strings per row: 500k rows held ~7.5M string objects for only
+    // 372 distinct values. Heap 277 → 134 MB, and this runs pre-listen, so it gates the boot.
     const pool = new Map<string, string>();
     const intern = (v: string): string => {
       const hit = pool.get(v);
@@ -176,9 +154,7 @@ export class AffiliateLookupService implements OnApplicationBootstrap {
       const segmentoFamiliar = col(cols, 'SEGMENTO_GRUPO_FAMILIAR');
       if (segmentoFamiliar) record.segmentoGrupoFamiliar = segmentoFamiliar;
       if (segmentoFamiliar === 'AFILLIADO SIN GRUPO_FAMILIAR') record.dependents = 0;
-      // 2026-07-26 — these two segments confirm at least 1 dependent (conservative floor,
-      // same as the NLP's FAMILY_MENTION_PATTERN). Unlike "AFILLIADO SIN GRUPO_FAMILIAR",
-      // which means 0, they only confirm existence — the caller may still ask for a count.
+      // These two segments confirm at least 1 dependent, not a count — the caller may still ask.
       if (segmentoFamiliar === 'FAMILIA MONOPARENTAL' || segmentoFamiliar === 'FAMILIA NUCLEAR INTEGRAL') {
         record.dependents = 1;
       }

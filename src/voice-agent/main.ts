@@ -57,17 +57,14 @@ async function runSession(ctx: JobContext): Promise<void> {
     await session.start({ agent: createVoiceAgent(), room: ctx.room });
     await ctx.connect();
 
-    // The greeting is spoken, not read from STATE_RESPONSES[GREETING] — this is a
-    // genuinely different channel (real-time voice, no Ley 1581 button/text flow yet;
-    // see plan 17 for why AseguraWeb's own authorization step isn't built here).
+    // Spoken, not read from STATE_RESPONSES[GREETING]: real-time voice is a different channel
+    // and has no Ley 1581 text flow yet.
     await session.generateReply({
       instructions: 'Saluda brevemente como Asegura y pregunta qué le gustaría proteger.',
     });
 }
 
-// Guard mirrors LiveKit's own documented pattern (there, `process.argv[1] ===
-// fileURLToPath(import.meta.url)` for ESM) — only start the worker/CLI when this file
-// runs directly, never as a side effect of another module importing it.
+// Only start the worker when this file runs directly, never as a side effect of an import.
 if (require.main === module) {
   // Fail here, by name, instead of registering a worker that dies on every call.
   for (const name of ENTRY_REQUIRED_ENV) requireEnv(name);

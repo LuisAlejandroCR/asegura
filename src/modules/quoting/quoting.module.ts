@@ -1,3 +1,5 @@
+// quoting.module.ts: the scoring engine, the YAML product catalog and the affiliate
+// lookup that feeds them.
 import { Module } from '@nestjs/common';
 import { QuotingService } from './quoting.service';
 import { AffiliateLookupService } from './affiliate-lookup.service';

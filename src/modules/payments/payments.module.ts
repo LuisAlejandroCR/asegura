@@ -1,4 +1,5 @@
-// payments.module.ts: Wompi payment links and webhook
+// payments.module.ts: Wompi payment links and the webhook that confirms them, plus the
+// policy and conversation modules the confirmation path needs.
 import { Module } from '@nestjs/common';
 import { WompiService } from './wompi.service';
 import { WompiWebhookController } from './wompi-webhook.controller';

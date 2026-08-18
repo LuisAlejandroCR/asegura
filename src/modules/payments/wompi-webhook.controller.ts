@@ -1,8 +1,6 @@
-// wompi-webhook.controller.ts: source of truth for payment confirmation.
-// Wompi's Payment Links API has no "reference" create-parameter, so transactions
-// are matched back to a policy via payment_link_id, not the transaction's own
-// auto-generated reference. Chat-based "sí" no longer confirms payment — this
-// webhook is the only path that notifies the user and sends the final PDF.
+// wompi-webhook.controller.ts: the source of truth for payment confirmation. Transactions
+// map back to a policy via payment_link_id, since Wompi's Payment Links API has no
+// "reference" create-parameter. Only this path notifies the user and sends the final PDF.
 import { Controller, Post, Body, UnauthorizedException, Logger } from '@nestjs/common';
 import * as path from 'path';
 import { WompiService } from './wompi.service';
@@ -17,9 +15,8 @@ import { STATE_RESPONSES, formatNameList } from '../agent/conversation-state.mac
 
 const PROCESSED_STATUSES = ['paid', 'active'];
 
-// Path is relative to the project root, not __dirname: nest-cli.json doesn't copy non-.ts
-// assets into dist/, and the server runs `node dist/main` from the root (same convention
-// as pdf.service.ts's IMAGES_DIR). "¡Pago recibido!" is baked into the video itself.
+// Resolved from the project root, not __dirname: nest-cli.json doesn't copy non-.ts assets
+// into dist/. "¡Pago recibido!" is baked into the video itself.
 const PAYMENT_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'payment-received.mp4');
 
 @Controller('webhooks/wompi')
@@ -40,10 +37,8 @@ export class WompiWebhookController {
       throw new UnauthorizedException('Invalid webhook signature');
     }
 
-    // A genuinely-signed event can still carry an unexpected shape (e.g. a ping/test
-    // event, or a future Wompi event type without a transaction) — extractTransactionData
-    // destructures event.data.transaction.* unconditionally, so this must be checked first
-    // to avoid an uncaught TypeError turning into a 500 instead of a clean ignored response.
+    // A genuinely-signed event can still carry an unexpected shape (a ping, a future event
+    // type), and extractTransactionData destructures transaction.* unconditionally.
     if (!event.data?.transaction || typeof event.data.transaction.status !== 'string') {
       this.logger.warn(`Malformed Wompi webhook payload — missing transaction or status`);
       return { status: 'ignored', reason: 'malformed_payload' };
@@ -57,17 +52,15 @@ export class WompiWebhookController {
       return { status: 'ignored', reason: 'no_payment_link_id' };
     }
 
-    // A multi-product purchase ("quiero los dos") issues one policy per product, all
-    // sharing this one combined payment link — never just the first/single match.
+    // A multi-product purchase shares this one combined link across several policies.
     const policies = await this.policy.findAllByWompiLinkId(txData.paymentLinkId);
     if (policies.length === 0) {
       this.logger.warn(`No policy found for payment_link_id ${txData.paymentLinkId}`);
       return { status: 'ignored', reason: 'policy_not_found' };
     }
 
-    // Idempotency — Wompi retries webhook delivery for reliability; if every policy
-    // sharing this link is already paid/active, this transaction (or a duplicate
-    // delivery of it) was already handled in full.
+    // Idempotency: Wompi retries delivery, so if every policy on this link is already
+    // paid/active, this transaction was handled in full.
     const pending = policies.filter((p) => !PROCESSED_STATUSES.includes(p.status));
     if (pending.length === 0) {
       return { status: 'already_processed' };
@@ -105,8 +98,6 @@ export class WompiWebhookController {
     };
     await this.conversations.saveState(conversation.id, ConversationState.POLICY_ISSUED, newContext);
 
-    // 2026-07-24 gamification feedback: same celebratory, personalized style as the
-    // single-policy STATE_RESPONSES[POLICY_ISSUED] message.
     let message: string;
     if (policies.length > 1) {
       const firstName = newContext.nombre?.split(' ')[0];
@@ -122,14 +113,10 @@ export class WompiWebhookController {
     } else {
       message = STATE_RESPONSES[ConversationState.POLICY_ISSUED](newContext);
     }
-    // 2026-07-24 feedback: the real Wompi approval is the actual "successfully paid"
-    // moment — gets the same branded success-checkmark video as the selfie and
-    // Tarjeta Colsubsidio moments.
     await adapter.sendAnimation(conversation.user_id, PAYMENT_ANIMATION_PATH);
     await adapter.sendText(conversation.user_id, message);
 
-    // This is the only PDF the user ever receives — the draft PDF before payment was
-    // removed in an earlier fix, so each policy must send unconditionally on approval.
+    // The only PDF the user ever receives, so each policy sends unconditionally on approval.
     for (const policy of policies) {
       const pdfBuffer = await this.policy.generateFinalPdf(policy);
       if (pdfBuffer) {
@@ -137,10 +124,8 @@ export class WompiWebhookController {
       }
     }
 
-    // 2026-07-24 — cross-sell happens strictly AFTER payment, never mid-quote (see
-    // deferCrossSell). An earlier category interest is followed up by name and seeded into
-    // context so even a bare "sí" quotes immediately. Starts a NEW purchase: identity is
-    // kept so DATA_CAPTURE doesn't re-ask, every product-specific field is reset.
+    // Cross-sell happens strictly AFTER payment, never mid-quote. It starts a NEW purchase:
+    // identity is kept so DATA_CAPTURE doesn't re-ask, every product field is reset.
     const pendingCategory = newContext.pendingCrossSell;
     const crossSellText = pendingCategory
       ? `¿Seguimos con el seguro de *${pendingCategory}* que mencionaste? Cuéntame y te cotizo.`
@@ -152,31 +137,25 @@ export class WompiWebhookController {
       documentType: newContext.documentType,
       nombre: newContext.nombre,
       email: newContext.email,
-      // Phone verification (2026-07-24 KYC feedback) is a one-time identity check, not
-      // per-purchase — carried over exactly like cédula/nombre/correo so a returning
-      // customer isn't asked to re-verify on their next purchase in this conversation.
+      // A one-time identity check, not per-purchase — carried over like cédula/nombre/correo.
       phoneVerified: newContext.phoneVerified,
       verifiedPhone: newContext.verifiedPhone,
-      // Cosmetic selfie step (2026-07-24) — same one-time-per-conversation reasoning.
+      // Same one-time-per-conversation reasoning as the phone check.
       selfieProvided: newContext.selfieProvided,
       productCategory: pendingCategory ?? undefined,
       awaitingCrossSellResponse: true,
-      // Live bug: must persist permanently, unlike policyIds (reset per purchase) and
-      // awaitingCrossSellResponse (one-shot). It's the only signal that lets a later
-      // abandonIntent tell "already bought" from "never bought", so a declined cross-sell
-      // isn't recorded as never having purchased.
+      // Must persist permanently, unlike policyIds (reset per purchase) and
+      // awaitingCrossSellResponse (one-shot): it is the only signal that lets abandonIntent
+      // tell "already bought" from "never bought".
       hasCompletedPurchase: true,
-      // 2026-07-26 feature request: unlike policyId/policyIds, this DOES carry forward —
-      // it's the durable record a later "¿qué cubre mi póliza?" question in COMPLETED
-      // reads from (see AgentService's answerPolicyInquiry), since policyId/policyIds
-      // are gone by then, reset for whatever the NEXT purchase in this conversation is.
+      // Unlike policyId/policyIds this carries forward: it is what a later "¿qué cubre mi
+      // póliza?" reads from once those are reset for the next purchase.
       purchasedProductIds: newContext.purchasedProductIds,
     };
     await this.conversations.saveState(conversation.id, ConversationState.DISCOVERY, followUpContext);
 
-    // 2026-07-25 feature request: this offer is sent from here, not from a Telegram
-    // message, so AgentService.handleMessage's own reminder scheduling never runs for
-    // it — arm the 30s "come back to chat" reminder here too.
+    // Sent from here, not from a chat message, so handleMessage's own reminder scheduling
+    // never runs for it.
     this.reminders.schedule(conversation.id, conversation.user_id);
   }
 
@@ -185,8 +164,7 @@ export class WompiWebhookController {
     const conversation = await this.conversations.findById(policy.conversation_id);
     if (!conversation) return;
 
-    // Clear the dead checkoutUrl so the user's next "sí" creates a fresh payment link
-    // instead of handlePayment telling them their (declined) old link "sigue activo".
+    // Clear the dead checkoutUrl so the next "sí" mints a fresh link instead of re-offering it.
     const newContext: ConversationContext = { ...conversation.context, checkoutUrl: undefined };
     await this.conversations.saveState(conversation.id, ConversationState.PAYMENT, newContext);
 

@@ -1,4 +1,4 @@
-// types.ts: the quoting domain — AffiliateSignals (the profile scoring reads),
+// quoting/types.ts: the quoting domain — AffiliateSignals (the profile scoring reads),
 // InsuranceProduct, InsuranceScore, and the IProductRepository the catalog implements.
 
 interface InsuranceProduct {
@@ -10,12 +10,10 @@ interface InsuranceProduct {
   url: string;
   coverages: string[];
   eligibility: { minAge?: number; maxAge?: number; family?: boolean; pet?: string };
-  // 2026-07-24 business feedback: these 7 products are the current priority for sale —
-  // used as a small scoring tie-breaker, never a hard filter.
+  // Current priority for sale: a small scoring tie-breaker, never a hard filter.
   businessPriority?: boolean;
-  // 2026-07-24 business feedback: requires conditional underwriting (age, pre-existing
-  // illnesses, clinical history) before the policy can be issued — checked by
-  // AgentService's DATA_CAPTURE flow, not by the scoring engine itself.
+  // Needs age, pre-existing illnesses and clinical history before issuing — enforced by
+  // DATA_CAPTURE, not by the scoring engine.
   requiresUnderwriting?: boolean;
 }
 
@@ -27,7 +25,7 @@ interface InsuranceScore {
   priority: 'high' | 'medium' | 'low';
 }
 
-// Salary ranges from Usos_Productos_Afiliados_SIN_ID.xlsx RANGO_SALARIAL column
+// Salary ranges as published in the affiliate CSV's RANGO_SALARIAL column
 type RangoSalarial =
   | 'Hasta 2 SMLV'
   | 'Entre 2 y 4 SMLV'
@@ -45,32 +43,19 @@ interface AffiliateSignals {
   budget?: number | null;
   edad?: number;
   depends?: string;
-  // From xlsx: salary segment used as budget proxy when explicit budget unknown
+  // Salary segment, used as a budget proxy when no explicit budget is known.
   rangoSalarial?: RangoSalarial;
-  // 2026-07-26 — a real, live-captured signal (see ConversationContext.dependents,
-  // src/modules/agent/types.ts) unlike `beneficiaries`, which Groq's own JSON schema
-  // shows as an example value (`"beneficiaries": 1`) the LLM often defaults to even with
-  // no real family-size signal in the message. 0 is a meaningful, deliberate answer;
-  // undefined means the dependents question was never asked/answered — evaluateProduct
-  // falls back to the beneficiaries heuristic only in that undefined case.
+  // A real, live-captured signal, unlike `beneficiaries` — Groq often echoes the 1 from its
+  // own schema example. 0 is deliberate; undefined means the question was never asked.
   dependents?: number;
-  // From xlsx: family segment (e.g. FAMILIA MONOPARENTAL, FAMILIA NUCLEAR INTEGRAL) —
-  // captured when the affiliate self-identifies via SERIE lookup. Used for personalized
-  // recommendation reasons alongside dependents/beneficiaries.
+  // Family segment from the affiliate CSV, used in the personalized recommendation reasons.
   segmentoGrupoFamiliar?: string;
-  // 2026-07-26 (Matriz 2, C05: "¿Necesitas la protección en los próximos días?") —
-  // already inferred by the NLP layer from words like "urgente"/"ya" (InsuranceIntent,
-  // nlp/types.ts) but never previously captured into context or read by scoring. No new
-  // question needed to wake this: it's a byproduct of language already used in a normal
-  // DISCOVERY reply.
+  // Inferred by the NLP from words like "urgente"/"ya" — no extra question needed to get it.
   urgency?: 'immediate' | 'exploring';
 }
 
-// 2026-07-26 — the adapter-pattern boundary (CLAUDE.md rule #6) between QuotingService's
-// scoring engine and wherever the catalog actually lives (today: products.data.ts;
-// tomorrow: catalog/products/*.yaml once its schema carries every field evaluateProduct()
-// needs; later: Supabase). QuotingService depends on this interface only — see
-// product-catalog.service.ts for the current implementation.
+// The adapter boundary (rule #6) between the scoring engine and wherever the catalog lives
+// — today catalog/products/*.yaml via ProductCatalog, tomorrow possibly Supabase.
 interface IProductRepository {
   getProducts(): InsuranceProduct[];
   getProduct(id: string): InsuranceProduct | undefined;

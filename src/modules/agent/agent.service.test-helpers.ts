@@ -57,8 +57,8 @@ function buildService(overrides: {
     sendAnimation: jest.fn().mockResolvedValue(undefined),
     sendChoices: jest.fn().mockResolvedValue(undefined),
   };
-  // Every existing spec calls handleMessage() with no channel arg, defaulting to
-  // 'telegram' — the registry just needs to resolve back to the same mock adapter above.
+  // Existing specs call handleMessage() with no channel arg, so the registry has to resolve
+  // back to the same mock adapter above.
   const channels = {
     get: jest.fn().mockReturnValue(telegram),
   };
@@ -83,16 +83,12 @@ function buildService(overrides: {
     schedule: jest.fn(),
     cancel: jest.fn(),
   };
-  // Disabled by default (matches "CSV not found" — the real default in production
-  // without AFFILIATE_CSV_PATH configured) so pre-existing tests that don't care about
-  // affiliate lookup see it as a no-op, exactly like Wompi/LLM being unconfigured.
+  // Disabled by default, matching production without AFFILIATE_CSV_PATH configured.
   const affiliateLookup = {
     isEnabled: jest.fn().mockReturnValue(false),
     findBySerie: jest.fn().mockReturnValue(null),
   };
-  // ADMIN_CHAT_ID unset by default (matches production without it configured) — the
-  // stuck-loop escalation notification is a no-op, same optional-integration convention
-  // as affiliateLookup/wompi above.
+  // ADMIN_CHAT_ID unset by default: the escalation notification is a no-op, like wompi/LLM.
   const config = {
     get: jest.fn().mockReturnValue(undefined),
   };

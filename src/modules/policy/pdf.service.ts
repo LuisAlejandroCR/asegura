@@ -1,4 +1,5 @@
-// pdf.service.ts: generates a branded policy PDF using pdfkit + a verification QR
+// pdf.service.ts: renders the branded policy PDF with pdfkit — holder details, premium box,
+// pets table, coverages and a verification QR.
 import { Injectable, Logger } from '@nestjs/common';
 import * as PDFDocument from 'pdfkit';
 import * as QRCode from 'qrcode';
@@ -11,21 +12,16 @@ interface PolicyPdfData {
   coverages: string[];
   nombre: string;
   cedula: string;
-  // Colombian ID type — CC (cédula de ciudadanía) is the default; CE, TI, NIP, NUIP also
-  // identify a real person and shouldn't be mislabeled on the printed certificate.
+  // CC is the default, but CE/TI/NIP/NUIP identify real people and must not be mislabeled.
   documentType?: string;
   email?: string;
-  // The final, already-computed TOTAL locked in at issuance (see PolicyService.issue()
-  // / computeTotalPremium) — NOT a per-unit price. For a multi-pet policy this is
-  // basePremium × petCount, already multiplied; buildPremiumLines derives the per-pet
-  // display by dividing back down, it must never multiply this value again.
+  // The already-computed TOTAL locked in at issuance, NOT a per-unit price. buildPremiumLines
+  // derives the per-pet display by dividing back down; it must never multiply this again.
   monthlyPremium: number;
   issuedAt: Date;
-  // Number of pets covered — mascotas products are priced per pet; when set and > 1,
-  // the premium box shows both the per-pet price (monthlyPremium / petCount) and the total.
+  // When set and > 1, the premium box shows both the per-pet price and the total.
   petCount?: number | null;
-  // Per-pet identity (name, age, breed) — shown as a table when present, matching how
-  // real pet-insurance certificates name each covered animal individually.
+  // Shown as a table, matching how real pet certificates name each covered animal.
   pets?: { name: string; age: string; breed: string }[];
 }
 
@@ -39,15 +35,14 @@ const BRAND = {
   white: '#ffffff',
 };
 
-// Static brand assets — referenced relative to the project root (not __dirname) because
-// nest-cli.json doesn't copy non-.ts assets into dist/, and the server runs `node dist/main`
-// from the project root, so `src/images/` is reachable at runtime via process.cwd().
+// Static brand assets, resolved from the project root rather than __dirname: nest-cli.json
+// doesn't copy non-.ts assets into dist/, and the server runs `node dist/main` from the root.
 const IMAGES_DIR = path.join(process.cwd(), 'src', 'images');
 const LOGO_WHITE = path.join(IMAGES_DIR, 'Logov2.png'); // white wordmark, for the blue header
 const LOGO_YELLOW = path.join(IMAGES_DIR, 'LogoV1.png'); // yellow wordmark, for the white footer
 
-// LogoV1.png is a 1200x1200 canvas with the visible wordmark occupying only a thin
-// horizontal band — measured once via a raw PNG alpha-channel scan (colorType 6, 8-bit RGBA).
+// LogoV1.png is a 1200x1200 canvas whose wordmark occupies a thin horizontal band —
+// measured once with a raw PNG alpha-channel scan.
 const LOGO_YELLOW_CANVAS = { w: 1200, h: 1200 };
 const LOGO_YELLOW_CROP = { x: 29, y: 486, w: 1141, h: 217 };
 
@@ -180,13 +175,9 @@ export class PdfService {
     doc.y = Math.max(lineY, startY + boxHeight) + 20;
   }
 
-  // Real bug found 2026-07-24: this used to treat its input as a PER-UNIT price and
-  // multiply it by petCount — but PolicyService.issue() stores monthly_premium as the
-  // ALREADY-multiplied total locked in at issuance (computeTotalPremium(product,
-  // petCount)), and generateFinalPdf forwards that same total straight through. Any real
-  // multi-pet policy's certificate showed a fabricated, doubly-multiplied total (e.g. a
-  // real $43.500 charge printed as $130.500). totalPremium here IS the final locked-in
-  // total; the per-pet line is derived by dividing back down, never multiplying again.
+  // This used to multiply its input by petCount, but monthly_premium is ALREADY the total
+  // locked in at issuance — a real $43.500 charge printed as $130.500. The per-pet line is
+  // derived by dividing back down, never by multiplying again.
   private buildPremiumLines(totalPremium: number, petCount?: number | null): { primary: string; total: string | null } {
     if (petCount && petCount > 1) {
       const perPet = totalPremium / petCount;
@@ -321,8 +312,7 @@ export class PdfService {
     }
   }
 
-  // Renders only a sub-region (crop) of a source image, scaled to a destination width,
-  // via a clip path — pdfkit has no built-in image cropping, only whole-image placement.
+  // pdfkit has no image cropping, so a sub-region is rendered through a clip path.
   private drawCroppedImage(
     doc: InstanceType<typeof PDFDocument>,
     imagePath: string,

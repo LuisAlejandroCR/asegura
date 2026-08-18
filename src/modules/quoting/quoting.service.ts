@@ -19,15 +19,9 @@ export class QuotingService {
     const scores = this.scoreAll(signals);
     if (scores.length === 0) return null;
 
-    // Product decision (2026-07-26, live-test screenshot + user confirmation): a
-    // related-but-different category (e.g. asistencia) could outscore an EXACT match
-    // (e.g. vida) when it has other bonuses (family, budget) the exact match lacks —
-    // silently substituting the category the user explicitly asked for (an F01 button
-    // tap, or a named category) with a different one for the FIRST quote shown. An
-    // explicit category choice must never be substituted here. Scans the FULL scored
-    // list (not just the top-3 `score()` slice) so an exact match still wins even if it
-    // didn't make the top 3 overall. A related-category product can still surface later
-    // via "otro" (wantsAlternative reads quoting.score()'s own top-3 — unaffected).
+    // An explicit category choice must never be substituted: a related category can outscore
+    // an exact match on other bonuses (family, budget). Scans the FULL scored list, not just
+    // the top-3 slice, so an exact match wins even when it missed the top 3.
     if (signals.productCategory) {
       const exactMatch = scores.find((s) => this.catalog.getProduct(s.productId)?.category === signals.productCategory);
       if (exactMatch) {
@@ -55,13 +49,8 @@ export class QuotingService {
     return scores;
   }
 
-  // 2026-07-26 fix: "why this product" reasons used to surface in PUSH order, not
-  // relevance order — the exact-category branch pushed NO reason at all, the related-
-  // category branch pushed a raw code-y slug (`Categoría: vida`), and the persuasive
-  // hyper-personalization sentences were pushed last, so `formatQuote`'s `reasons[0]`
-  // (agent.service.ts) almost always displayed the least compelling line, or the slug.
-  // Weight-ranking and sorting at the end fixes the ORDER only — every `matchScore`
-  // computation below is byte-for-byte identical to before this change.
+  // Reasons are weight-ranked and sorted at the end so formatQuote's reasons[0] is the most
+  // persuasive line, not the first one pushed. Every matchScore below is unchanged by it.
   private static readonly REASON_WEIGHT = {
     tier: 100,
     family: 90,
@@ -96,12 +85,9 @@ export class QuotingService {
       addReason(QuotingService.REASON_WEIGHT.species, `Para ${signals.petType}s`);
     }
 
-    // beneficiaries > 1 only — Groq's own JSON schema shows "beneficiaries": 1 as an
-    // EXAMPLE value in the prompt, so the LLM often defaults to 1 even when the message
-    // carries no real signal about family size. Showing "Cubre a 1 personas" (also
-    // ungrammatical: singular count, plural noun) as a "personalized" reason for every
-    // single-person quote is a trivially-true, non-distinguishing fact that undermines
-    // the actual personalization pitch — real bug observed in an external test session.
+    // beneficiaries > 1 only: Groq's own schema shows "beneficiaries": 1 as an EXAMPLE, so the
+    // model defaults to it with no real signal. "Cubre a 1 personas" as a personalized reason
+    // is trivially true and undermines the pitch.
     if (signals.beneficiaries && signals.beneficiaries > 1 && product.eligibility.family) {
       matchScore += 20;
       addReason(QuotingService.REASON_WEIGHT.family, `Cubre a ${signals.beneficiaries} personas`);
@@ -124,37 +110,22 @@ export class QuotingService {
       }
     }
 
-    // 2026-07-26 (Matriz 2, C05: "¿Necesitas la protección en los próximos días?") —
-    // already inferred by the NLP layer from words like "urgente"/"ya", never previously
-    // read here. `requiresUnderwriting` products (vida, medicina-prepagada-*) need age/
-    // pre-existing-illness info collected before the policy can even be issued (see
-    // AgentService's DATA_CAPTURE flow) — genuinely slower to activate, a real,
-    // catalog-honest distinction (rule #12), not an invented one. A direct-sell product
-    // that can be issued right away is the better fit for someone who said they need
-    // protection now.
+    // requiresUnderwriting products (vida, medicina-prepagada-*) need age and pre-existing
+    // illness info before they can be issued, so they are genuinely slower to activate — a
+    // real catalog distinction for someone who says they need protection now.
     if (signals.urgency === 'immediate' && !product.requiresUnderwriting) {
       matchScore += 10;
       addReason(QuotingService.REASON_WEIGHT.urgency, 'Necesitas protección ya — este seguro no requiere trámites adicionales, se activa de inmediato');
     }
 
-    // 2026-07-24 business feedback: 7 products are the current sales priority — a small
-    // tie-breaker boost, never a hard filter, so a genuinely better-matching product
-    // (e.g. the right pet-species medicine) still wins on its own signals.
+    // Current sales priority: a small tie-breaker, never a hard filter.
     if (product.businessPriority) {
       matchScore += 10;
     }
 
-    // 2026-07-25 hyper-personalization tier — ported from analytics/reglas_negocio.py,
-    // reworked to use only signals the live conversation collects. The age/pensioner tier
-    // (exequial for 55+) could NOT be ported: AffiliateSignals.edad is declared but never
-    // populated live — the NLP schema only extracts a PET's age, never the affiliate's.
-    //
-    // Bug found 2026-07-25: this originally checked only budgetFromSalary(rangoSalarial),
-    // which is also never populated live (offline CSV-calibration signal only, same class
-    // of bug as edad). `budget` is the one live income signal, so it reuses effectiveBudget.
-    //
-    // 2026-07-26 — `dependents` (Step 3 DISCOVERY) is live-captured, unlike `beneficiaries`;
-    // it wins when asked, and when undefined the old fallback is byte-for-byte unchanged.
+    // Hyper-personalization tier. `edad` and `rangoSalarial` are declared but never populated
+    // live, so this reads `budget`; `dependents` wins when it was asked, and `beneficiaries`
+    // stays the fallback when it wasn't.
     const hasDependents = signals.dependents !== undefined
       ? signals.dependents > 0
       : (!!signals.beneficiaries && signals.beneficiaries > 1);
@@ -166,10 +137,8 @@ export class QuotingService {
         addReason(QuotingService.REASON_WEIGHT.tier, `Tienes ${signals.beneficiaries} personas a cargo y un ingreso que permite ahorrar — Vida+Ahorro protege y capitaliza a la vez`);
       } else if (hasDependents && !highIncome && product.id === 'vida') {
         matchScore += 15;
-        // 2026-07-26: use the CSV's SEGMENTO_GRUPO_FAMILIAR for a more specific reason
-        // when available — "familia monoparental" and "familia nuclear integral" are the
-        // only two segments that can ground a concrete family-structure sentence without
-        // inventing details (rule #12).
+        // The only two segments specific enough to ground a family sentence without inventing
+        // details (rule #12).
         const segmentReason = signals.segmentoGrupoFamiliar === 'FAMILIA MONOPARENTAL'
           ? `Tienes ${signals.beneficiaries} personas a cargo — como cabeza de familia monoparental, proteger tu ingreso es esencial para tu hogar`
           : signals.segmentoGrupoFamiliar === 'FAMILIA NUCLEAR INTEGRAL'
@@ -186,8 +155,7 @@ export class QuotingService {
 
     matchScore = Math.min(matchScore, 100);
 
-    // Array.sort is stable (Node ≥11) — reasons with the SAME weight keep their original
-    // push order, so this is purely a re-rank, never a scoring change.
+    // Array.sort is stable, so equal weights keep their push order — a re-rank, not a rescore.
     const reasons = weightedReasons
       .slice()
       .sort((a, b) => b.weight - a.weight)
@@ -202,17 +170,9 @@ export class QuotingService {
     };
   }
 
-  // Maps RANGO_SALARIAL from the affiliate xlsx to an approximate monthly discretionary
-  // budget for insurance. Normalized (trim/case/accents) because the xlsx is an external
-  // file Colsubsidio regenerates — a stray whitespace or casing difference must not
-  // silently drop this scoring boost with no error or fallback signal.
-  //
-  // Real bug found 2026-07-24, cross-checked against the actual affiliate data
-  // (Usos_Productos_Afiliados_SIN_ID, ~465k non-empty rows): the previous map's keys
-  // ('hasta 2 smlv', 'entre 2 y 4 smlv', 'mas de 10 smlv', ...) never matched ANY real
-  // RANGO_SALARIAL value — the real bands are finer-grained. "Entre 1 y 1.5 SMLV" alone
-  // (the most common, ~65% of rows) got silently NO budget boost at all. These are the
-  // 12 actual band strings from the real distribution.
+  // Maps RANGO_SALARIAL to an approximate monthly budget for insurance. Normalized
+  // (trim/case/accents) because the CSV is regenerated upstream. The previous keys matched
+  // NO real value: "Entre 1 y 1.5 SMLV", 65% of rows, silently got no boost at all.
   private budgetFromSalary(rango?: string): number | null {
     if (!rango) return null;
     const map: Record<string, number> = {
@@ -244,10 +204,8 @@ export class QuotingService {
     const related: Record<string, string[]> = {
       vida: ['vida', 'accidentes'],
       accidentes: ['accidentes', 'vida'],
-      // 'hogar' has no dedicated product in the real catalog (rule: only real
-      // colsubsidio.com/seguros prices) — asistencias-multiples explicitly covers
-      // "asistencia en el hogar", so a hogar signal cross-sells into asistencia products
-      // instead of hitting a structural dead end.
+      // 'hogar' has no dedicated product in the real catalog, and asistencias-multiples
+      // explicitly covers "asistencia en el hogar" — so a hogar signal cross-sells there.
       asistencia: ['asistencia', 'vida', 'hogar'],
       mascotas: ['mascotas'],
     };

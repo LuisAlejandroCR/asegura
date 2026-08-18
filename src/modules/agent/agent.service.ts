@@ -1,7 +1,6 @@
-// agent.service.ts: the conversation orchestrator — routes every inbound message
-// through the state machine, asks the NLP layer for intent, and lets the rules engine
-// decide product and price. Most comments below record a specific live-test bug and
-// why the fix is shaped the way it is; they are the reason the flow looks like this.
+// agent.service.ts: the conversation orchestrator — routes every inbound message through
+// the state machine, asks the NLP layer for intent, and lets the rules engine decide product
+// and price.
 
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -27,13 +26,9 @@ import { ProductCatalog } from '../quoting/product-catalog.service';
 import { computeTotalPremium } from '../quoting/pricing';
 import { matchBreed } from './breed-matcher';
 
-// The AseguraWeb (texto.html/voz.html) reply shape — handleWebMessage's return value,
-// mirrored 1:1 from ProcessResult's dispatch branches in handleMessage/computeReply, just
-// serialized instead of pushed through an IChannelAdapter. `quote` matches
-// src/voice-agent/cotizar-tool.ts's CotizarResult shape on purpose — same product/price/
-// reason data, same source (QuotingService), whether the session is voice or text.
-// Split unit price from count so the UI never has to guess whether a number is per-pet
-// or already multiplied — the ambiguity behind the understated card.
+// The AseguraWeb reply shape — the same branches handleMessage dispatches, serialized
+// instead of pushed through an IChannelAdapter. `quote` matches cotizar-tool.ts's
+// CotizarResult on purpose. Unit price and count are split so the UI never has to guess.
 export interface WebQuoteLine {
   producto: string;
   aseguradora: string;
@@ -50,8 +45,8 @@ export interface WebReply {
   progress: { step: number; totalSteps: number; label: string };
   choices?: string[];
   quote?: { producto: string; aseguradora: string; precioMensual: number; coberturas: string[]; razon: string };
-  // A mixed-species household is TWO products, and `quote` can only hold one — the card
-  // showed the cat price as the whole premium. Every line, each priced by its own count.
+  // A mixed-species household is TWO products and `quote` holds one, so the card showed the
+  // cat price as the whole premium. One line per product, each priced by its own count.
   quotes?: WebQuoteLine[];
   totalMensual?: number;
   document?: { filename: string; downloadUrl: string };
@@ -65,51 +60,35 @@ interface ProcessResult {
   nextState?: ConversationState;
   context?: ConversationContext;
   document?: { buffer: Buffer; filename: string };
-  // When set, `text` is sent via the Telegram native contact-share button instead of a
-  // plain message (2026-07-24 KYC feedback — see AgentService's phone-verification gate).
+  // Sends `text` via Telegram's native contact-share button instead of a plain message.
   requestContact?: boolean;
-  // When set, reacts to the triggering message with this emoji (2026-07-24 feedback — a
-  // lightweight "animated success" touch, e.g. on the selfie photo itself).
+  // Reacts to the triggering message with this emoji, e.g. on the selfie photo itself.
   reaction?: string;
-  // Upgrades `reaction` to Telegram's "big" reaction (a much larger animated burst) —
-  // used for the phone/contact-share confirmation.
+  // Upgrades `reaction` to Telegram's "big" variant, used for the contact-share confirmation.
   reactionBig?: boolean;
-  // When set, sends this local video file as a Telegram animation (2026-07-24 feedback —
-  // a real branded success-checkmark clip, used for the selfie-confirmed and
-  // Tarjeta Colsubsidio moments — heavier than `reaction`, so only where explicitly asked).
+  // A local video sent as a Telegram animation — heavier than `reaction`, used only where asked.
   animation?: string;
-  // 2026-07-26 hybrid buttons (Step 4) — when set, `text` is sent via a Telegram reply
-  // keyboard offering these as tappable shortcuts. A tap arrives back as an ordinary text
-  // message on the same webhook — free text/voice remain fully valid answers too; no
-  // button is ever mandatory (rule #10).
+  // A reply keyboard of tappable shortcuts. A tap arrives as an ordinary text message on the
+  // same webhook; free text and voice stay fully valid, no button is ever mandatory (rule #10).
   choices?: string[];
-  // 2026-07-26 stuck-loop circuit breaker — set when this specific reply means "the agent
-  // genuinely didn't understand / doesn't have the answer", never for a normal
-  // acknowledgment or a deliberate polite decline. handleMessage tallies consecutive
-  // occurrences (ConversationContext.consecutiveUnclearReplies) and escalates to a human
-  // once the streak crosses the threshold — see applyCircuitBreaker.
+  // Set when a reply means "the agent genuinely didn't understand", never for a normal
+  // acknowledgment or a polite decline. Consecutive occurrences escalate to a human.
   unclearReply?: boolean;
 }
 
-// Static brand assets — referenced relative to the project root (not __dirname) because
-// nest-cli.json doesn't copy non-.ts assets into dist/, and the server runs `node dist/main`
-// from the project root, so `src/assets/` is reachable at runtime via process.cwd()
-// (same convention as pdf.service.ts's IMAGES_DIR). Each has its own baked-in text label
-// (2026-07-24 feedback) — no separate "confirmed" text message needed alongside it.
+// Static brand assets, resolved from the project root rather than __dirname: nest-cli.json
+// doesn't copy non-.ts assets into dist/. Each clip has its text label baked in.
 const IDENTITY_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'identity-confirmed.mp4');
 const PAYMENT_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'payment-received.mp4');
 
-// 2026-07-26 Step 4 — F01 buttons at AUTHORIZATION→isAffirmative. Only categories the
-// catalog can sell (rule #12) — no vehículo/viaje/patrimonio/hogar product exists, so free
-// text can still ask about them (detectOutOfCatalogCategory), but no button offers them.
-// Exported so the label→parser invariant test shares this exact array as its source of truth.
+// F01 buttons, offered at AUTHORIZATION→isAffirmative. Only categories the catalog can sell
+// (rule #12); free text can still ask about the rest. Exported so the invariant test shares
+// this exact array.
 export const F01_CHOICES = ['❤️ Mi familia', '🏥 Mi salud', '🐾 Mi mascota', '🤕 Accidentes', '🤔 No estoy seguro'];
 
-// Live bug (2026-07-26): tapping "❤️ Mi familia" quoted a wrong category first. Not a
-// scoring bug — no realistic input lets a related category outscore an exact match.
-// Cause: Groq can misclassify a short emoji label, and the existing null-only guardrail
-// never corrects a confident wrong answer. A button tap has zero ambiguity, so it's keyed
-// deterministically here instead. "🤔 No estoy seguro" is absent on purpose — no forcing.
+// A button tap has zero ambiguity, so it is keyed deterministically: Groq can misclassify a
+// short emoji label, and the null-only guardrail never corrects a confident wrong answer.
+// "🤔 No estoy seguro" is absent on purpose — nothing is forced.
 const F01_CATEGORY_MAP: Record<string, NonNullable<InsuranceIntent['productCategory']>> = {
   '❤️ mi familia': 'vida',
   '🏥 mi salud': 'asistencia',
@@ -124,9 +103,8 @@ export class AgentService {
   constructor(
     @Inject('INlpProvider')
     private readonly nlp: INlpProvider,
-    // Admin escalation/lead notifications (below) are deliberately hardcoded to
-    // Telegram, not resolved via `channels` — ops always monitors there regardless of
-    // which channel the customer used.
+    // Admin escalation and lead notifications are deliberately hardcoded to Telegram — ops
+    // watches there regardless of which channel the customer used.
     private readonly telegram: TelegramAdapter,
     private readonly channels: ChannelRegistry,
     private readonly conversations: ConversationService,
@@ -136,20 +114,13 @@ export class AgentService {
     private readonly reminders: ReminderService,
     private readonly affiliateLookup: AffiliateLookupService,
     private readonly config: ConfigService,
-    // Reused as-is from the Twilio media-URL workaround (document-cache.service.ts) — a
-    // web-session reply needs a fetchable download link too, same reason Twilio does.
-    // Defaulted for the same test-helper convenience as `catalog` below.
+    // A web-session reply needs a fetchable download link, the same reason Twilio does.
     private readonly documentCache: DocumentCacheService = new DocumentCacheService(),
-    // Mints the texto.html/voz.html links offered at DISCOVERY entry (plan-17 §11).
-    // Defaulted to a fresh instance built from the SAME config param above — matches the
-    // other optional-integration defaults in this constructor.
+    // Mints the texto.html/voz.html links offered at DISCOVERY entry.
     private readonly webSessionTokens: WebSessionTokenService = new WebSessionTokenService(config),
-    // Shortens those links before they hit the chat, so the session token isn't sitting in
-    // plain sight in a message that gets screenshotted or forwarded. Defaulted like the
-    // services above so the test helper keeps working without passing one.
+    // Shortens those links so the session token isn't in plain sight in a forwarded message.
     private readonly webLinkCodes: WebLinkCodeService = new WebLinkCodeService(),
-    // Default keeps buildService() in agent.service.test-helpers.ts working unchanged
-    // when it doesn't pass one — Nest's DI still injects the real shared singleton.
+    // Default keeps the test helper working; Nest's DI still injects the real singleton.
     @Inject('IProductRepository')
     private readonly catalog: IProductRepository = new ProductCatalog(),
   ) {}
@@ -160,30 +131,25 @@ export class AgentService {
     ConversationState.REJECTED,
   ]);
 
-  // Live bug: "¿cuál es mejor?"/"cuéntame más"/"beneficios" carry no yes/no/alternative
-  // signal and used to fall through to a silent re-show. Deterministic: it's a request for
-  // more detail on the current product, not a new category for the NLP to classify.
+  // "¿cuál es mejor?"/"cuéntame más" carry no yes/no signal: a request for more detail on the
+  // current product, not a new category for the NLP to classify.
   private static readonly MORE_INFO_PATTERN =
     /\b(cu[eé]ntame\s+m[aá]s|expl[ií]came|de\s+qu[eé]\s+se\s+trata|beneficios|cu[aá]l(?:\s+de\s+todos)?\s+es\s+mejor|mejor\s+para\s+m[ií])\b/i;
 
-  // A COMPLETED customer asking about their OWN policy used to get the generic "¡Todo
-  // listo!" no matter what they asked. Only checked in COMPLETED — never confused with
-  // MORE_INFO_PATTERN above, which answers about a product still being shopped for.
+  // Only checked in COMPLETED, and never confused with MORE_INFO_PATTERN, which is about a
+  // product still being shopped for.
   private static readonly POLICY_INQUIRY_PATTERN =
     /\b(mi p[oó]liza|mi seguro|lo que compr[eé]|lo que ya tengo|qu[eé]\s+cubre|c[oó]mo funciona mi|mi cobertura)\b/i;
 
-  // Live bug: "la primera opción", "la anterior", "¿alguna más económica?" reference a
-  // SPECIFIC already-shown product but had no handler — fell through to a blind re-show,
-  // or worse got matched as isAffirmative (confirming the wrong one). Checked
-  // deterministically before isAffirmative/wantsAlternative: an explicit reference always
-  // wins over a probabilistic LLM guess.
+  // An explicit reference to an already-shown product ("la primera", "la anterior", "más
+  // económica") is resolved deterministically BEFORE isAffirmative, so it always beats a
+  // probabilistic LLM guess — otherwise it confirmed the wrong product.
   private static readonly FIRST_OPTION_PATTERN = /\b(la primera(?:\s+opci[oó]n)?|el primero|primera opci[oó]n)\b/i;
   private static readonly PREVIOUS_OPTION_PATTERN = /\b(la anterior|el anterior|la de antes)\b/i;
   private static readonly CHEAPER_OPTION_PATTERN = /\b(m[aá]s econ[oó]mic\w*|m[aá]s barat\w*|m[aá]s accesible\w*|menos costos?)\b/i;
 
-  // "16 mil algo" -> 16000, "$20.000" / "20000" -> 20000. Deliberately approximate (the
-  // real live-test message was "la que valía 16 mil algo") — matched against shown
-  // products within a tolerance in resolveProductReference, not required to be exact.
+  // "16 mil algo" → 16000. Deliberately approximate — matched against shown products within
+  // a tolerance, never required to be exact.
   private extractMentionedAmount(text: string): number | null {
     const milMatch = text.match(/\b(\d+)\s*mil\b/i);
     if (milMatch) return parseInt(milMatch[1], 10) * 1000;
@@ -206,9 +172,8 @@ export class AgentService {
       .filter((p): p is InsuranceProduct => !!p);
     if (shownProducts.length === 0) return null;
 
-    // Cheap regex checks first, deciding WHICH product (if any) is referenced, before
-    // ever calling the (comparatively expensive, and test-observable) scoring engine —
-    // a message that matches none of these patterns must cost nothing extra.
+    // Cheap regex first, deciding WHICH product is referenced, before calling the scoring
+    // engine: a message matching none of these patterns must cost nothing extra.
     let resolved: InsuranceProduct | null = null;
     if (AgentService.FIRST_OPTION_PATTERN.test(text)) {
       resolved = shownProducts[0];
@@ -235,12 +200,8 @@ export class AgentService {
   }
 
 
-  // `channel` picks which adapter normalizes the raw payload and sends the reply — the
-  // Telegram/Twilio webhook controllers each know which one they are, so it's passed in
-  // rather than guessed from the payload shape. Admin notifications below (escalation,
-  // leads) stay hardcoded to Telegram regardless — ops always monitors there.
-  // Default 'telegram' keeps every existing `handleMessage(raw)` call in the spec files
-  // working unchanged — Telegram was the only channel before this parameter existed.
+  // `channel` picks which adapter normalizes and replies; the webhook controllers each know
+  // which they are. Admin notifications stay on Telegram regardless — ops only watches there.
   async handleMessage(raw: unknown, channel: 'telegram' | 'whatsapp' = 'telegram'): Promise<void> {
     const adapter = this.channels.get(channel);
     const msg: NormalizedMessage = await adapter.normalize(raw);
@@ -253,9 +214,7 @@ export class AgentService {
       return;
     }
 
-    // A contact-share (KYC) or a photo (cosmetic selfie-KYC) message carries no text at
-    // all — let it through instead of the usual empty-text bail, since AgentService
-    // needs to see it.
+    // A contact share or a photo carries no text at all, so it must skip the empty-text bail.
     if (!msg.text && !msg.contact && !msg.photo) return;
 
     this.logger.log(`Message from ${msg.userId}: "${msg.text.slice(0, 80)}"`);
@@ -287,19 +246,13 @@ export class AgentService {
     }
   }
 
-  // Shared core between handleMessage (Telegram/WhatsApp, dispatches the result through an
-  // IChannelAdapter above) and handleWebMessage (AseguraWeb, returns the result as JSON
-  // instead — see web-session.controller.ts). Both entry points build their own
-  // NormalizedMessage and call this; conversation identity is resolved purely from
-  // msg.userId + msg.channel, so a web-originated message carrying the ORIGINAL
-  // Telegram/WhatsApp userId+channel lands on the exact same conversation row
-  // (unique index on (user_id, channel)) — no separate "web channel" conversation ever
-  // gets created.
+  // Shared core between handleMessage (dispatches through an IChannelAdapter) and
+  // handleWebMessage (returns JSON). Conversation identity comes only from userId + channel,
+  // so a web message carrying the original chat identity lands on that same row.
   private async computeReply(msg: NormalizedMessage): Promise<{ conv: Conversation; result: ProcessResult }> {
     const conv = await this.conversations.getOrCreate(msg.userId, msg.channel);
-    // 2026-07-25 feature request: any incoming message proves the user is still here —
-    // cancel whatever "come back to chat" reminder was pending before scheduling a fresh
-    // one below for the response about to go out.
+    // Any incoming message proves the person is still here: cancel the pending reminder before
+    // scheduling a fresh one below.
     this.reminders.cancel(conv.id);
     const lowerText = msg.text.toLowerCase().trim().replace(/[.,!?¡¿:;]+$/, '').trim();
     const rawText = msg.text.trim().replace(/[.,!?¡¿:;]+$/, '').trim();
@@ -313,9 +266,8 @@ export class AgentService {
     const rawResult = await this.processMessage(conv.id, conv.state, conv.context, lowerText, intent, msg.contact, msg.photo, rawText);
     const result = this.applyCircuitBreaker(conv.context, rawResult, msg, conv.state);
 
-    // Maintain conversation history (last N exchanges, session-scoped). Read from the
-    // context that will be persisted — on restart, result.context drops lastMessages via
-    // pickPersistentFields, so old history is not carried across a restart.
+    // Read from the context that will be persisted: on restart pickPersistentFields drops
+    // lastMessages, so history deliberately does not survive.
     const lastMessages = [...((result.context ?? conv.context).lastMessages ?? [])];
     if (msg.text) {
       lastMessages.push({ role: 'user', text: msg.text });
@@ -338,13 +290,10 @@ export class AgentService {
       );
     }
 
-    // Arm the "come back to chat" reminder for whatever state the conversation is in now
-    // — skipped once it's actually over, since nudging someone who already finished (or
-    // was rejected/abandoned) has no point.
+    // Arm the "come back to chat" reminder — skipped once the conversation is actually over.
     const finalState = result.nextState ?? conv.state;
     if (!AgentService.TERMINAL_STATES.has(finalState)) {
-      // A real, still-unconfirmed Wompi link (checkoutUrl) means the conversation must
-      // not auto-abandon on the regular 4-minute window — see PAYMENT_CLOSE_DELAY_MS.
+      // An unconfirmed Wompi link must not auto-abandon on the regular window.
       const finalContext = result.context ?? conv.context;
       this.reminders.schedule(conv.id, msg.userId, !!finalContext?.checkoutUrl);
     }
@@ -352,11 +301,8 @@ export class AgentService {
     return { conv, result };
   }
 
-  // AseguraWeb (texto.html/voz.html) entry point — see web-session.controller.ts. The
-  // token only ever carries a conversationId (plan-17 §11); everything else (channel,
-  // userId) is resolved fresh from the DB here, never trusted from client input, so a
-  // web-originated message lands on the exact same conversation the chat link was minted
-  // from (computeReply's getOrCreate resolves by that SAME user_id+channel).
+  // AseguraWeb entry point. The token carries only a conversationId; channel and userId are
+  // resolved fresh from the DB, never trusted from client input.
   async handleWebMessage(
     conversationId: string,
     input: { text?: string; photo?: { width: number; height: number } },
@@ -374,13 +320,9 @@ export class AgentService {
       userId: conv.user_id,
       text: input.text ?? '',
       timestamp: new Date(),
-      // The signed token itself is proof of possession of the original chat identity —
-      // only that specific Telegram/WhatsApp conversation could have received the link.
-      // No browser equivalent of Telegram's request_contact button exists, so this
-      // mirrors twilio-whatsapp-adapter.service.ts's own pattern EXACTLY: attach `contact`
-      // unconditionally so AgentService's existing phoneVerified gate (built for
-      // Telegram's opt-in contact share, reused as-is by WhatsApp's WaId) is satisfied for
-      // free here too — no new special-casing in the DATA_CAPTURE handler itself.
+      // The signed token is proof of possession of the original chat identity, so `contact` is
+      // attached unconditionally — exactly as the WhatsApp adapter does — and the existing
+      // phoneVerified gate is satisfied without special-casing DATA_CAPTURE.
       contact: { phoneNumber: conv.user_id, firstName: '' },
       ...(input.photo && { photo: input.photo }),
     };
@@ -409,11 +351,10 @@ export class AgentService {
       reply.checkoutUrl = finalContext.checkoutUrl;
     }
 
-    // Same shape/source as src/voice-agent/cotizar-tool.ts's CotizarResult — the resumen
-    // sheet reads structured data, never the markdown-formatted `.text` meant for chat.
+    // Same shape as cotizar-tool.ts's CotizarResult: the sheet reads structured data, never the
+    // markdown `.text` meant for chat.
     if (finalState === ConversationState.QUOTE_PRESENTED && finalContext.quoteProductId) {
-      // selectedProductIds holds every product of a multi-product quote (mixed-species
-      // households); it's absent for an ordinary single-product one.
+      // selectedProductIds holds every product of a multi-product quote; absent for a single one.
       const quotedIds = finalContext.selectedProductIds?.length
         ? finalContext.selectedProductIds
         : [finalContext.quoteProductId];
@@ -462,9 +403,8 @@ export class AgentService {
     return reply;
   }
 
-  // Live-test feedback: escalate to a human instead of repeating "no logré entender"
-  // forever. Counts only turns explicitly flagged unclear (ProcessResult.unclearReply) —
-  // a follow-up question in a normal multi-turn conversation never trips this.
+  // Escalates to a human instead of repeating "no logré entender" forever. Counts only turns
+  // explicitly flagged unclear, so an ordinary follow-up question never trips it.
   private static readonly UNCLEAR_REPLY_ESCALATION_THRESHOLD = 3;
   private static readonly ESCALATION_TEXT =
     'Parece que no te estoy ayudando bien, serás redirigido a mi líder de servicio 🙏';
@@ -478,8 +418,7 @@ export class AgentService {
     const priorCount = originalContext.consecutiveUnclearReplies ?? 0;
 
     if (!result.unclearReply) {
-      // A genuinely understood reply resets the streak — only worth a context write when
-      // there was actually a streak to clear.
+      // An understood reply resets the streak — only worth a write when there was one to clear.
       if (!priorCount) return result;
       return { ...result, context: { ...(result.context ?? originalContext), consecutiveUnclearReplies: 0 } };
     }
@@ -498,10 +437,8 @@ export class AgentService {
     return { ...result, context: { ...(result.context ?? originalContext), consecutiveUnclearReplies: count } };
   }
 
-  // Never blocks or breaks the real conversation flow if it fails or ADMIN_CHAT_ID isn't
-  // configured — same optional-integration pattern as Wompi/Telegram/LLM elsewhere in
-  // this codebase. Reuses telegram.sendText (a Telegram chat id IS just a numeric userId
-  // to that adapter) instead of inventing a separate notification channel/integration.
+  // Never blocks the real conversation if it fails or ADMIN_CHAT_ID is unset. A Telegram chat
+  // id is just a numeric userId to that adapter, so no separate integration is needed.
   private async notifyAdminEscalation(msg: NormalizedMessage, state: ConversationState): Promise<void> {
     const adminChatId = this.config.get<string>('ADMIN_CHAT_ID');
     if (!adminChatId) return;
@@ -514,10 +451,8 @@ export class AgentService {
     await this.telegram.sendText(adminChatId, text);
   }
 
-  // 2026-07-26 — a lead captured after every product in a category ran out (the
-  // "¿te interesa que te avise?" waitlist offer). Same optional-integration pattern as
-  // notifyAdminEscalation above: degrades silently with no ADMIN_CHAT_ID configured,
-  // reuses telegram.sendText instead of a dedicated leads store — this app has none.
+  // A lead captured when every product in a category ran out. Degrades silently with no
+  // ADMIN_CHAT_ID, and reuses telegram.sendText — this app has no leads store.
   private async notifyAdminLead(context: ConversationContext): Promise<void> {
     const adminChatId = this.config.get<string>('ADMIN_CHAT_ID');
     if (!adminChatId) return;
@@ -530,10 +465,8 @@ export class AgentService {
     await this.telegram.sendText(adminChatId, text);
   }
 
-  // Live bug: a returning customer with nombre/email already known still got asked from
-  // scratch when accepting the waitlist offer — violates "nunca preguntar lo que ya
-  // sabemos". Pre-fills from whatever's known, asks only what's missing; skips straight to
-  // finalizing if everything's already known.
+  // Pre-fills from whatever is already known and asks only for what is missing — "nunca
+  // preguntar lo que ya sabemos".
   private beginLeadCapture(context: ConversationContext): ProcessResult {
     const filled: ConversationContext = {
       ...context,
@@ -566,15 +499,12 @@ export class AgentService {
     return this.finalizeLead(filled);
   }
 
-  // Extracted so both the "everything already known" fast path (beginLeadCapture above)
-  // and the "just finished asking for the phone number" path (handleDataCapture below)
-  // share the exact same notify+end logic instead of duplicating it.
+  // Shared by the "everything already known" fast path and the "just asked for the phone" one.
   private finalizeLead(context: ConversationContext): ProcessResult {
     const terminalState = context.hasCompletedPurchase
       ? ConversationState.COMPLETED
       : ConversationState.ABANDONED;
-    // Fire-and-forget, same pattern as notifyAdminEscalation — never blocks or breaks
-    // the real response if it fails or ADMIN_CHAT_ID isn't configured.
+    // Fire-and-forget: never blocks the real response if it fails or ADMIN_CHAT_ID is unset.
     this.notifyAdminLead(context).catch((err) =>
       this.logger.warn(`Admin lead notification failed: ${err}`),
     );
@@ -600,8 +530,6 @@ export class AgentService {
       currentState !== ConversationState.GREETING &&
       currentState !== ConversationState.QUOTE_PRESENTED
     ) {
-      // Live bug (confirmed in production Supabase): two conversations that had already
-      // completed a purchase ended up 'abandoned' after later declining to buy more.
       // "Abandoned before buying" and "bought, then declined more" must never share a status.
       const terminalState = context.hasCompletedPurchase
         ? ConversationState.COMPLETED
@@ -614,26 +542,21 @@ export class AgentService {
 
     switch (currentState) {
       case ConversationState.GREETING:
-        // GREETING's own text already folds in the authorization ask (2026-07-24 — see
-        // conversation-state.machine.ts) — sending AUTHORIZATION's text too would repeat it.
+        // GREETING's text already folds in the authorization ask, so sending this too repeats it.
         return {
           text: STATE_RESPONSES[ConversationState.GREETING](context),
           nextState: ConversationState.AUTHORIZATION,
         };
 
       case ConversationState.AUTHORIZATION:
-        // 2026-07-26 affiliate CSV lookup — one-shot question asked right after "sí",
-        // before DISCOVERY starts. Handled first so a reply here is never re-interpreted
-        // as a fresh yes/no answer to the Ley 1581 consent question below.
+        // One-shot question asked right after "sí". Handled first so the reply is never
+        // re-interpreted as a fresh answer to the Ley 1581 consent question below.
         if (context.awaitingAffiliateId) {
           return this.handleAffiliateId(context, text, rawText);
         }
 
         if (intent.isAffirmative) {
-          // Live bug: a returning affiliate with `serieId` already known (surviving via
-          // persistent memory) still got asked "Ingresa tu ID..." again — violates "nunca
-          // preguntar lo que ya sabemos". `serieId` is always set once a lookup succeeds,
-          // so it's the one reliable signal here.
+          // A returning affiliate whose serieId survived in persistent memory must not be asked again.
           if (context.serieId) {
             const knownContext: ConversationContext = { ...context, autorizado: true, discoveryFilter: true };
             return this.offerDiscoveryEntry(
@@ -642,14 +565,10 @@ export class AgentService {
             );
           }
           return {
-            // 2026-07-26 (feedback): the "puedes responder por texto o audio" reassurance
-            // moved up into GREETING itself (conversation-state.machine.ts) — saying it
-            // again here would be redundant two turns later.
+            // The "puedes responder por texto o audio" reassurance lives in GREETING now.
             text: 'Ingresa tu ID si eres afiliado a Colsubsidio — así puedo ajustar mejor tu cotización. Si no lo eres, escríbeme *"no"*.',
-            // discoveryFilter gates the new `dependents` question below (Step 3,
-            // 2026-07-26) — set only here, on a fresh authorization, so a post-purchase
-            // cross-sell (wompi-webhook.controller.ts, which never sets this field) keeps
-            // quoting a returning buyer immediately, with no re-interrogation.
+            // discoveryFilter gates the `dependents` question, and is set only on a fresh authorization
+            // — a post-purchase cross-sell keeps quoting a returning buyer with no re-interrogation.
             context: { ...context, autorizado: true, discoveryFilter: true, awaitingAffiliateId: true },
           };
         }
@@ -678,17 +597,11 @@ export class AgentService {
         return this.handlePayment(convId, context, text, intent);
 
       default:
-        // Live bug: ReminderService's auto-close promises "aquí estoy — 24/7", but
-        // ABANDONED/REJECTED only restarted on an exact hola/ayuda/inicio match — any
-        // real follow-up got stuck on the same terminal reply forever. Restart
-        // unconditionally here. COMPLETED excluded: those hold real KYC data and blindly
-        // resetting would force a paying customer to redo verification.
+        // The auto-close promises "aquí estoy — 24/7", so any follow-up restarts the conversation,
+        // not just an exact hola/ayuda. COMPLETED is excluded: it holds real KYC data.
         if (currentState === ConversationState.ABANDONED || currentState === ConversationState.REJECTED) {
-          // Persistent memory: carries forward durable profile facts instead of wiping to
-          // {}. Session-scoped state still resets for a fresh inquiry.
-          // Live bug: this rendered GREETING's text but set nextState back to GREETING, so
-          // the user's next message re-rendered the identical text before reaching
-          // AUTHORIZATION. nextState: AUTHORIZATION (matching case GREETING) shows it once.
+          // Carries durable profile facts forward instead of wiping to {}. nextState AUTHORIZATION,
+          // not GREETING, or the identical text renders again on the user's next message.
           const remembered = pickPersistentFields(context);
           return {
             text: STATE_RESPONSES[ConversationState.GREETING](remembered),
@@ -696,9 +609,8 @@ export class AgentService {
             context: remembered,
           };
         }
-        // Checked before the hola/ayuda restart below — "necesito ayuda con mi póliza" is
-        // about an existing purchase, not a restart. Gated on purchasedProductIds, not
-        // policyId/policyIds (already cleared for the next purchase) — see types.ts.
+        // Checked before the hola/ayuda restart: "necesito ayuda con mi póliza" is about an
+        // existing purchase. Gated on purchasedProductIds, since policyIds are already cleared.
         if (
           currentState === ConversationState.COMPLETED &&
           context.purchasedProductIds?.length &&
@@ -707,9 +619,7 @@ export class AgentService {
           return this.answerPolicyInquiry(context);
         }
         if (text.includes('hola') || text.includes('ayuda') || text.includes('inicio') || text === '/start') {
-          // Same fix as the ABANDONED/REJECTED restart above: nextState: AUTHORIZATION
-          // (not GREETING) so the greeting/authorization-ask text is shown exactly once,
-          // not repeated verbatim on the next message.
+          // Same fix as the restart above: nextState AUTHORIZATION, so the greeting is shown once.
           return {
             text: STATE_RESPONSES[ConversationState.GREETING](context),
             nextState: ConversationState.AUTHORIZATION,
@@ -721,13 +631,9 @@ export class AgentService {
     }
   }
 
-  // Affiliate ID lookup. "Nunca preguntar lo que ya sabemos" for income: this is the one
-  // signal Colsubsidio can supply if the user self-identifies via SERIE. A decline, an
-  // unrecognized-but-numeric ID, or lookup being disabled all proceed to DISCOVERY
-  // identically, just without the rangoSalarial boost. Only a non-numeric, non-"no" answer
-  // is rejected (digit-shape guard below).
-  //
-  // SERIE is a plain row number (1..500000, matching the CSV), not a length check like cédula.
+  // Affiliate ID lookup — the one income signal Colsubsidio can supply if the person
+  // self-identifies. A decline, an unknown ID, or a disabled lookup all proceed to DISCOVERY
+  // identically. SERIE is a plain row number (1..500000), so there is no length check.
   private static readonly MAX_SERIE = 500_000;
 
   private handleAffiliateId(context: ConversationContext, text: string, rawText: string): ProcessResult {
@@ -735,15 +641,12 @@ export class AgentService {
     const declines = /^no\b/i.test(text.trim()) || !rawText.trim();
 
     if (!declines) {
-      // Reuses the same digit-extraction convention as cédula (joinSpokenDigits handles
-      // a number dictated one digit at a time by voice, e.g. "1, 2, 3, 4, 5, 6, 7, 8, 9.").
+      // Same digit extraction as cédula, so an ID dictated one digit at a time by voice works.
       const serie = this.joinSpokenDigits(rawText).replace(/\D/g, '');
 
-      // Live bug: a non-numeric, non-"no" answer ("Juan") was silently treated as an
-      // implicit decline, advancing to DISCOVERY without telling the user. Only digits or
-      // "no" pass now. Range 1–MAX_SERIE, not a digit-count check — SERIE is a sequential
-      // row number, so a length check would reject most genuine values. Returns neither
-      // `context` nor `nextState`: the conversation stays put and re-fires this gate.
+      // Only digits or "no" pass: a non-numeric answer ("Juan") used to be treated as an implicit
+      // decline. Range 1–MAX_SERIE, not a digit count — SERIE is a sequential row number. Returns
+      // neither context nor nextState, so the conversation stays put and re-fires this gate.
       const serieNum = serie ? Number(serie) : NaN;
       if (!serie || !Number.isFinite(serieNum) || serieNum < 1 || serieNum > AgentService.MAX_SERIE) {
         return {
@@ -753,8 +656,7 @@ export class AgentService {
 
       if (this.affiliateLookup.isEnabled()) {
         const record = this.affiliateLookup.findBySerie(serie);
-        // Any match enriches now, not just one with rangoSalarial/dependents;
-        // affiliateProfile carries the FULL row forward (types.ts), even unread fields.
+        // Any match enriches now, and affiliateProfile carries the FULL row forward, unread fields included.
         if (record) {
           const enriched: ConversationContext = {
             ...baseContext,
@@ -764,9 +666,8 @@ export class AgentService {
             affiliateProfile: record,
             ...(record.segmentoGrupoFamiliar !== undefined ? { segmentoGrupoFamiliar: record.segmentoGrupoFamiliar } : {}),
             ...(record.rangoSalarial !== undefined ? { rangoSalarial: record.rangoSalarial } : {}),
-            // Pre-fills dependents+askedDependents only for the confidently-known-zero
-            // case. Family-segment minimums stay in affiliateProfile.dependents as a
-            // fallback — the live question is still asked so a real answer wins.
+            // Pre-fills dependents only for the confidently-known-zero case; family-segment minimums
+            // stay a fallback so a real answer still wins.
             ...(record.segmentoGrupoFamiliar === 'AFILLIADO SIN GRUPO_FAMILIAR' && baseContext.dependents === undefined
               ? { dependents: 0, askedDependents: true }
               : {}),
@@ -785,16 +686,10 @@ export class AgentService {
     return this.offerDiscoveryEntry('', baseContext);
   }
 
-  // Sends F01's category buttons — or, if AseguraWeb is configured (WEB_APP_URL), asks
-  // "¿hablar o escribir?" first (plan-17 §11). `awaitingWebModalityChoice`'s gate at the
-  // top of handleDiscovery resolves that reply and falls back to these SAME F01 choices
-  // once it's answered (or unrecognized) — or immediately, if AseguraWeb isn't
-  // configured, which is today's exact behavior, byte-for-byte unchanged.
-  // Swaps a long signed AseguraWeb URL for a short single-use one on the backend's own
-  // host, so the session token never sits in plain view in a chat message. The short host
-  // MUST be the backend (it serves /s/:code) — WEB_APP_URL points at the static site, which
-  // has no such route. With PUBLIC_URL unset there is no host to build, so the long link
-  // goes out unchanged: a visible token beats a link that 404s.
+  // Sends F01's category buttons — or, when WEB_APP_URL is configured, asks "¿hablar o
+  // escribir?" first. The long signed URL is swapped for a short single-use one on the
+  // BACKEND's host (it serves /s/:code); with PUBLIC_URL unset the long link goes out instead,
+  // since a visible token beats a link that 404s.
   private shortLink(destination: string): string {
     const publicUrl = this.config.get<string>('PUBLIC_URL');
     if (!publicUrl) return destination;
@@ -820,18 +715,14 @@ export class AgentService {
 
   // Discovery
 
-  // Resolves the AseguraWeb "¿hablar o escribir?" reply set up by offerDiscoveryEntry
-  // above. Returns null when the reply doesn't clearly say either — the caller then
-  // clears the flag and lets the SAME message fall through to normal DISCOVERY handling
-  // (F01/free text), so a real answer typed instead of tapping a choice is never lost.
+  // Resolves the "¿hablar o escribir?" reply. Returns null when the reply says neither, so
+  // the caller clears the flag and lets the SAME message fall through to normal DISCOVERY.
   private resolveWebModalityChoice(convId: string, context: ConversationContext, text: string): ProcessResult | null {
     const lower = text.toLowerCase();
-    // Live bug (2026-08-18): the question names both options ("¿hablar o escribir?"), so
-    // people answer naming both — "escribir, no hablar", "escribir mejor que hablar". Voice
-    // used to win on a bare mention, recording the choice INVERTED. It surfaces at the very
-    // end: webModality builds Wompi's redirect_url, so someone who asked to write got the
-    // voice page opened on them right after paying. Drop negated mentions, then let
-    // whichever option is named FIRST win — that's the one people lead with.
+    // The question names both options, so people answer naming both ("escribir, no hablar").
+    // Voice used to win on a bare mention, recording the choice INVERTED — and it only surfaced
+    // after payment, since webModality builds Wompi's redirect_url. Negated mentions are dropped
+    // and whichever option is named FIRST wins.
     const stripped = lower.replace(
       /\bno\s+(?:quiero\s+|me\s+gusta\s+|puedo\s+)?(?:hablar|voz|audio|llamar|escribir|texto|chat)\b/g,
       ' ',
@@ -843,8 +734,7 @@ export class AgentService {
 
     const webAppUrl = this.config.get<string>('WEB_APP_URL');
     const token = webAppUrl ? this.webSessionTokens.sign({ conversationId: convId }) : null;
-    // Shouldn't happen — the gate is only ever set when WEB_APP_URL is configured — but
-    // never crash on a misconfiguration; the caller clears the flag and continues normally.
+    // Shouldn't happen (the gate is only set when WEB_APP_URL exists), but never crash on it.
     if (!webAppUrl || !token) return null;
 
     const modality: 'voz' | 'texto' = wantsVoice ? 'voz' : 'texto';
@@ -853,9 +743,8 @@ export class AgentService {
     return {
       text: `Perfecto, puedes ${verb} aquí: ${this.shortLink(destination)}\n\n` +
         'Cuando termines, vuelve al chat — o sigue escribiéndome aquí si prefieres.',
-      // webModality persists (never cleared here) — createPaymentLinkFlow reads it later
-      // to mint a fresh token and set Wompi's redirect_url (plan-17 §12), so checkout
-      // returns the browser to the same AseguraWeb page instead of Wompi's own screen.
+      // webModality persists: createPaymentLinkFlow reads it later to set Wompi's redirect_url, so
+      // checkout returns the browser to the same AseguraWeb page.
       context: { ...context, awaitingWebModalityChoice: undefined, webModality: modality },
     };
   }
@@ -874,20 +763,15 @@ export class AgentService {
 
     const newContext: ConversationContext = { ...context };
 
-    // After a purchase, the cross-sell "¿Quieres proteger algo más?" resets to DISCOVERY —
-    // a decline used to fall through to the generic "no entendí" acknowledgment. Only
-    // fires on a genuine decline with no new category in the same breath ("no, quiero
-    // vida" still quotes vida); always clears the flag so it can't hijack a later "no".
+    // A decline of the post-purchase cross-sell used to fall through to the generic "no entendí".
+    // Only fires on a genuine decline with no new category in the same breath ("no, quiero vida"
+    // still quotes vida), and always clears the flag so it can't hijack a later "no".
     if (context.awaitingCrossSellResponse) {
-      // Live bug: Groq's isNegative had no example for elliptical negations ("No, ningún
-      // otro."), misclassifying them as false. A message starting with standalone "no" is
-      // an unambiguous decline regardless of what the LLM extracted.
+      // A message starting with a standalone "no" is an unambiguous decline whatever the LLM said.
       const clearlyDeclines = intent.isNegative || /^no\b/i.test(text.trim());
-      // Live bug: trusting intent.productCategory directly let Groq hallucinate a category
-      // from a decline naming no product ("No, la póliza está mal."), silently defeating
-      // the decline check and re-quoting the stale product — a customer who said their
-      // policy was WRONG got a second payment link for the same product. Requires real
-      // textual evidence, same check handleQuotation's cross-sell trigger already uses.
+      // Requires real textual evidence of a category: trusting intent.productCategory let Groq
+      // hallucinate one from a decline naming no product, re-quoting the stale item — someone who
+      // said their policy was WRONG got a second payment link for it.
       const mentionsRealCategory = this.detectAllMentionedCategories(text).length > 0;
       const declining = clearlyDeclines && !mentionsRealCategory;
       if (declining) {
@@ -900,9 +784,8 @@ export class AgentService {
       newContext.awaitingCrossSellResponse = undefined;
     }
 
-    // Live bug: a plain "no" to "¿Tienes familia...?" got the same question repeated
-    // verbatim — "no dependents" is a valid answer, not unclear input. Scoped to
-    // early/fresh DISCOVERY only, so it never hijacks a later "no" mid-conversation.
+    // "No dependents" is a valid answer, not unclear input. Scoped to fresh DISCOVERY only, so
+    // it never hijacks a later "no".
     if (
       !context.awaitingCrossSellResponse &&
       intent.isNegative &&
@@ -917,9 +800,8 @@ export class AgentService {
       };
     }
 
-    // Symmetric case: "Sí?" alone to "¿Tienes familia...?" names no category, so it fell
-    // through to the generic fallback repeating the whole compound question verbatim.
-    // Same scoping as the negative pivot above: only fresh/early DISCOVERY.
+    // Symmetric to the negative pivot below, and scoped the same way: a bare "sí" names no
+    // category and used to repeat the whole compound question verbatim.
     if (
       !context.awaitingCrossSellResponse &&
       intent.isAffirmative &&
@@ -934,8 +816,8 @@ export class AgentService {
       };
     }
 
-    // A button tap must never be silently misclassified — see F01_CATEGORY_MAP's comment.
-    // Checked before the normal fill-in-if-empty assignment so a deliberate tap always wins.
+    // A button tap must never be silently misclassified, and is checked before the normal
+    // fill-in-if-empty assignment so a deliberate tap always wins.
     const f01Category = F01_CATEGORY_MAP[text];
     if (f01Category) {
       newContext.productCategory = f01Category;
@@ -944,9 +826,7 @@ export class AgentService {
     }
     // Handle clarification response when we already know it's a mixed-pet household
     if (context.petType === 'mixto') {
-      // Extract species counts from current message and merge with previously known.
-      // Must run before the resolution check below so a quantity answer
-      // (e.g. "2 gatos y 1 perro") is captured before the else clause sees it.
+      // Must run before the resolution check below, so a quantity answer is captured first.
       const curCounts = this.extractSpeciesCounts(text);
       if (curCounts.gato > 0 || curCounts.perro > 0) {
         newContext.petSpeciesCounts = {
@@ -955,12 +835,9 @@ export class AgentService {
         };
       }
 
-      // Live bug: "Una gata y dos perros." (both counts in one message) got petResolution
-      // misread as 'perro' — naming a species while stating its count isn't the same as
-      // choosing "solo esa especie". Once BOTH counts are known, any single-species
-      // petResolution is spurious and must be cleared — otherwise the household silently
-      // lost one species from the quote entirely. Deliberate narrowing ("solo perros") is
-      // a later step, handled by handleQuotation's own guard once a quote is on screen.
+      // Naming a species while stating its count is not the same as choosing only that species,
+      // so once BOTH counts are known any single-species petResolution is spurious and cleared —
+      // otherwise the household silently lost one species. Deliberate narrowing is a later step.
       const p = newContext.petSpeciesCounts;
       if (p?.gato && p?.perro && (intent.petResolution === 'gato' || intent.petResolution === 'perro')) {
         intent.petResolution = null;
@@ -975,9 +852,8 @@ export class AgentService {
       } else if (intent.petType && intent.petType !== 'mixto') {
         newContext.petType = intent.petType;
       } else if (newContext.petSpeciesCounts?.gato && newContext.petSpeciesCounts?.perro) {
-        // Once both counts are known, ask individual vs. combined ("para todos") — skipping
-        // straight to a combined quote here was a regression, reverted. Answer handled by
-        // the petResolution branches above on the next turn.
+        // With both counts known, ask individual vs. combined — the answer is handled by the
+        // petResolution branches above on the next turn.
         return {
           text: `Entendido, tienes ${newContext.petSpeciesCounts.gato} gato${newContext.petSpeciesCounts.gato !== 1 ? 's' : ''} y ${newContext.petSpeciesCounts.perro} perro${newContext.petSpeciesCounts.perro !== 1 ? 's' : ''}. ¿Quieres el seguro para los gatos, los perros, o para todos?`,
           context: newContext,
@@ -1028,18 +904,16 @@ export class AgentService {
       }
     } else {
       if (!context.petType && intent.petType) {
-        // Guard: if coverage is already set, pet was resolved in a previous turn.
-        // Re-setting petType to 'mixto' here would restart the clarification loop
-        // when context.petType was lost (e.g., after a server restart).
+        // Coverage already set means the pet was resolved earlier; re-setting petType to 'mixto'
+        // would restart the clarification loop after a restart lost context.petType.
         if (intent.petType === 'mixto' && newContext.coverage?.length) {
           // skip — treat as already-resolved; let hasEnoughInfo + bestQuote handle it
         } else {
           newContext.petType = intent.petType;
         }
       }
-      // Live bug: "Tengo dos perros, una gata y yo." quoted a single product multiplied by
-      // the TOTAL pet count, charging dogs at the cat rate. Capture the per-species
-      // breakdown now, before the original message naming both species is gone.
+      // Capture the per-species breakdown before the message naming both species is gone, or a
+      // single product gets multiplied by the TOTAL count and dogs are charged at the cat rate.
       if (newContext.petType === 'mixto') {
         const counts = this.extractSpeciesCounts(text);
         if (counts.gato > 0 || counts.perro > 0) newContext.petSpeciesCounts = counts;
@@ -1050,27 +924,20 @@ export class AgentService {
     if (!context.beneficiaries && intent.beneficiaries > 0) newContext.beneficiaries = intent.beneficiaries;
     if (!context.budget && intent.budget) newContext.budget = intent.budget;
     if (!context.petCount && intent.petCount && intent.petCount > 0) newContext.petCount = intent.petCount;
-    // 2026-07-26 (Matriz 2, C05) — "immediate" always wins over a stale "exploring" from
-    // an earlier turn in the same conversation; a later message signaling real urgency
-    // must not be silently ignored just because an earlier one didn't.
+    // "immediate" always wins over a stale "exploring" from an earlier turn.
     if (intent.urgency === 'immediate') newContext.urgency = 'immediate';
     else if (!newContext.urgency && intent.urgency) newContext.urgency = intent.urgency;
-    // Step 3 (2026-07-26): capture the answer to the new "¿cuántas personas dependen de
-    // ti?" question. `=== undefined` (not falsy) so a real answer of 0 ("vivo solo") is
-    // still captured, not treated as "never asked".
+    // `=== undefined`, not falsy, so a real answer of 0 ("vivo solo") is captured.
     if (newContext.dependents === undefined && intent.dependents !== null && intent.dependents !== undefined) {
       newContext.dependents = intent.dependents;
-      // Wakes the "Cubre a N personas" family reason too, no separate beneficiaries
-      // question needed. `<= 1` not just falsy: Groq's schema shows beneficiaries:1 as an
-      // example the LLM often defaults to with no real signal — must not block dependents.
+      // Wakes the "Cubre a N personas" reason too. `<= 1`, not falsy: Groq defaults beneficiaries
+      // to 1 with no real signal, and that must not block dependents.
       if (intent.dependents > 0 && (!newContext.beneficiaries || newContext.beneficiaries <= 1)) {
         newContext.beneficiaries = intent.dependents + 1;
       }
     }
 
-    // CSV fallback when the dependents question was asked but got no parseable answer.
-    // Only fires when askedDependents is true and dependents is still undefined after
-    // probing — the AFILLIADO SIN GRUPO_FAMILIAR / dependents=0 case is already pre-filled.
+    // CSV fallback for when the dependents question was asked but got no parseable answer.
     if (newContext.dependents === undefined && newContext.askedDependents) {
       const fallback = newContext.affiliateProfile?.dependents;
       if (fallback !== undefined) {
@@ -1098,11 +965,9 @@ export class AgentService {
       }
     }
 
-    // Catalog-honesty bridge: "quiero asegurar mi carro" had no branch in DISCOVERY — no
-    // such product exists, so it looped on the generic question forever.
-    // detectOutOfCatalogCategory already existed for QUOTE_PRESENTED; DISCOVERY didn't have
-    // it. Guarded on productCategory unresolved so "tengo... una empresa" isn't hijacked
-    // once vida/mascotas already matched above.
+    // Catalog honesty: "quiero asegurar mi carro" had no branch here and looped on the generic
+    // question forever. Guarded on productCategory being unresolved, so it can't hijack a
+    // message once vida/mascotas already matched.
     if (!newContext.productCategory) {
       const outOfCatalog = this.detectOutOfCatalogCategory(text);
       if (outOfCatalog) {
@@ -1113,13 +978,10 @@ export class AgentService {
       }
     }
 
-    // First time detecting mixed pets — ask for quantity breakdown before quoting.
-    // Must ask counts first so "para todos" can quote both species at the right price.
+    // Counts are asked before quoting so "para todos" can price both species correctly.
     if (newContext.petType === 'mixto') {
-      // Live bug (2026-08-18): "Tengo dos perros y un gato." states the breakdown in the
-      // very message that reveals the mixed household, and the block above already saved
-      // it — but this branch asked for it anyway, so the person had to repeat themselves
-      // to a agent that had just written their answer down. Only ask for what's missing.
+      // The breakdown often arrives in the very message that reveals the mixed household, and the
+      // block above already saved it — ask only for what is actually missing.
       const known = newContext.petSpeciesCounts;
       if (known?.gato && known?.perro) {
         return {
@@ -1133,11 +995,9 @@ export class AgentService {
       };
     }
 
-    // Must know the species before quoting mascotas — the catalog has cat-only and
-    // dog-only products, quoting blind risks missing the better match. Live gap: "Tengo
-    // dos mascotas y yo." went straight to a quote without learning cat/dog/mixed.
-    // Gated on !coverage?.length too — "para todos" resolves petType to null and always
-    // sets coverage, so this must not re-ask in that case.
+    // The catalog has cat-only and dog-only products, so quoting before the species is known
+    // risks missing the better match. Also gated on !coverage?.length: "para todos" resolves
+    // petType to null and always sets coverage, so this must not re-ask then.
     if (newContext.productCategory === 'mascotas' && !newContext.petType && !newContext.coverage?.length) {
       return {
         text: '¿Tus mascotas son gatos, perros, o tienes de ambos? Así te muestro la cobertura correcta.',
@@ -1145,10 +1005,9 @@ export class AgentService {
       };
     }
 
-    // Step 3: ask about dependents ONCE, only in the discoveryFilter flow, and only when it
-    // could change the recommendation — mascotas is excluded (Principle #3: only ask
-    // questions that change the recommendation). askedDependents set in this same return,
-    // so the next turn always proceeds regardless of whether the answer parsed.
+    // Asked ONCE, only in the discoveryFilter flow, and only where it could change the
+    // recommendation (mascotas excluded). askedDependents is set in this same return, so the
+    // next turn proceeds whether or not the answer parsed.
     if (
       newContext.discoveryFilter &&
       !newContext.askedDependents &&
@@ -1162,27 +1021,21 @@ export class AgentService {
       };
     }
 
-    // coverage is NOT required to score — QuotingService only needs productCategory for a
-    // matchScore > 0. Requiring it here stranded every quote in an infinite loop whenever
-    // fallbackIntent() ran (it never fills coverage).
+    // coverage is NOT required to score: requiring it stranded every quote in a loop whenever
+    // fallbackIntent() ran, since that path never fills coverage.
     const hasEnoughInfo = !!newContext.productCategory;
 
-    // Dead-end guard: DISCOVERY's third tier text is permanently unanswerable — no NLP
-    // field captures it, Step 3's `dependents` is the real replacement. If productCategory
-    // never got extracted, every reply loops back to it forever.
-    //
-    // Live bug: this guard also required `beneficiaries` truthy before a best-effort quote
-    // (stale condition left behind after the text itself was rewritten). Coverage set
-    // without beneficiaries fell through to the dead text. Dropped that requirement —
-    // coverage alone is enough to attempt a real quote.
+    // Dead-end guard: DISCOVERY's third tier is permanently unanswerable (no NLP field captures
+    // it; Step 3's `dependents` replaced it), so without this every reply loops back to it.
+    // Coverage alone is enough to attempt a real quote — requiring beneficiaries too was stale.
     const stuckWithoutCategory = !hasEnoughInfo && !!newContext.coverage?.length;
 
     if (hasEnoughInfo || stuckWithoutCategory) {
       const quote = this.quoting.bestQuote(newContext as AffiliateSignals);
       if (quote) {
         newContext.quoteProductId = quote.product.id;
-        // Append to (not replace) shownProductIds — a pet product shown before a
-        // cross-sell reset must stay in history for a later "los dos" reference.
+        // Append to, never replace, shownProductIds — a product shown before a cross-sell reset
+        // must stay in history for a later "los dos".
         newContext.shownProductIds = [...new Set([...(context.shownProductIds ?? []), quote.product.id])];
         return {
           text: this.formatQuote(quote.product, quote.score, newContext),
@@ -1198,7 +1051,7 @@ export class AgentService {
     }
 
     // No new signal this turn — acknowledge instead of silently repeating the question.
-    // `beneficiaries` excluded: Groq's schema shows it defaulting to 1 with no real signal.
+    // `beneficiaries` is excluded: Groq defaults it to 1 with no real signal.
     const madeProgress =
       newContext.productCategory !== context.productCategory ||
       newContext.petType !== context.petType ||
@@ -1210,8 +1063,8 @@ export class AgentService {
     return {
       text: madeProgress ? question : `No logré entender bien eso. ${question}`,
       context: newContext,
-      // Only the genuinely-stuck branch counts toward escalation — madeProgress means real
-      // signal was extracted, just not enough to quote yet, which is normal, not confusion.
+      // Only the genuinely-stuck branch counts toward escalation: madeProgress means real signal
+      // was extracted, just not enough to quote yet.
       unclearReply: !madeProgress,
     };
   }
@@ -1219,10 +1072,8 @@ export class AgentService {
   // Quotation
 
   private handleQuotation(context: ConversationContext, text: string, intent: InsuranceIntent): ProcessResult {
-    // This flag is set when a category's alternatives run out, but the conversation stays
-    // anchored in QUOTE_PRESENTED — so the reply is processed here, not through
-    // AUTHORIZATION. A previous version checked it in AUTHORIZATION, which was
-    // unreachable dead code that left the waitlist offer with no working answer path.
+    // The waitlist flag is answered here, not in AUTHORIZATION: the conversation stays anchored
+    // in QUOTE_PRESENTED, so checking it there was unreachable dead code.
     if (context.awaitingContactConsent) {
       if (intent.isAffirmative) {
         return this.beginLeadCapture(context);
@@ -1243,9 +1094,8 @@ export class AgentService {
 
     const currentProduct = this.catalog.getProduct(context.quoteProductId);
 
-    // Live bug: "salir" then "terminar" right after a quote got the identical card
-    // re-shown both times — no branch here checked intent.abandonIntent, and
-    // processMessage's top-level check excludes QUOTE_PRESENTED on purpose.
+    // No branch here checked abandonIntent, and processMessage's top-level check deliberately
+    // excludes QUOTE_PRESENTED — so "salir" just re-showed the card.
     if (intent.abandonIntent) {
       const terminalState = context.hasCompletedPurchase
         ? ConversationState.COMPLETED
@@ -1256,10 +1106,8 @@ export class AgentService {
       };
     }
 
-    // Live bug: "No, pero no tengo gatos..." while a gato quote was showing got the
-    // identical quote re-shown — the multi-clause correction didn't trip Groq's
-    // classification. An explicit "no tengo <species just quoted>" is unambiguous
-    // regardless of what the LLM extracted; resets petType/coverage/quote for a clean re-ask.
+    // An explicit "no tengo <species just quoted>" is unambiguous regardless of what the LLM
+    // extracted, and resets petType/coverage/quote for a clean re-ask.
     if (currentProduct?.category === 'mascotas' && context.petType && this.deniesCurrentPetType(text, context.petType)) {
       return {
         text: '¡Perdón por la confusión! Cuéntame — ¿qué mascota tienes entonces?',
@@ -1275,10 +1123,8 @@ export class AgentService {
       };
     }
 
-    // Switch between species (or back to both) in a mixed household. Live bug: gating on
-    // `selectedProductIds.length > 1` only worked for the ORIGINAL combined quote — once
-    // narrowed to one species, naming the other fell through with no way back. Gating on
-    // `petSpeciesCounts` having both species known (unchanged by narrowing) fixes it.
+    // Switching species (or back to both) is gated on petSpeciesCounts knowing both, not on
+    // selectedProductIds.length: once narrowed to one species, there was no way back.
     if (context.petSpeciesCounts?.gato && context.petSpeciesCounts?.perro) {
       if (intent.petResolution === 'all') {
         return this.buildMixedSpeciesQuote(context);
@@ -1303,11 +1149,9 @@ export class AgentService {
       }
     }
 
-    // "Restore the flow": a quote in progress is never interrupted by a different
-    // category — it's deferred until after this purchase is paid (notifyPoliciesIssued
-    // reads context.pendingCrossSell). Live bug: naming a different category mid-quote
-    // used to replace it immediately, silently abandoning an unconfirmed purchase. Close
-    // one deal at a time.
+    // A quote in progress is never interrupted by a different category: it is deferred until
+    // this purchase is paid. Naming another category used to silently abandon an unconfirmed
+    // purchase — close one deal at a time.
     if (currentProduct?.category === 'mascotas' && this.mentionsPersonalCoverage(text)) {
       const deferred = (intent.productCategory && intent.productCategory !== 'mascotas')
         ? intent.productCategory
@@ -1324,10 +1168,8 @@ export class AgentService {
       return this.deferCrossSell(context, currentProduct, intent.productCategory);
     }
 
-    // Live bug: "la primera opción", "la que vale 16.800" reference a SPECIFIC shown
-    // product — checked before isAffirmative so it can't get matched as a blind
-    // confirmation of a differently-priced product on screen (a customer naming $16.800
-    // ended up confirming a $20.000 purchase). Only fires when it resolves to a different product.
+    // An explicit reference to a shown product is resolved before isAffirmative, or a customer
+    // naming $16.800 ends up confirming the $20.000 product on screen.
     const referenced = this.resolveProductReference(text, context);
     if (referenced && referenced.product.id !== context.quoteProductId) {
       const shown = context.shownProductIds ?? (context.quoteProductId ? [context.quoteProductId] : []);
@@ -1339,21 +1181,12 @@ export class AgentService {
     }
 
     if (intent.isAffirmative) {
-      // KYC: verify the phone via Telegram's native request_contact before collecting
-      // cédula/nombre/correo, no separate SMS provider. Once per conversation — a
-      // returning customer (phoneVerified already true) skips straight to the real prompt.
+      // KYC: the phone is verified through Telegram's request_contact before cédula/nombre/correo,
+      // with no SMS provider. Once per conversation — a returning customer skips straight ahead.
       if (!context.phoneVerified) {
         return {
-          // 2026-08-12 (live-tested via texto.html): this text used to hardcode "de
-          // Telegram" — nonsensical on WhatsApp (no such button exists there either) and
-          // on AseguraWeb (handleWebMessage auto-verifies via a synthetic contact on
-          // every message, same as WhatsApp's WaId — see the header comment there).
-          // Channel-neutral wording: Telegram users see a real button (requestContact
-          // below still renders it there); WhatsApp/web users just continue and the
-          // NEXT message verifies them transparently, no button needed.
-          // 2026-08-13 (driven end-to-end on AseguraWeb): leading with "toca el botón"
-          // still read as broken on the 2 of 3 channels where no button renders, and the
-          // 👇 pointed at nothing. Now the universally-true action comes first.
+          // Channel-neutral wording: only Telegram renders a real button, and WhatsApp/web verify
+          // transparently on the next message — so the universally-true action comes first.
           text: 'Antes de continuar, confirmemos que eres tú: escríbeme cualquier cosa y lo verifico al instante. Si ves un botón para compartir tu número, también sirve.',
           nextState: ConversationState.DATA_CAPTURE,
           context: { ...context, awaitingPhoneVerification: true },
@@ -1367,11 +1200,9 @@ export class AgentService {
     }
 
     if (intent.wantsAlternative) {
-      // Live bug: "otro" during an active mixed-species purchase used to search for an
-      // unrelated THIRD product priced against the raw cross-species petCount — wrong
-      // total, plus a consent mismatch (a following "sí" confirmed the original 2-product
-      // purchase, not the product just shown). No single "next best" exists for a combined
-      // quote, so just re-anchor on the one already active.
+      // No single "next best" exists for a combined quote: "otro" used to price an unrelated third
+      // product against the raw cross-species petCount, and a following "sí" then confirmed the
+      // original purchase rather than what was shown. Re-anchor on the active quote instead.
       if (context.selectedProductIds && context.selectedProductIds.length > 1) {
         return { text: this.formatMixedSpeciesQuote(context) };
       }
@@ -1391,26 +1222,21 @@ export class AgentService {
         }
       }
 
-      // Live bug: this used to reset productCategory and transition to DISCOVERY — a vague
-      // next message could then get a HALLUCINATED category (an "asistencia" shopper ended
-      // up with "vida"). Staying in QUOTE_PRESENTED keeps resolveProductReference and the
-      // cross-sell-defer check working; a genuine new category still switches via a real
-      // keyword match.
-      //
-      // Once every product in a category is shown, offer contact capture instead of a dead
-      // end — a real lead. Applies to any category, not just the mascotas-only scope it used to have.
+      // Staying in QUOTE_PRESENTED (rather than resetting to DISCOVERY) keeps
+      // resolveProductReference and the cross-sell defer working, and stops a vague next message
+      // from being given a hallucinated category. Once every product in a category is shown,
+      // contact capture is offered instead of a dead end.
       return {
         text: 'No tenemos más oferta en el momento. Si nos compartes tus datos te voy a avisar cuando la oferta aumente. ¿Te interesa?',
         context: { ...context, awaitingContactConsent: true },
       };
     }
 
-    // Live bug: a plain decline ("No, está bien.") was treated like wantsAlternative,
-    // cycling through every remaining product instead of letting the user go. A bare
-    // decline now ends the conversation politely.
+    // A bare decline ("No, está bien.") is not wantsAlternative: it used to cycle through every
+    // remaining product instead of letting the person go.
     if (intent.isNegative && !intent.isAffirmative) {
-      // Live bug: the top-level abandonIntent check skips QUOTE_PRESENTED, so a customer
-      // with an active paid policy declining a cross-sell still got marked ABANDONED.
+      // The top-level abandonIntent check skips QUOTE_PRESENTED, so a customer with a paid policy
+      // declining a cross-sell was still marked ABANDONED.
       const terminalState = context.hasCompletedPurchase
         ? ConversationState.COMPLETED
         : ConversationState.ABANDONED;
@@ -1420,16 +1246,13 @@ export class AgentService {
       };
     }
 
-    // Live bug: "¿Cuál es mejor?"/"cuéntame más" carried no isAffirmative/isNegative/
-    // wantsAlternative signal, falling through to the neutral re-show of the same product.
-    // Answer with the real product detail instead.
+    // "¿Cuál es mejor?" carries no yes/no/alternative signal — answer with real detail instead
+    // of falling through to a neutral re-show.
     if (currentProduct && AgentService.MORE_INFO_PATTERN.test(text)) {
       return { text: this.formatProductDetail(currentProduct, context) };
     }
 
-    // Live bug: asking for a category we don't sell silently re-showed the unrelated
-    // already-quoted product verbatim, never acknowledging the request. Checked before the
-    // neutral-message re-show below.
+    // Asking for a category we don't sell used to silently re-show the unrelated quote.
     const outOfCatalog = this.detectOutOfCatalogCategory(text);
     if (outOfCatalog && !this.mentionsAlreadyCoveredTopic(text, context)) {
       return {
@@ -1437,12 +1260,9 @@ export class AgentService {
       };
     }
 
-    // Neutral/unclear message — re-show the actual quoted product instead of the generic
-    // placeholder, which has no real name/price. Live bug: "2+2" got re-shown with zero
-    // acknowledgment; only prefix a clarification when the raw text has NO letters at all
-    // — a real question always has plenty.
-    // Live bug: an unclear turn during a mixed-species purchase re-showed just ONE of the
-    // two active products priced against the cross-species petCount. Checked first here.
+    // Re-show the actual quoted product, not the generic placeholder. A clarification prefix
+    // is added only when the raw text has NO letters at all — a real question always has plenty.
+    // Mixed-species purchases are checked first, or only one of the two products re-showed.
     if (context.selectedProductIds && context.selectedProductIds.length > 1) {
       const quoteText = this.formatMixedSpeciesQuote(context);
       const noRealWords = !/[a-zA-ZÀ-ÖØ-öø-ÿ]/.test(text);
@@ -1459,8 +1279,7 @@ export class AgentService {
         context,
       );
       const noRealWords = !/[a-zA-ZÀ-ÖØ-öø-ÿ]/.test(text);
-      // Counts toward the stuck-loop breaker either way — a plain re-show means none of
-      // the branches above understood what was actually being asked.
+      // Counts toward the stuck-loop breaker: a plain re-show means nothing above understood.
       return {
         text: noRealWords ? `No entendí ese mensaje, ¿puedes intentarlo de nuevo?\n\n${quoteText}` : quoteText,
         unclearReply: true,
@@ -1471,24 +1290,21 @@ export class AgentService {
   }
 
   private mentionsPersonalCoverage(text: string): boolean {
-    // "también"/"tambien" alone is too generic here — could just mean "I also have a
-    // dog" mid-pet-conversation. Anchor on phrases that specifically mean "for me".
+    // "también" alone is too generic — it can just mean "I also have a dog" mid-conversation.
     const personalPhrases = ['para mí', 'para mi', 'y yo'];
     const humanCategories = ['vida', 'accidentes', 'accidente', 'salud', 'hogar'];
     return personalPhrases.some((p) => text.includes(p)) || humanCategories.some((c) => text.includes(c));
   }
 
-  // "no tengo gatos" (or perros) denies the species the CURRENT quote assumes — checked
-  // against whichever species that is, so it only fires when relevant to what's on screen.
+  // Denies the species the CURRENT quote assumes, so it only fires when relevant.
   private deniesCurrentPetType(text: string, petType: 'gato' | 'perro' | 'mixto'): boolean {
     if (petType === 'mixto') return false;
     const words = petType === 'gato' ? ['gato', 'gatos', 'gata', 'gatas'] : ['perro', 'perros', 'perra', 'perras'];
     return text.includes('no tengo') && words.some((w) => text.includes(w));
   }
 
-  // Scans for EVERY category keyword present, not just the first (unlike
-  // GroqNlpService.fallbackIntent) — needed for "mascotas y vida". "asistencia
-  // veterinaria" is stripped first so it doesn't also register as "asistencia médica".
+  // Scans for EVERY category keyword present, not just the first, for "mascotas y vida".
+  // "asistencia veterinaria" is stripped first so it doesn't also register as asistencia.
   private detectAllMentionedCategories(text: string): NonNullable<InsuranceIntent['productCategory']>[] {
     const categories: NonNullable<InsuranceIntent['productCategory']>[] = [];
     if (['mascota', 'perro', 'canino', 'gato', 'gata', 'gatic', 'michi', 'minino', 'veterinar'].some((k) => text.includes(k))) {
@@ -1502,9 +1318,8 @@ export class AgentService {
     return [...new Set(categories)];
   }
 
-  // Real catalog covers vida, accidentes, asistencia, mascotas (hogar cross-sells into
-  // asistencia). Vehículos and empresas aren't real products (rule #12) — must get an
-  // honest "we don't offer that", not a reused quote.
+  // The real catalog covers vida, accidentes, asistencia and mascotas. Vehículos and empresas
+  // are not products (rule #12) and must get an honest "we don't offer that".
   private static readonly OUT_OF_CATALOG_KEYWORDS: Record<string, string> = {
     vehicular: 'vehículos', vehiculo: 'vehículos', vehículo: 'vehículos',
     carro: 'vehículos', moto: 'vehículos', motocicleta: 'vehículos',
@@ -1518,10 +1333,9 @@ export class AgentService {
     return null;
   }
 
-  // Live bug: asistencias-multiples covers "Asistencia vehículo" — asking about that
-  // coverage got the same "no vendemos vehículos" denial as a real car-policy request.
-  // Checked against every product in this purchase; coverage text comes from the real
-  // catalog (rule #12), so this can't manufacture a false "yes we cover that."
+  // asistencias-multiples covers "Asistencia vehículo", so asking about that coverage used to
+  // get the same "no vendemos vehículos" denial as a real car policy. Coverage text comes from
+  // the real catalog (rule #12), so this can't manufacture a false yes.
   private mentionsAlreadyCoveredTopic(text: string, context: ConversationContext): boolean {
     const productIds = context.selectedProductIds?.length ? context.selectedProductIds : (context.quoteProductId ? [context.quoteProductId] : []);
     const coverageText = productIds
@@ -1533,18 +1347,16 @@ export class AgentService {
     return Object.keys(AgentService.OUT_OF_CATALOG_KEYWORDS).some((keyword) => text.includes(keyword) && coverageText.includes(keyword));
   }
 
-  // A strict productCategory === 'mascotas' check would skip per-pet data collection
-  // whenever mascotas isn't the first selected product. Kept general in case
-  // selectedProductIds is populated outside the live agent flow.
+  // A strict productCategory check would skip per-pet collection whenever mascotas isn't the
+  // first selected product.
   private isPetSelected(context: ConversationContext): boolean {
     if (context.productCategory === 'mascotas') return true;
     if (!context.selectedProductIds?.length) return false;
     return context.selectedProductIds.some((id) => this.catalog.getProduct(id)?.category === 'mascotas');
   }
 
-  // Acknowledges interest in a different category without abandoning the quote already
-  // on screen — the deferred category is followed up on only once this purchase is paid
-  // and the policy is issued (see wompi-webhook.controller.ts notifyPoliciesIssued).
+  // Acknowledges interest in another category without abandoning the quote on screen; it is
+  // followed up only once this purchase is paid.
   private deferCrossSell(
     context: ConversationContext,
     currentProduct: InsuranceProduct,
@@ -1561,26 +1373,23 @@ export class AgentService {
     };
   }
 
-  // Common backchannel/acknowledgment words a voice transcription can produce in
-  // response to the bot's OWN previous message — never a real person's full name.
+  // Backchannel words a voice transcription produces in reply to the agent's own message —
+  // never a real person's full name.
   private static readonly FILLER_WORDS = ['gracias', 'ok', 'okay', 'vale', 'listo', 'dale', 'bueno', 'ya'];
 
-  // A name is letters only (incl. ñ/accents), words separated by spaces/apostrophes/
-  // hyphens — never digits. Live bug: "nombre": "2+2" was previously accepted verbatim.
+  // A name is letters only (including ñ and accents), never digits — "2+2" was once accepted.
   private static readonly NAME_REGEX = /^[a-zA-ZÀ-ÖØ-öø-ÿ]+(?:['’\-][a-zA-ZÀ-ÖØ-öø-ÿ]+|\s+[a-zA-ZÀ-ÖØ-öø-ÿ]+)*$/;
 
-  // Live bug (production Supabase): nombre literally contained "Mi nombre es Michelle
-  // Gómez Gómez" — NAME_REGEX allows it (all letters/spaces), so the lead-in restating
-  // the question passed validation verbatim. Strip it before validating.
+  // NAME_REGEX allows "Mi nombre es Michelle Gómez" (all letters), so the lead-in restating the
+  // question got stored verbatim. Strip it before validating.
   private static readonly NAME_PREAMBLE_REGEX = /^(mi nombre completo es|mi nombre es|me llamo|yo soy|soy)\s*/i;
 
   private stripNamePreamble(text: string): string {
     return text.trim().replace(AgentService.NAME_PREAMBLE_REGEX, '').trim();
   }
 
-  // Live bug: dictating a cédula digit-by-digit by voice transcribes as "1, 2, 3..." — the
-  // regex needs a contiguous \d{6,10} run, so it never matched. Only joins when EVERY
-  // comma-separated token is a single digit; "12.345.678" (typed) still rejects normally.
+  // A cédula dictated digit-by-digit transcribes as "1, 2, 3...", which no contiguous \d{6,10}
+  // run matches. Only joins when EVERY token is a single digit, so typed "12.345.678" still fails.
   private joinSpokenDigits(text: string): string {
     const tokens = text.split(',').map((t) => t.trim());
     if (tokens.length >= 6 && tokens.every((t) => /^\d$/.test(t))) {
@@ -1589,11 +1398,9 @@ export class AgentService {
     return text;
   }
 
-  // Real live-test bug: a genuinely mixed household (2 dogs + 1 cat) was quoted a SINGLE
-  // product (medicina-prepagada-gatos, cat-only) multiplied by the TOTAL pet count (3) —
-  // charging the 2 dogs at the cat rate. The catalog has separate species-restricted
-  // products with different prices; a mixto household needs its OWN per-species count,
-  // not just a combined total, to quote/charge each product correctly.
+  // The catalog has separate species-restricted products at different prices, so a mixed
+  // household needs its OWN per-species counts — a combined total quoted one cat-only product
+  // and charged the dogs at the cat rate.
   private static readonly SPECIES_NUMBER_WORDS: Record<string, number> = {
     un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5,
     seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10,
@@ -1613,32 +1420,27 @@ export class AgentService {
     return { gato, perro };
   }
 
-  // The right per-pet count for THIS product's own price — a species-restricted product
-  // (medicina-prepagada-gatos/perros) uses its own species' count from a mixto
-  // household's breakdown when known, never the combined total of every pet.
+  // The right per-pet count for THIS product's price: a species-restricted product uses its own
+  // species' count from the breakdown, never the combined total.
   private petCountForProduct(context: ConversationContext, product: InsuranceProduct): number | null | undefined {
     if (context.petSpeciesCounts && product.eligibility.pet === 'gato') return context.petSpeciesCounts.gato ?? context.petCount;
     if (context.petSpeciesCounts && product.eligibility.pet === 'perro') return context.petSpeciesCounts.perro ?? context.petCount;
-    // Live bug: narrowing a mixto household to "solo gato" leaves petCount at the OLD
-    // combined total. Bypassed above for species-restricted products, but an 'any'
-    // product (e.g. asistencia veterinaria) fell through to the stale total. Must respect
-    // the same narrowing.
+    // An 'any' product (asistencia veterinaria) must respect the same narrowing: it fell through
+    // to the stale combined total.
     if (context.petSpeciesCounts && (context.petType === 'gato' || context.petType === 'perro')) {
       return context.petSpeciesCounts[context.petType] ?? context.petCount;
     }
     return context.petCount;
   }
 
-  // Same bug class as petCountForProduct, for name collection instead of pricing:
-  // narrowing to "solo perros" left petCount at the stale combined total, so the loop
-  // asked for 3 pets' details instead of 2, sweeping the cat in. Sums per-product instead
-  // of trusting the raw total.
+  // Same bug class as petCountForProduct, for name collection instead of pricing: narrowing to
+  // "solo perros" left a stale combined total, so the loop asked for the cat's details too.
   private totalPetsForPurchase(context: ConversationContext): number {
     const productIds = context.selectedProductIds?.length
       ? context.selectedProductIds
       : (context.quoteProductId ? [context.quoteProductId] : []);
-    // Only the mascotas product(s) need pet details — a cross-sell combo (vida +
-    // asistencia-veterinaria) must not count the non-pet product toward the total.
+    // Only the mascotas products need pet details: a vida + veterinaria combo must not count
+    // the non-pet product toward the total.
     const products = productIds
       .map((id) => this.catalog.getProduct(id))
       .filter((p): p is InsuranceProduct => !!p && p.category === 'mascotas');
@@ -1652,10 +1454,8 @@ export class AgentService {
     return trimmed.length >= 2 && trimmed.length <= 80 && AgentService.NAME_REGEX.test(trimmed);
   }
 
-  // Voice dictation spells out email symbols as words ("arroba" for @, "punto" for .).
-  // Live bug: `\s+arroba\s+` required literal whitespace, but Whisper often inserts a
-  // comma right after ("arroba,"), breaking the match — user had to repeat 4 times.
-  // `[\s,]*` absorbs the stray comma the same way it absorbs whitespace.
+  // Voice dictation spells out email symbols ("arroba", "punto"), and Whisper often inserts a
+  // comma right after — `[\s,]*` absorbs it, which a literal `\s+` did not.
   private normalizeSpokenEmail(text: string): string {
     return text
       .replace(/[\s,]*\barroba\b[\s,]*/gi, '@')
@@ -1663,8 +1463,7 @@ export class AgentService {
       .replace(/\s+/g, '');
   }
 
-  // True if ANY product in this purchase (single or multi-product) requires conditional
-  // underwriting (2026-07-24 business feedback: vida, medicina-prepagada-gatos/perros).
+  // True when ANY product in this purchase requires conditional underwriting.
   private requiresUnderwritingInfo(context: ConversationContext): boolean {
     const productIds = context.selectedProductIds?.length
       ? context.selectedProductIds
@@ -1672,9 +1471,8 @@ export class AgentService {
     return productIds.some((id) => this.catalog.getProduct(id)?.requiresUnderwriting);
   }
 
-  // The generic "edad, enfermedad, historial clínico" question only fits a HUMAN product
-  // (vida). A pet product already has the pet's age from the per-pet loop, and there's no
-  // "historial clínico" for a pet — only whether it has a preexisting illness.
+  // The generic "edad, enfermedad, historial clínico" question only fits a HUMAN product. A pet
+  // already gave its age in the per-pet loop, and pets have no clinical history.
   private buildUnderwritingQuestion(context: ConversationContext): string {
     if (this.isPetSelected(context) && context.pets?.length) {
       const names = formatNameList(context.pets.map((p) => p.name));
@@ -1684,14 +1482,12 @@ export class AgentService {
     return 'Para este seguro necesito un par de datos adicionales: tu edad, si tienes alguna enfermedad preexistente, y un breve historial clínico (o escribe "ninguna" si no aplica).';
   }
 
-  // Single source for the Wompi payment link's expiry — was duplicated as two separate
-  // literal `30`s (the API call and the user-facing message text), risking drift if one
-  // changed without the other.
+  // Single source for the payment link's expiry — it was two separate literal 30s, one in the
+  // API call and one in the message text, free to drift apart.
   private static readonly PAYMENT_LINK_EXPIRY_MINUTES = 30;
 
-  // Below this width/height, a "photo" is more likely an icon/sticker-shaped file than
-  // an actual camera photo — a real phone selfie is always at least a few hundred px on
-  // its shortest side. Not real face detection, just a sanity floor.
+  // Below this, a "photo" is more likely an icon or sticker than a camera photo. Not face
+  // detection, just a sanity floor.
   private static readonly MIN_SELFIE_DIMENSION = 80;
 
   private isFillerWord(text: string): boolean {
@@ -1699,8 +1495,8 @@ export class AgentService {
     return AgentService.FILLER_WORDS.includes(normalized);
   }
 
-  // The real first DATA_CAPTURE question once identity verification (phone + selfie)
-  // is done — per-pet details for a mascotas purchase, otherwise cédula.
+  // The real first DATA_CAPTURE question once identity is verified: per-pet details for a
+  // mascotas purchase, otherwise cédula.
   private firstDataCaptureQuestion(context: ConversationContext): string {
     const totalPets = this.totalPetsForPurchase(context);
     return this.isPetSelected(context)
@@ -1716,9 +1512,8 @@ export class AgentService {
     );
   }
 
-  // Lets a pets-summary correction reference a pet by position ("el tercero", "la
-  // segunda") instead of only by name — needed because a name alone is ambiguous when
-  // two pets share it, and the position is unambiguous by construction.
+  // Lets a correction reference a pet by position ("el tercero"), which is unambiguous even
+  // when two pets share a name.
   private static readonly ORDINAL_WORDS: Record<string, number> = {
     primero: 0, primera: 0, primer: 0,
     segundo: 1, segunda: 1,
@@ -1735,9 +1530,8 @@ export class AgentService {
     return null;
   }
 
-  // Not everyone has a CC (cédula de ciudadanía) — CE (extranjería), TI (tarjeta de
-  // identidad, minors), NIP/NUIP also identify a real person. Defaults to CC, the most
-  // common case, when no other type is named — matches prior behavior for plain numbers.
+  // Not everyone has a CC: CE, TI and NIP/NUIP identify real people too. Defaults to CC when
+  // no type is named, which matches prior behavior for a plain number.
   private detectDocumentType(text: string): DocumentType {
     if (text.includes('extranjer')) return 'CE';
     if (text.includes('tarjeta de identidad') || /\bti\b/.test(text)) return 'TI';
@@ -1760,10 +1554,8 @@ export class AgentService {
   ): Promise<ProcessResult> {
     const newContext: ConversationContext = { ...context };
 
-    // Step -2 — waitlist contact info collection (2026-07-26): when no more products
-    // are available for a pet species, the user can share their name/email/phone to be
-    // notified about future offers. Each field is collected one at a time; after all
-    // three are captured the conversation returns to QUOTE_PRESENTED.
+    // Waitlist contact capture, offered when a species has no products left. One field at a
+    // time; once all three are in, the conversation returns to QUOTE_PRESENTED.
     if (context.awaitingContactName) {
       const cleanedName = this.stripNamePreamble(rawText);
       if (!this.isValidHumanName(cleanedName)) {
@@ -1795,11 +1587,9 @@ export class AgentService {
       return this.finalizeLead({ ...context, contactPhone: phone, awaitingContactPhone: undefined });
     }
 
-    // Step -1 — identity verification. Set up by handleQuotation's isAffirmative branch,
-    // which shows the contact-share button once. Live bug: this used to re-show "toca el
-    // botón" forever for ANY typed reply — a demo-killing infinite loop with no escape.
-    // Cosmetic KYC must never block a sale: any non-contact-share reply is treated as
-    // declined and moves on immediately.
+    // Identity verification, set up by handleQuotation's isAffirmative branch. Cosmetic KYC must
+    // never block a sale, so any non-contact reply counts as declined and moves on — this used
+    // to re-show "toca el botón" forever for any typed reply.
     if (context.awaitingPhoneVerification && !context.phoneVerified) {
       if (contact) {
         const verifiedContext: ConversationContext = {
@@ -1812,9 +1602,8 @@ export class AgentService {
         return {
           text: 'Identidad verificada ✅\n\n📸 Por último, envíame una selfie ahora mismo para confirmar tu identidad.',
           context: verifiedContext,
-          // '✅' is NOT one of Telegram's allowed reaction emoji (grammy's
-          // ReactionTypeEmoji union) — silently failed with REACTION_INVALID in
-          // production. '🤝' is allowed and fits "verified/connected".
+          // '✅' is not in Telegram's allowed reaction set and failed with REACTION_INVALID in
+          // production; '🤝' is allowed and fits "verified".
           reaction: '🤝',
           reactionBig: true,
         };
@@ -1831,17 +1620,12 @@ export class AgentService {
       };
     }
 
-    // Step -0.5 — cosmetic selfie confirmation. A SIMULATION, not a real identity check —
-    // no face matching, no liveness detection, any photo counts as "confirmed". A real
-    // deployment would swap this for a third-party provider. Same never-loop-forever fix
-    // as phone verification above.
+    // Cosmetic selfie confirmation — a SIMULATION: no face matching, no liveness, any photo
+    // counts. Same never-loop-forever rule as the phone step above.
     if (context.awaitingSelfie && !context.selfieProvided) {
       if (photo) {
-        // 2026-07-24 feedback: "confirm the image is a selfie, is ok if is not high
-        // resolution" — no real face detection (stays a cosmetic simulation), just a
-        // width/height sanity check against an icon/sticker-shaped file. Asked at most
-        // once, same never-loop-forever guarantee as every other KYC gate: a SECOND
-        // tiny image (or anything else) is accepted anyway.
+        // A width/height sanity check against an icon-shaped file, not face detection. Asked at most
+        // once: a second tiny image is accepted anyway, like every other KYC gate here.
         const isTinyImage = photo.width < AgentService.MIN_SELFIE_DIMENSION || photo.height < AgentService.MIN_SELFIE_DIMENSION;
         if (isTinyImage && !context.selfieRetryAsked) {
           return {
@@ -1856,8 +1640,7 @@ export class AgentService {
           selfieRetryAsked: undefined,
         };
         return {
-          // 2026-07-24 feedback: the "¡Identidad confirmada!" label is now baked into the
-          // video itself (IDENTITY_ANIMATION_PATH) — repeating it as text read as redundant.
+          // "¡Identidad confirmada!" is baked into the video itself, so repeating it as text is noise.
           text: this.firstDataCaptureQuestion(confirmedContext),
           context: confirmedContext,
           animation: IDENTITY_ANIMATION_PATH,
@@ -1874,9 +1657,8 @@ export class AgentService {
       };
     }
 
-    // Step 0 — collect per-pet details (name, age, breed) before the human's own data.
-    // Accepts either one pet per message (petName/petAge/petBreed) or several at once
-    // (pets[]) — the user can describe all their pets in one turn if they want to.
+    // Per-pet details before the human's own data. Accepts one pet per message or several at
+    // once, so people can describe every pet in a single turn.
     if (this.isPetSelected(context)) {
       const totalPets = this.totalPetsForPurchase(context);
       const pets = context.pets ?? [];
@@ -1887,14 +1669,12 @@ export class AgentService {
 
         if (extracted.length > 0) {
           const updatedPets = [...pets];
-          // Live bug: NLP dropped a pet from a 3-pet message, and the user's next message
-          // re-stated an already-collected pet, pushed as a literal duplicate, corrupting
-          // the issued policy. Second line of defense: exact name match is never re-pushed.
+          // Second line of defence: an exact name match is never re-pushed. The NLP once dropped a pet
+          // from a 3-pet message and the restated one was appended as a duplicate.
           let duplicateName: string | null = null;
           for (const p of extracted) {
             if (updatedPets.length >= totalPets) break;
-            // A pet name goes on the final policy PDF just like a human nombre — reject
-            // the same digit/symbol garbage (e.g. NLP mis-extracting "2" as a pet name).
+            // A pet name goes on the policy PDF like a human name, so it gets the same digit/symbol guard.
             if (!p.name || !this.isValidHumanName(p.name)) continue;
             if (updatedPets.some((existing) => existing.name.toLowerCase() === p.name!.toLowerCase())) {
               duplicateName = p.name;
@@ -1903,8 +1683,8 @@ export class AgentService {
             updatedPets.push({
               name: p.name,
               age: p.age ?? 'no especificada',
-              // Voice transcription regularly mangles breed names (e.g. "Cocker" ->
-              // "caken") — normalize against a dictionary of common breeds.
+              // Voice transcription mangles breed names ("Cocker" → "caken") — normalize against the
+              // breed dictionary.
               breed: matchBreed(p.breed),
             });
           }
@@ -1917,9 +1697,8 @@ export class AgentService {
               context: { ...context, pets: updatedPets },
             };
           }
-          // All pets collected — show a confirmation summary before moving to cédula,
-          // so the user can catch a wrong field (e.g. a mis-transcribed age or breed)
-          // without redoing the whole per-pet loop.
+          // A summary before cédula, so a mis-transcribed age or breed can be fixed without redoing
+          // the whole per-pet loop.
           const petsCompleteContext = { ...context, pets: updatedPets, petsAwaitingConfirmation: true };
           return {
             text: this.formatPetsSummary(updatedPets),
@@ -1938,8 +1717,8 @@ export class AgentService {
       }
     }
 
-    // Handle the pets confirmation summary — "sí" proceeds, a correction naming a pet
-    // updates just that pet's field instead of restarting the whole per-pet loop.
+    // "sí" proceeds; a correction naming a pet updates just that field instead of restarting
+    // the whole per-pet loop.
     if (context.petsAwaitingConfirmation) {
       if (intent.isAffirmative) {
         const confirmedContext = { ...context, petsAwaitingConfirmation: undefined };
@@ -1953,10 +1732,8 @@ export class AgentService {
       const pets = context.pets ?? [];
       let targetIndex = -1;
 
-      // Live bug: a 3-pet message came back with a duplicated name and a dropped pet.
-      // Correcting by name always matched the FIRST occurrence, silently editing the
-      // wrong entry, and "el tercero es..." wasn't understood at all — the corrupted list
-      // reached the issued policy. Ordinal reference is checked FIRST and wins outright.
+      // Ordinal reference is checked FIRST and wins outright: correcting by name always matched
+      // the FIRST occurrence, silently editing the wrong entry when two pets share a name.
       const ordinalIndex = this.extractOrdinalIndex(rawText);
       if (hasUpdateData && ordinalIndex !== null && ordinalIndex < pets.length) {
         targetIndex = ordinalIndex;
@@ -1988,8 +1765,8 @@ export class AgentService {
 
       const updatedPets = [...pets];
       const current = updatedPets[targetIndex];
-      // Same digit/symbol guard as the initial capture — a garbage-shaped petName
-      // (e.g. NLP mis-extracting "2") must never overwrite an already-valid pet name.
+      // Same digit/symbol guard as the initial capture: a garbage petName must never overwrite
+      // an already-valid one.
       const newName = intent.petName && this.isValidHumanName(intent.petName) ? intent.petName : current.name;
       updatedPets[targetIndex] = {
         name: newName,
@@ -2003,11 +1780,9 @@ export class AgentService {
       };
     }
 
-    // Step 3.5 — conditional underwriting info (2026-07-24 business feedback). Set by
-    // the email step below once cédula/nombre/correo are all in and the quoted product
-    // requires it. Accepts ANY reply verbatim — this is informational (age, illnesses,
-    // clinical history), not a structural gate, so it must never loop: the very next
-    // message is stored as-is and the flow proceeds to the final confirmation.
+    // Conditional underwriting info, asked once the quoted product requires it. Informational
+    // (age, illnesses, history), not a structural gate: ANY reply is stored verbatim and the
+    // flow proceeds, so it can never loop.
     if (context.awaitingMedicalInfo) {
       newContext.medicalInfo = rawText;
       newContext.medicalInfoProvided = true;
@@ -2018,9 +1793,8 @@ export class AgentService {
       };
     }
 
-    // Step 1 — collect número de documento. Not everyone has a CC (cédula de
-    // ciudadanía) — detect CE/TI/NIP/NUIP from keywords and extract the digit run
-    // regardless of a spoken-out prefix ("CE 123456789", "mi tarjeta de identidad es...").
+    // Not everyone has a CC, so CE/TI/NIP/NUIP are detected from keywords and the digit run is
+    // extracted regardless of a spoken prefix ("mi tarjeta de identidad es...").
     if (!context.cedula) {
       const digitsMatch = this.joinSpokenDigits(text).match(/\b\d{6,10}\b/);
       if (!digitsMatch) {
@@ -2034,10 +1808,8 @@ export class AgentService {
       };
     }
 
-    // Step 2 — collect nombre. Reject common filler/acknowledgment words a voice
-    // transcription might produce in response to the bot's own prior message (e.g.
-    // "Gracias.") — accepting these verbatim as the customer's name previously
-    // corrupted the rest of the flow (the real name then landed in the NEXT field).
+    // Rejects the filler words a voice transcription produces in reply to the agent's own
+    // message ("Gracias."): accepting one as the name pushed the real name into the next field.
     if (!context.nombre) {
       if (this.isFillerWord(rawText)) {
         return { text: '¿Cuál es tu nombre completo?' };
@@ -2053,23 +1825,20 @@ export class AgentService {
       };
     }
 
-    // Step 3 — collect email. Requires a basic shape — accepting any text let an
-    // unrelated phrase silently become the "email". Voice dictation says "arroba"/"punto"
-    // — normalize before validating, or a clear spoken email never passes.
+    // Requires a basic shape, or an unrelated phrase silently becomes the "email". Voice
+    // dictation says "arroba"/"punto", so it is normalized before validating.
     if (!context.email) {
       const normalizedEmail = this.normalizeSpokenEmail(rawText);
       if (!/\S+@\S+\.\S+/.test(normalizedEmail)) {
-        // Live bug: dictating without ever saying "arroba" ("juan gmail punto com") can't
-        // be fixed — normalizeSpokenEmail can't invent a symbol never said. Hint shown
-        // only when there's no @ at all, not for a genuine typo.
+        // Hinted only when there is no @ at all: normalizeSpokenEmail cannot invent a symbol the
+        // person never said, and a genuine typo deserves no lecture.
         const hint = normalizedEmail.includes('@')
           ? ''
           : ' Si lo dictas por voz, recuerda decir *"arroba"* donde va el @ (ej: "juan arroba gmail punto com").';
         return { text: `¿Cuál es tu correo electrónico? Ahí recibirás la póliza.${hint}` };
       }
       newContext.email = normalizedEmail;
-      // vida and medicina-prepagada-gatos/perros need underwriting info first;
-      // everything else is direct-sell.
+      // vida and medicina-prepagada-gatos/perros need underwriting first; the rest are direct-sell.
       if (this.requiresUnderwritingInfo(newContext) && !newContext.medicalInfoProvided) {
         return {
           text: this.buildUnderwritingQuestion(newContext),
@@ -2082,8 +1851,8 @@ export class AgentService {
       };
     }
 
-    // Answering a pending "¿qué dato quieres corregir?" — reset only the named field
-    // instead of the blanket cédula+nombre+correo reset this replaced.
+    // Answering a pending "¿qué dato quieres corregir?" — reset only the named field, not the
+    // blanket cédula+nombre+correo reset this replaced.
     if (context.awaitingCorrectionField) {
       const mentionsCedula = text.includes('cédula') || text.includes('cedula');
       const mentionsNombre = text.includes('nombre');
@@ -2113,11 +1882,9 @@ export class AgentService {
       };
     }
 
-    // Step 4.5 — payment method choice. "Tarjeta Colsubsidio" and "link de pago" route to
-    // the exact SAME Wompi checkout link (a wording/framing choice, not a second rail);
-    // createPaymentLinkFlow reads paymentMethodChoice to theme the copy.
-    // Live bug: an unrecognized answer used to re-ask forever. Defaults to link de pago
-    // instead — a payment-method preference must never strand a ready purchase.
+    // Both wordings route to the SAME Wompi checkout link; createPaymentLinkFlow only themes the
+    // copy. An unrecognized answer defaults to link de pago rather than re-asking forever — a
+    // wording preference must never strand a ready purchase.
     if (context.awaitingPaymentMethodChoice) {
       const lower = text.toLowerCase();
       const choice: ConversationContext['paymentMethodChoice'] =
@@ -2130,12 +1897,10 @@ export class AgentService {
       });
     }
 
-    // Step 4 — confirmation ("sí" → create pending policy, ask payment method). No PDF
-    // sent here — the only PDF is generated by wompi-webhook.controller.ts once Wompi
-    // reports APPROVED.
+    // Confirmation step. No PDF is sent here — the only PDF is generated by the webhook once
+    // Wompi reports APPROVED.
     if (intent.isAffirmative) {
-      // Multi-product purchase — issue one policy per selected product; they'll share a
-      // single combined Wompi payment link, created next in createPaymentLinkFlow.
+      // Multi-product purchase: one policy per product, all sharing a single combined Wompi link.
       const productIds = newContext.selectedProductIds?.length
         ? newContext.selectedProductIds
         : (newContext.quoteProductId ? [newContext.quoteProductId] : []);
@@ -2143,8 +1908,8 @@ export class AgentService {
 
       const policyIds: string[] = [];
       for (const productId of productIds) {
-        // Each species-restricted product must be issued against its OWN per-species
-        // count — live bug: 2 dogs + 1 cat both stored as petCount 3.
+        // Each species-restricted product is issued against its OWN count: 2 dogs + 1 cat were both
+        // stored as petCount 3.
         const product = this.catalog.getProduct(productId);
         const petCountOverride = product ? this.petCountForProduct(newContext, product) : newContext.petCount;
         const { policyId } = await this.policy.issue(convId, { ...newContext, quoteProductId: productId, petCount: petCountOverride });
@@ -2152,14 +1917,12 @@ export class AgentService {
       }
       newContext.policyId = policyIds[0];
       newContext.policyIds = policyIds;
-      // Accumulates permanently, unlike policyId/policyIds — see the field comment in
-      // types.ts. Deduped in case the same product is ever bought again in a later
-      // cross-sell within this same conversation.
+      // Accumulates permanently, unlike policyIds. Deduped in case the same product is bought
+      // again in a later cross-sell.
       newContext.purchasedProductIds = [...new Set([...(context.purchasedProductIds ?? []), ...productIds])];
 
-      // No resolvable product at all — nothing to ask a payment method for. Let
-      // createPaymentLinkFlow's own guard abort cleanly instead of asking a pointless
-      // question first.
+      // No resolvable product, so there is nothing to ask a payment method for — let
+      // createPaymentLinkFlow's own guard abort cleanly instead.
       if (!hasResolvableProduct) {
         return this.createPaymentLinkFlow(convId, newContext);
       }
@@ -2175,9 +1938,8 @@ export class AgentService {
         .some((k) => text.includes(k));
 
     if (correctionTriggered) {
-      // Targeted correction: if the message names exactly one field, only reset that
-      // one — resetting all three (the old behavior) forced the user to redo cédula
-      // and correo just to fix a one-word typo in their name.
+      // If the message names exactly one field, reset only that one: resetting all three forced
+      // redoing cédula and correo to fix a one-word typo in a name.
       const mentionsCedula = text.includes('cédula') || text.includes('cedula');
       const mentionsNombre = text.includes('nombre');
       const mentionsCorreo = text.includes('correo') || text.includes('email');
@@ -2205,24 +1967,20 @@ export class AgentService {
         };
       }
 
-      // No specific field named — ask which one instead of blanket-resetting all three
-      // (the old behavior forced redoing cédula+nombre+correo for a one-field typo).
+      // No field named — ask which one instead of blanket-resetting all three.
       return {
         text: '¿Qué dato quieres corregir — cédula, nombre o correo?',
         context: { ...context, awaitingCorrectionField: true },
       };
     }
 
-    // Genuinely unclear message (not a confirmation, not a correction request) —
-    // acknowledge instead of silently repeating the same summary card, which reads as
-    // the agent ignoring the user.
+    // Genuinely unclear: acknowledge instead of re-showing the same summary card, which reads as
+    // the agent ignoring the person.
     return { text: `No logré entender eso. ${STATE_RESPONSES[ConversationState.DATA_CAPTURE](context)}` };
   }
 
-  // Creates the Wompi payment link and returns the message showing it — shared by the
-  // DATA_CAPTURE confirmation (generates the link immediately, no extra "listo?" ask)
-  // and handlePayment's isConfirm branch (used for retries after a decline/manual-link
-  // failure, where the conversation is already sitting in PAYMENT with no checkoutUrl).
+  // Creates the Wompi link and the message showing it. Shared by the DATA_CAPTURE confirmation
+  // and handlePayment's retry branch, where the conversation already sits in PAYMENT.
   private async createPaymentLinkFlow(convId: string, context: ConversationContext): Promise<ProcessResult> {
     const productIds = context.selectedProductIds?.length
       ? context.selectedProductIds
@@ -2232,9 +1990,8 @@ export class AgentService {
       .filter((p): p is InsuranceProduct => !!p);
 
     if (products.length === 0) {
-      // Real gap: this used to silently fall back to a flat $20.000 COP charge when no
-      // product resolved — a customer could be charged for nothing they were quoted.
-      // Abort instead and reset to DISCOVERY so the user can restart cleanly.
+      // This used to fall back to a flat $20.000 charge when no product resolved — a customer
+      // could be charged for something they were never quoted. Abort and reset instead.
       this.logger.error(`createPaymentLinkFlow: no resolvable product for conversation ${convId} — aborting payment link creation`);
       return {
         text: 'Tuve un problema retomando tu cotización. Escríbeme de nuevo qué seguro te interesa y lo resolvemos.',
@@ -2243,18 +2000,16 @@ export class AgentService {
       };
     }
 
-    // Live bug: species-restricted products were both charged against the COMBINED pet
-    // count — the real Wompi amount was wrong, not just the on-screen quote.
+    // Species-restricted products were charged against the COMBINED count: the real Wompi
+    // amount was wrong, not just the on-screen quote.
     const amountCOP = products.reduce((sum, p) => sum + computeTotalPremium(p, this.petCountForProduct(context, p)), 0);
     const productName = products.length > 1
       ? `${products.length} seguros Colsubsidio`
       : (products[0]?.name ?? 'Seguro Colsubsidio');
 
-    // Plan-17 §12 — a session actively using AseguraWeb gets a FRESH token (never reused
-    // from the original hablar/escribir link, which may be long expired by checkout time)
-    // so Wompi's real redirect_url param brings the browser back to the SAME page instead
-    // of stranding it on Wompi's own confirmation screen. Chat-only conversations
-    // (webModality unset) get no redirect_url — unchanged behavior.
+    // A session actively using AseguraWeb gets a FRESH token — the original link's may be long
+    // expired by checkout — so Wompi's redirect_url returns the browser to the same page.
+    // Chat-only conversations get no redirect_url.
     const webAppUrl = this.config.get<string>('WEB_APP_URL');
     const redirectUrl = context.webModality && webAppUrl
       ? (() => {
@@ -2272,19 +2027,16 @@ export class AgentService {
         ...(redirectUrl && { redirectUrl }),
       });
 
-      // Persist immediately on EVERY policy in this purchase — the webhook can only find
-      // them via payment_link_id (Wompi's Payment Links API has no "reference"
-      // create-parameter), and a multi-product purchase shares one link across all of them.
+      // Persisted on EVERY policy in this purchase: the webhook can only find them by
+      // payment_link_id, and a multi-product purchase shares one link across all of them.
       const policyIds = context.policyIds?.length ? context.policyIds : (context.policyId ? [context.policyId] : []);
       for (const id of policyIds) {
         await this.policy.updateStatus(id, 'pending_payment', { wompi_link_id: paymentLinkId });
       }
 
       const amountStr = `$${amountCOP.toLocaleString('es-CO')}`;
-      // "Tarjeta Colsubsidio" and "link de pago" (2026-07-24 feedback) route to this
-      // EXACT same real Wompi link — Wompi already accepts card payments, so this is
-      // themed copy, not a second payment rail. Deliberately does not claim the payment
-      // already succeeded before the user has actually paid via the link below.
+      // Both wordings route to this EXACT same Wompi link (Wompi already accepts cards): themed
+      // copy, not a second rail, and it never claims the payment already succeeded.
       const intro = context.paymentMethodChoice === 'tarjeta_colsubsidio'
         ? `🎉 ¡Coincidencia encontrada! Ya emparejamos tu *Tarjeta Colsubsidio* con esta compra.\n\n`
         : '';
@@ -2301,10 +2053,8 @@ export class AgentService {
         text: msg,
         nextState: ConversationState.PAYMENT,
         context: { ...context, checkoutUrl },
-        // 2026-07-24 feedback: Tarjeta Colsubsidio has no real API/sandbox of its own —
-        // precisely because there's nothing real to show for it, the "match found"
-        // moment gets the real branded success-checkmark video. Still the exact same
-        // real Wompi link, never a faked/instant "paid" claim.
+        // Tarjeta Colsubsidio has no API of its own, so the "match found" moment gets the branded
+        // video — but it is still the same real Wompi link, never a faked "paid" claim.
         ...(context.paymentMethodChoice === 'tarjeta_colsubsidio' && { animation: PAYMENT_ANIMATION_PATH }),
       };
     } catch (error) {
@@ -2331,11 +2081,8 @@ export class AgentService {
   ): Promise<ProcessResult> {
     const isConfirm = intent.isAffirmative;
 
-    // Payment confirmation is no longer trust-based: the user's word was never actually
-    // verified against Wompi, so anyone could type "sí" and get a policy issued without
-    // paying. The Wompi webhook (wompi-webhook.controller.ts) is now the sole source of
-    // truth — it confirms and notifies the user proactively once Wompi reports the
-    // transaction as APPROVED.
+    // Payment confirmation is not trust-based: typing "sí" once issued a policy with nothing
+    // verified against Wompi. The webhook is the sole source of truth and notifies proactively.
     if (context.checkoutUrl && intent.isNegative) {
       return {
         text: 'Entendido. Si quieres intentar de nuevo más tarde, escríbeme cuando gustes.',
@@ -2374,9 +2121,8 @@ export class AgentService {
     const cov = product.coverages.slice(0, 3).map((c) => `✅ ${c}`).join('\n');
     const reason = score.reasons[0] ?? 'se ajusta a lo que buscas';
     const isPet = product.category === 'mascotas';
-    // Live bug: a mixed household got a re-shown product priced against the RAW
-    // cross-species petCount, not its own species' count. Uses the same species-aware
-    // helper buildMixedSpeciesQuote relies on, so any call site prices correctly.
+    // Uses the same species-aware helper as buildMixedSpeciesQuote, so every call site prices a
+    // mixed household by its own per-species counts.
     const effectivePetCount = context ? this.petCountForProduct(context, product) : context?.petCount;
     const petCount = (isPet && effectivePetCount && effectivePetCount > 0) ? effectivePetCount : null;
     const pricePerUnit = product.basePremium;
@@ -2407,9 +2153,8 @@ export class AgentService {
     );
   }
 
-  // Answers a follow-up meta-question with the FULL coverage list (formatQuote truncates
-  // to top-3) instead of the same truncated card re-shown. Names other shown products so
-  // the user can switch — no invented data (rule #12).
+  // Answers a follow-up with the FULL coverage list, since formatQuote truncates to three.
+  // Names the other shown products so the person can switch — no invented data (rule #12).
   private formatProductDetail(product: InsuranceProduct, context: ConversationContext): string {
     const cov = product.coverages.map((c) => `✅ ${c}`).join('\n');
     const scored = this.quoting.score(context as AffiliateSignals).find((s) => s.productId === product.id);
@@ -2431,9 +2176,8 @@ export class AgentService {
     );
   }
 
-  // Answers a COMPLETED customer's question about their OWN policy — never a sales pitch
-  // (no "¿te interesa?"). Falls back to the generic COMPLETED text if no recorded id
-  // still resolves (rule #12: never fabricate a card for a product that no longer exists).
+  // Answers a COMPLETED customer about their OWN policy — never a sales pitch. Falls back to
+  // the generic COMPLETED text if no recorded id still resolves (rule #12).
   private answerPolicyInquiry(context: ConversationContext): ProcessResult {
     const products = (context.purchasedProductIds ?? [])
       .map((id) => this.catalog.getProduct(id))
@@ -2454,8 +2198,7 @@ export class AgentService {
     );
   }
 
-  // Extracted from buildMixedSpeciesQuote so a re-show of an already-active mixed-species
-  // purchase reuses the same species-correct summary. Pure text builder, never mutates context.
+  // Shared with a re-show of an already-active mixed purchase. Pure text builder, never mutates.
   private formatMixedSpeciesQuote(context: ConversationContext): string {
     const gatoProduct = this.catalog.getProduct('medicina-prepagada-gatos')!;
     const perroProduct = this.catalog.getProduct('medicina-prepagada-perros')!;
@@ -2480,9 +2223,8 @@ export class AgentService {
     );
   }
 
-  // Live bug: a mixed household was quoted a SINGLE species-restricted product multiplied
-  // by the TOTAL pet count, charging the other species at the wrong rate. Quotes BOTH
-  // products together, reusing the multi-product purchase machinery downstream.
+  // Quotes BOTH products together, reusing the multi-product machinery: a mixed household used
+  // to get one species-restricted product multiplied by the TOTAL pet count.
   private buildMixedSpeciesQuote(context: ConversationContext): ProcessResult {
     const selectedProductIds = ['medicina-prepagada-gatos', 'medicina-prepagada-perros'];
     return {

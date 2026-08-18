@@ -1,4 +1,5 @@
-// policy.module.ts: policy issuance and PDF generation
+// policy.module.ts: policy issuance and the PDF that is generated once payment is
+// confirmed.
 import { Module } from '@nestjs/common';
 import { QuotingModule } from '../quoting/quoting.module';
 import { PolicyService } from './policy.service';

@@ -6,10 +6,8 @@ import { ConversationState, ConversationContext } from './types';
 import { ProductCatalog } from '../quoting/product-catalog.service';
 import { hasRememberedProfile } from './persistent-context';
 
-// Reads the same YAML-backed catalog as QuotingService/AgentService/PolicyService — this
-// file has no DI constructor to inject IProductRepository into (STATE_RESPONSES is plain
-// module state, not a class), so it loads its own copy at import time instead. Never a
-// separate data source: same files on disk, same 11 products.
+// Loads its own ProductCatalog: STATE_RESPONSES is plain module state with no DI constructor
+// to inject IProductRepository into. Same files on disk, never a second data source.
 const PRODUCTS = new ProductCatalog().getProducts();
 
 type TransitionMap = Partial<Record<ConversationState, ConversationState[]>>;
@@ -34,19 +32,16 @@ function translate(ctx: ConversationContext): ConversationContext {
   return ctx && typeof ctx === 'object' ? ctx : {};
 }
 
-// "Ramón, Bruna y Pancha" — Spanish list joining, "y" before the last item. Exported so
-// wompi-webhook.controller.ts's multi-policy confirmation can reuse the same formatting.
+// "Ramón, Bruna y Pancha" — Spanish list joining. Exported so the multi-policy confirmation
+// in wompi-webhook.controller.ts formats names identically.
 export function formatNameList(names: string[]): string {
   if (names.length <= 1) return names[0] ?? '';
   return `${names.slice(0, -1).join(', ')} y ${names[names.length - 1]}`;
 }
 
-// progressFor — the AseguraWeb progress bar (plan-17 §15). A web session always starts
-// AFTER authorization (§11 mints the link once the user has already said "sí"), so the
-// bar's 0% is DISCOVERY, not GREETING — GREETING/AUTHORIZATION clamp to step 1 rather than
-// reporting 0 (nothing meaningful to show "0% done" for, and a 0 reads as broken, not
-// "not started"). Terminal states (COMPLETED/ABANDONED/REJECTED) clamp to the last real
-// step for the same reason — there's no future step to point at.
+// A web session always starts AFTER authorization, so the bar's 0% is DISCOVERY.
+// GREETING/AUTHORIZATION clamp to step 1 (a 0 reads as broken, not "not started") and the
+// terminal states clamp to the last real step — there is no future step to point at.
 const WEB_FLOW_STATES: ConversationState[] = [
   ConversationState.DISCOVERY,
   ConversationState.QUOTING,
@@ -78,9 +73,6 @@ export function progressFor(state: ConversationState): { step: number; totalStep
     return { step: index + 1, totalSteps, label: WEB_FLOW_LABELS[state] };
   }
 
-  // Not in the list: GREETING/AUTHORIZATION come BEFORE the web flow starts (clamp to
-  // step 1 — the earliest meaningful point to show, never 0); COMPLETED/ABANDONED/REJECTED
-  // come AFTER it (clamp to the last real step — there's no future step to point at).
   const isBeforeFlow = state === ConversationState.GREETING || state === ConversationState.AUTHORIZATION;
   return {
     step: isBeforeFlow ? 1 : totalSteps,
@@ -90,17 +82,9 @@ export function progressFor(state: ConversationState): { step: number; totalStep
 }
 
 export const STATE_RESPONSES: ResponsesMap = {
-  // 2026-07-24 — greeting + authorization were two messages and read as a wall of text;
-  // people bounced. Combined into one, Ley 1581 disclosure kept as a parenthetical.
-  // 2026-07-26 — persistent memory: a returning user gets an honest acknowledgment that
-  // SOME profile carried over, never invented specifics (rule #12). Uses the first name
-  // when we have it.
-  // 2026-07-26 — "puedes responder por texto o audio" moved here from the affiliate-ID
-  // question: it belongs in the FIRST message. Kept short, not repeated later.
-  // 2026-08-12 — shortened further: short-attention social-media users bounce before
-  // finishing a 3-paragraph greeting. Merged the CTA into the same line as the
-  // authorization ask, and demoted Ley 1581 from its own paragraph to a trailing italic
-  // footnote — still disclosed, just not the visual center of the message.
+  // Greeting and authorization in ONE message: as two, it read as a wall of text and people
+  // bounced. Ley 1581 stays disclosed, demoted to a trailing italic footnote. A returning user
+  // gets an honest acknowledgment that some profile carried over, never invented specifics.
   [ConversationState.GREETING]: (ctx) => {
     const c = translate(ctx);
     const firstName = c.nombre?.split(' ')[0];
@@ -129,9 +113,8 @@ export const STATE_RESPONSES: ResponsesMap = {
         'Puedes enviar tus respuestas en audio o texto'
       );
     }
-    // 2026-07-26 — removed a 3rd tier asking beneficiaries' age range: no NLP field ever
-    // captured a human's age (only petAge), QuotingService never read one, and
-    // handleDiscovery's guard made it unreachable. Step 3's `dependents` replaces it.
+    // A 3rd tier asking the beneficiaries' age range was removed: no NLP field ever captured a
+    // human's age, only a pet's. Step 3's `dependents` replaces it.
     return '¿Cuántas personas son en tu familia o grupo familiar?';
   },
 
@@ -173,9 +156,8 @@ export const STATE_RESPONSES: ResponsesMap = {
   [ConversationState.PAYMENT]: () =>
     '🔐 El pago es 100% seguro a través de Wompi — plataforma oficial de Bancolombia.\n\nAcepta tarjeta débito/crédito, Nequi y PSE.\n\n¿Listo para generar tu link de pago?',
 
-  // 2026-07-24 gamification feedback: celebratory milestone copy at the biggest "you
-  // did it" moment in the flow — personalized with the user's first name and, for a
-  // mascotas purchase, each pet's name (reuses data already in context, no new fields).
+  // Celebratory copy at the biggest moment in the flow, personalized from data already in
+  // context — the user's first name and, for mascotas, each pet's name.
   [ConversationState.POLICY_ISSUED]: (ctx) => {
     const c = translate(ctx);
     const firstName = c.nombre?.split(' ')[0];

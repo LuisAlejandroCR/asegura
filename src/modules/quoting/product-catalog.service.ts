@@ -1,17 +1,6 @@
-// product-catalog.service.ts: This script is for loading, validating, and caching the
-// insurance product catalog in memory at boot, behind IProductRepository (CLAUDE.md rule
-// #6), so QuotingService's scoring engine no longer depends on products.data.ts directly.
-//
-// 2026-07-26 — reads catalog/products/*.yaml. Only priced, sellable products (company/
-// public_price/requires_quote all set) become an InsuranceProduct; that alone excludes the
-// unmigrated ones (SOAT, vehicular) without hardcoding ids. Broken YAML or a real product
-// missing coverages never gets dropped silently — validate() below crashes the boot, since
-// shipping a smaller catalog is worse than not booting.
-//
-// 2026-08-11 — agent.service.ts, conversation-state.machine.ts, and policy.service.ts all
-// migrated off products.data.ts onto this class (DI where they have a constructor,
-// module-level `new ProductCatalog()` where they don't). products.data.ts now exists only
-// as a fixture for specs that assert against a known fixed list — never a runtime source.
+// product-catalog.service.ts: loads, validates and caches the YAML product catalog at boot,
+// behind IProductRepository. Only priced, sellable products (company + public_price +
+// requires_quote) become an InsuranceProduct; broken YAML crashes the boot on purpose.
 import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -23,23 +12,17 @@ export class ProductCatalog implements IProductRepository {
   private readonly logger = new Logger(ProductCatalog.name);
   private readonly products: InsuranceProduct[];
 
-  // Preserves QuotingService's tie-break behavior across the products.data.ts → YAML
-  // swap: score() does a stable sort by matchScore, so when two products tie, whichever
-  // comes first in this array wins the cut into the top 3 (see quoting.service.spec.ts's
-  // "prioritized asistencia product ... by catalog order" test) — this is the exact
-  // original products.data.ts array order. Unknown ids sort LAST (not first), so a future
-  // 12th real product that hasn't been added here yet doesn't silently jump the queue.
+  // Tie-break order: score() sorts stably, so on a tie the id listed earlier here wins the
+  // cut into the top 3. Unknown ids sort LAST, so a new product never jumps the queue.
   private static readonly CANONICAL_ORDER: readonly string[] = [
     'accidentes-personales', 'accidentes-premium', 'vida', 'asistencias-multiples',
     'exequial', 'accidentes-exequial', 'vida-ahorro', 'asistencias-medicas',
     'asistencia-veterinaria', 'medicina-prepagada-gatos', 'medicina-prepagada-perros',
   ];
 
-  // Files deliberately left out of the sellable catalog (no company/price yet). Collected
-  // instead of warned per-file: 13 WARN lines per boot buried the real signal, and the
-  // voice-agent worker forks several processes so it printed them all over again in each.
-  // A product that isn't priced yet is expected state, not something to act on — the
-  // count still surfaces, so a product silently dropping out stays visible.
+  // Left out of the sellable catalog (no company or price yet). Collected instead of warned
+  // per file: 13 WARN lines per boot buried the real signal. The count still surfaces, so a
+  // product dropping out by accident stays visible.
   private readonly skipped: string[] = [];
 
   constructor() {
@@ -59,10 +42,8 @@ export class ProductCatalog implements IProductRepository {
     return this.products.find((p) => p.id === id);
   }
 
-  // catalog/products/*.yaml is process.cwd()-relative, not __dirname-relative — nest-cli
-  // doesn't copy non-.ts assets into dist/, so src/ itself must exist alongside dist/ at
-  // runtime (same convention as pdf.service.ts's IMAGES_DIR and agent.service.ts's
-  // IDENTITY_ANIMATION_PATH).
+    // process.cwd()-relative, not __dirname-relative: nest-cli doesn't copy non-.ts assets
+    // into dist/, so src/ must exist alongside dist/ at runtime.
   private load(): InsuranceProduct[] {
     const dir = path.join(process.cwd(), 'src', 'modules', 'quoting', 'catalog', 'products');
     const products: InsuranceProduct[] = [];
@@ -107,16 +88,9 @@ export class ProductCatalog implements IProductRepository {
     return products.sort((a, b) => rank(a.id) - rank(b.id));
   }
 
-  // Public, not part of IProductRepository (same precedent as AffiliateLookupService's
-  // isEnabled() — a capability of the concrete class, not something QuotingService, the
-  // only real consumer, ever needs to call). Aggregates every violation into ONE thrown
-  // error (mirrors env.validation.ts's crossFieldErrors) instead of failing on the first
-  // problem, so a genuine authoring bug doesn't turn into a slow fix-one-rerun loop. This
-  // throws rather than warn-and-disable (AffiliateLookupService's pattern): that pattern
-  // exists for an OPTIONAL external file that can legitimately be absent — this catalog
-  // is compiled-in TypeScript that can never be "missing", so a validation failure means
-  // a genuine authoring bug, and there's no meaningful "0 products" mode for a quoting
-  // engine. main.ts's bootstrap().catch() converts this throw into a clean boot exit.
+  // Aggregates every violation into ONE thrown error instead of failing on the first, so an
+  // authoring bug isn't a fix-one-rerun loop. Throws rather than warn-and-disable: unlike an
+  // optional external file, this catalog can never legitimately be missing.
   validate(products: InsuranceProduct[] = this.products): void {
     const errors = this.collectErrors(products);
     if (errors.length > 0) {
@@ -144,9 +118,7 @@ export class ProductCatalog implements IProductRepository {
         errors.push(`${label}: basePremium must be a positive finite number, got ${p.basePremium}`);
       }
       if (!Array.isArray(p.coverages)) errors.push(`${label}: coverages must be an array`);
-      // evaluateProduct()'s pet hard-filter does exact string comparison against
-      // signals.petType — a typo'd eligibility.pet value would silently never match
-      // anything (wrong scoring, no crash) rather than fail loudly at boot.
+      // A typo'd eligibility.pet would silently never match anything instead of failing here.
       if (typeof p.eligibility !== 'object' || p.eligibility === null) {
         errors.push(`${label}: eligibility must be an object (use {} for "no restrictions")`);
       } else if (p.eligibility.pet !== undefined && !['gato', 'perro', 'any'].includes(p.eligibility.pet)) {
@@ -157,11 +129,8 @@ export class ProductCatalog implements IProductRepository {
       if (!p.url || typeof p.url !== 'string') errors.push(`${label}: missing url`);
     }
 
-    // The actual safety net for "a real product silently vanished" — not the load-time
-    // gate above, which only decides what's ATTEMPTED; this confirms every expected real
-    // product actually made it through (a YAML syntax error, an id typo, or an incomplete
-    // company/public_price/requires_quote triad would otherwise fail this loudly instead
-    // of silently shipping a smaller catalog).
+    // The real safety net for "a product silently vanished": the load-time gate only decides
+    // what is ATTEMPTED, this confirms every expected product actually made it through.
     for (const id of ProductCatalog.CANONICAL_ORDER) {
       if (!products.some((p) => p.id === id)) {
         errors.push(

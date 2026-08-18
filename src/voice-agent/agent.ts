@@ -6,10 +6,8 @@ import { QuotingService } from '../modules/quoting/quoting.service';
 import { ProductCatalog } from '../modules/quoting/product-catalog.service';
 import { createCotizarTool } from './cotizar-tool';
 
-// Same catalog data source as the rest of the app (ProductCatalog reads
-// catalog/products/*.yaml) — a worker-local instance, no NestJS DI involved. See
-// conversation-state.machine.ts / agent.service.ts's identical `new ProductCatalog()`
-// pattern for why this is safe: it's the same files on disk, never a second source of truth.
+// A worker-local ProductCatalog instance — no NestJS DI in this process. Same YAML files on
+// disk as the backend, never a second source of truth.
 const quoting = new QuotingService(new ProductCatalog());
 
 const INSTRUCTIONS = `Eres Asegura, el asesor de seguros conversacional de Colsubsidio.

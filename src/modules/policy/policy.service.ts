@@ -21,8 +21,7 @@ export class PolicyService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly pdf: PdfService,
-    // Default keeps every direct `new PolicyService(supabase, pdf)` in the spec file
-    // working unchanged — Nest's DI still injects the real shared singleton in production.
+    // Default keeps the spec's direct `new PolicyService(...)` working; DI injects the singleton.
     @Inject('IProductRepository')
     private readonly catalog: IProductRepository = new ProductCatalog(),
   ) {}
@@ -31,12 +30,9 @@ export class PolicyService {
     const product = this.catalog.getProduct(context.quoteProductId ?? '');
     const monthlyPremium = product ? computeTotalPremium(product, context.petCount) : 0;
 
-    // Real live-test bug: a mixed household (1 cat + 2 dogs) issues one policy per
-    // species, but both PDFs listed all 3 pets — the FULL context.pets array was stored
-    // verbatim for every policy, regardless of which species-restricted product it's
-    // for. Filter to just the pets of the product's own species when it's restricted;
-    // a generic product (eligibility.pet === 'any', or no pet eligibility at all) keeps
-    // every pet, unfiltered, exactly as before.
+    // A mixed household issues one policy per species, but the full context.pets array used to
+    // be stored on every one, so both PDFs listed all 3 pets. Species-restricted products get
+    // only their own pets; a generic product keeps them all.
     let petsForPolicy = context.pets ?? null;
     if (product && (product.eligibility.pet === 'gato' || product.eligibility.pet === 'perro') && context.pets?.length) {
       const species = classifyPetsBySpecies(context.pets, context.petSpeciesCounts);
@@ -92,10 +88,8 @@ export class PolicyService {
     return data as Policy | null;
   }
 
-  // Wompi's Payment Links API has no "reference" field — the webhook's transaction
-  // carries payment_link_id instead, which we match back to policies here. Returns an
-  // array (not maybeSingle) because a multi-product purchase issues one policy per
-  // product but shares a single combined Wompi payment link across all of them.
+  // Matched by payment_link_id, not by reference (Wompi generates its own). Returns an array
+  // because a multi-product purchase shares one payment link across several policies.
   async findAllByWompiLinkId(wompiLinkId: string): Promise<Policy[]> {
     const { data, error } = await this.supabase.db
       .from('policies')

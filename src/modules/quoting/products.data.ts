@@ -1,6 +1,6 @@
 // products.data.ts: the 11 MVP products with the real prices published on
-// colsubsidio.com/seguros. Never invent a product or a premium here — the catalog is
-// what every quote and every charged amount is derived from.
+// colsubsidio.com/seguros. Spec fixture only — the runtime catalog is
+// catalog/products/*.yaml, loaded by ProductCatalog.
 
 import { InsuranceProduct } from './types';
 
@@ -122,11 +122,7 @@ export const PRODUCTS: InsuranceProduct[] = [
     url: 'https://www.colsubsidio.com/seguros/mascotas/medicina-prepagada',
     coverages: ['Medicina prepagada para perros', 'Consultas ilimitadas', 'Cirugías', 'Hospitalización', 'Exámenes diagnósticos'],
     eligibility: { pet: 'perro' },
-    // 2026-07-24 feedback listed only "gatos condicionado" explicitly, but its own
-    // exception clause said "gatos/perros condicionado" — both VetPlus prepagada
-    // products share the identical underwriting requirement (age/illness/clinical
-    // history), so perros is included for consistency. Flag before the demo if perros
-    // was deliberately meant to be excluded.
+    // Both VetPlus prepagada products share the identical underwriting requirement.
     businessPriority: true,
     requiresUnderwriting: true,
   },

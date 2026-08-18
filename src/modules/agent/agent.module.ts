@@ -1,5 +1,5 @@
-// agent.module.ts: wires AgentService to the channel, NLP, quoting, policy and
-// payments modules it orchestrates.
+// agent.module.ts: wires AgentService to the channel, NLP, quoting, policy and payments
+// modules it orchestrates.
 
 import { Module } from '@nestjs/common';
 import { ChannelModule } from '../channel/channel.module';
@@ -18,10 +18,8 @@ import { WebLinkCodeService } from './web-link-code.service';
 
 @Module({
   imports: [ChannelModule, NlpModule, DatabaseModule, QuotingModule, PolicyModule, PaymentsModule, ConversationModule],
-  // TwilioWebhookController registered here, not in ChannelModule — see the comment on
-  // ChannelModule for why (it needs AgentService directly; ChannelModule can't import
-  // AgentModule back without a cycle). WebSessionController lives here for the same
-  // reason (it needs AgentService.handleWebMessage directly).
+  // TwilioWebhookController and WebSessionController live here, not in ChannelModule: both
+  // need AgentService directly, and ChannelModule can't import AgentModule back (cycle).
   controllers: [TwilioWebhookController, WebSessionController, WebLinkController],
   providers: [AgentService, WebSessionTokenService, WebLinkCodeService],
   exports: [AgentService],

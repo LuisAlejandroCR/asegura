@@ -1,3 +1,5 @@
+// telegram-webhook.controller.ts: the POST /webhook/telegram endpoint, guarded by the
+// shared-secret header and handed straight to grammy's own webhook callback.
 import { Controller, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { TelegramWebhookGuard } from '../../common/guards/telegram-webhook.guard';
