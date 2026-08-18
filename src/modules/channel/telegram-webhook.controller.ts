@@ -2,9 +2,12 @@
 // shared-secret header and handed straight to grammy's own webhook callback.
 import { Controller, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { SkipThrottle } from '@nestjs/throttler';
 import { TelegramWebhookGuard } from '../../common/guards/telegram-webhook.guard';
 import { TelegramAdapter } from './telegram-adapter.service';
 
+// The shared secret is the gate; a throttled update is a message nobody ever answers.
+@SkipThrottle()
 @Controller('webhook')
 export class TelegramWebhookController {
   constructor(private readonly telegram: TelegramAdapter) {}

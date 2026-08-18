@@ -2,8 +2,9 @@
 // feature module (agent, channel, quoting, policy, payments, database, health).
 
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { validate } from './config/env.validation';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
@@ -25,6 +26,11 @@ import { VoiceModule } from './modules/voice/voice.module';
     AgentModule,
     PaymentsModule,
     VoiceModule,
+  ],
+  providers: [
+    // Importing ThrottlerModule only registers the storage; without this binding no request
+    // is ever counted. Buckets are per-IP, which needs `trust proxy` set in main.ts.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

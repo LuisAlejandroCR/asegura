@@ -1,9 +1,10 @@
-// main.ts: NestJS bootstrap — helmet, CORS, global validation and exception filter,
-// then registers the Telegram webhook (or long-polling when PUBLIC_URL is unset).
+// main.ts: NestJS bootstrap — proxy trust, helmet, CORS, global validation and exception
+// filter, then registers the Telegram webhook (or long-polling when PUBLIC_URL is unset).
 
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
@@ -11,9 +12,13 @@ import { AgentService } from './modules/agent/agent.service';
 import { TelegramAdapter } from './modules/channel/telegram-adapter.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
+
+  // Railway proxies everything, so without this req.ip is the edge's address for every
+  // caller: one shared rate-limit bucket, and a flood that 429s the healthcheck.
+  app.set('trust proxy', 1);
 
   app.use(
     helmet({

@@ -2,6 +2,7 @@
 // map back to a policy via payment_link_id, since Wompi's Payment Links API has no
 // "reference" create-parameter. Only this path notifies the user and sends the final PDF.
 import { Controller, Post, Body, UnauthorizedException, Logger } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import * as path from 'path';
 import { WompiService } from './wompi.service';
 import { PolicyService } from '../policy/policy.service';
@@ -19,6 +20,8 @@ const PROCESSED_STATUSES = ['paid', 'active'];
 // into dist/. "¡Pago recibido!" is baked into the video itself.
 const PAYMENT_ANIMATION_PATH = path.join(process.cwd(), 'src', 'assets', 'payment-received.mp4');
 
+// The signature is the gate, and a 429 here is a paid policy that never gets issued.
+@SkipThrottle()
 @Controller('webhooks/wompi')
 export class WompiWebhookController {
   private readonly logger = new Logger(WompiWebhookController.name);

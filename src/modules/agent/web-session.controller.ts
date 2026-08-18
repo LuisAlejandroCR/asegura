@@ -1,6 +1,6 @@
 // web-session.controller.ts: the HTTP surface AseguraWeb (texto.html/voz.html) calls. The
 // signed token is the only credential — it grants access to the one conversation it was
-// minted for, for its TTL. Nothing rate-limits this endpoint yet.
+// minted for, for its TTL. The global per-IP limiter is the only other gate.
 import { Body, Controller, Get, Param, Post, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AgentService, WebReply } from './agent.service';

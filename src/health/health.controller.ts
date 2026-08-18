@@ -1,9 +1,12 @@
 // health.controller.ts: GET /health — pings the database and reports which optional
 // integrations are configured.
 import { Controller, Get } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../database/supabase.service';
 
+// Railway polls this and kills the deploy on failure: a 429 here reads as a dead app.
+@SkipThrottle()
 @Controller('health')
 export class HealthController {
   constructor(

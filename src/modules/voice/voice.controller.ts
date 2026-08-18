@@ -2,6 +2,7 @@
 // + token before connecting. Unauthenticated, matching the product's no-login promise: a
 // leaked token grants one throwaway room for TOKEN_TTL_SECONDS.
 import { Body, Controller, Post, ServiceUnavailableException } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { LiveKitTokenService, VoiceSession } from './livekit-token.service';
 import { WebSessionTokenService } from '../agent/web-session-token.service';
 
@@ -18,6 +19,9 @@ export class VoiceController {
     private readonly webSessionTokens: WebSessionTokenService,
   ) {}
 
+  // Each call opens a LiveKit room and bills ElevenLabs and Groq; a real user needs one
+  // per page load.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('session')
   async createSession(@Body() body: CreateSessionBody): Promise<VoiceSession> {
     const payload = body.webToken ? this.webSessionTokens.verify(body.webToken) : null;
