@@ -5,7 +5,7 @@ import { tool } from '@livekit/agents';
 import { z } from 'zod';
 import {
   ToolDeps, consultarAfiliadoLogic, emitirPolizaLogic, generarLinkPagoLogic,
-  registrarAseguramientoLogic, seleccionarProductoLogic, validarDatosLogic,
+  registrarAseguramientoLogic, registrarMascotasLogic, seleccionarProductoLogic, validarDatosLogic,
 } from '../modules/agent/tools';
 import { VoiceSessionState } from './session-state';
 
@@ -131,6 +131,27 @@ export function createSeleccionarProductoTool(deps: Pick<ToolDeps, 'quoting' | '
     execute: async ({ productId }) => {
       const result = seleccionarProductoLogic(deps, state.context, { productId });
       if (result.ok) state.merge({ quoteProductId: result.productId });
+      return result;
+    },
+  });
+}
+
+export function createRegistrarMascotasTool(state: VoiceSessionState) {
+  return tool({
+    name: 'registrar_mascotas',
+    description:
+      'Guarda nombre, edad y raza de CADA mascota a asegurar. Sin esto no se emite una póliza ' +
+      'de mascotas. Pregúntaselos de a una si es más natural.',
+    parameters: z.object({
+      mascotas: z.array(z.object({
+        nombre: z.string(),
+        edad: z.string(),
+        raza: z.string().optional(),
+      })),
+    }),
+    execute: async (args) => {
+      const result = registrarMascotasLogic(state.context, args as never);
+      if (result.ok) state.merge({ pets: result.mascotas });
       return result;
     },
   });

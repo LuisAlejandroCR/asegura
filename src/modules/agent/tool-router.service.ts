@@ -6,7 +6,8 @@ import { ChatTurn, INlpProvider, ToolSchema } from '../nlp/types';
 import { ConversationContext } from './types';
 import {
   ToolDeps, consultarAfiliadoLogic, cotizarLogic, emitirPolizaLogic,
-  generarLinkPagoLogic, registrarAseguramientoLogic, seleccionarProductoLogic, validarDatosLogic,
+  generarLinkPagoLogic, registrarAseguramientoLogic, registrarMascotasLogic,
+  seleccionarProductoLogic, validarDatosLogic,
 } from './tools';
 
 // The model may call at most this many tools per user message: a loop that keeps calling is
@@ -73,6 +74,26 @@ export class ToolRouterService {
           email: { type: 'string' },
           mensaje: { type: 'string', description: 'El mensaje completo, para leer si es CC, CE, TI, NIP o NUIP.' },
         },
+      },
+    },
+    {
+      name: 'registrar_mascotas',
+      description:
+        'Guarda el nombre, la edad y la raza de CADA mascota que se va a asegurar. Sin esto no ' +
+        'se puede emitir una póliza de mascotas — pídeselos una por una si hace falta.',
+      parameters: {
+        type: 'object',
+        properties: {
+          mascotas: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { nombre: { type: 'string' }, edad: { type: 'string' }, raza: { type: 'string' } },
+              required: ['nombre', 'edad'],
+            },
+          },
+        },
+        required: ['mascotas'],
       },
     },
     {
@@ -191,6 +212,10 @@ export class ToolRouterService {
       case 'capturar_datos': {
         const result = validarDatosLogic(args as never);
         return { result, context: result.ok ? { ...ctx, ...result.datos } : ctx };
+      }
+      case 'registrar_mascotas': {
+        const result = registrarMascotasLogic(ctx, args as never);
+        return { result, context: result.ok ? { ...ctx, pets: result.mascotas } : ctx };
       }
       case 'preguntas_aseguramiento': {
         const result = registrarAseguramientoLogic(this.deps, ctx, { respuestas: String(args.respuestas ?? '') });

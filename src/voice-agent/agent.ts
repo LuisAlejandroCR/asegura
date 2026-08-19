@@ -10,7 +10,7 @@ import { createCotizarTool } from './cotizar-tool';
 import {
   createAutorizarTool, createCapturarDatosTool, createConsultarAfiliadoTool,
   createEmitirPolizaTool, createGenerarLinkPagoTool, createPreguntasAseguramientoTool,
-  createSeleccionarProductoTool,
+  createRegistrarMascotasTool, createSeleccionarProductoTool,
 } from './tools';
 
 // A worker-local ProductCatalog instance — no NestJS DI in this process. Same YAML files on
@@ -75,6 +75,7 @@ export function createVoiceAgent(state: VoiceSessionState, deps: ToolDeps = { qu
       }, () => state.context),
       createSeleccionarProductoTool(deps, state),
       createCapturarDatosTool(state),
+      createRegistrarMascotasTool(state),
       createPreguntasAseguramientoTool(deps, state),
       createEmitirPolizaTool(deps, state),
       createGenerarLinkPagoTool({ ...deps, quoting: deps.quoting }, state),

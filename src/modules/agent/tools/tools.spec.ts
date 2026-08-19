@@ -7,6 +7,7 @@ import {
   NOT_AUTHORIZED, cotizarLogic, validarDatosLogic, consultarAfiliadoLogic,
   emitirPolizaLogic, generarLinkPagoLogic, registrarAseguramientoLogic, requiresUnderwriting,
   detectarTipoDocumento, seleccionarProductoLogic, detectarFueraDeCatalogo,
+  registrarMascotasLogic, esProductoDeMascotas,
 } from './index';
 
 const quoting = new QuotingService(new ProductCatalog());
@@ -312,5 +313,68 @@ describe('cotizar — lo que no está en el catálogo se dice, no se sustituye',
 
   it('una petición normal sigue cotizando', () => {
     expect(cotizarLogic(quoting, { productCategory: 'vida', mensaje: 'quiero proteger a mi familia' }).ok).toBe(true);
+  });
+});
+
+// Migrated from DATA_CAPTURE's per-pet block. The machine walks the pets one at a time; the
+// model may gather them in any order, so the contract is the count and the fields — a policy
+// issued without them prices on a number nobody confirmed and prints an empty table.
+describe('registrarMascotas', () => {
+  const catalog = new ProductCatalog();
+  const dosGatos = { ...authorized, petCount: 2, quoteProductId: 'medicina-prepagada-gatos' };
+
+  it('guarda las mascotas cuando llegan completas', () => {
+    const result = registrarMascotasLogic(dosGatos, {
+      mascotas: [{ nombre: 'Ramón', edad: '3', raza: 'criollo' }, { nombre: 'Luna', edad: '1' }],
+    });
+    expect(result).toEqual({
+      ok: true,
+      mascotas: [
+        { name: 'Ramón', age: '3', breed: 'criollo' },
+        { name: 'Luna', age: '1', breed: '' },
+      ],
+    });
+  });
+
+  it('regresión — faltando una mascota, dice cuántas faltan en vez de emitir a medias', () => {
+    const result = registrarMascotasLogic(dosGatos, { mascotas: [{ nombre: 'Ramón', edad: '3' }] });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.motivo).toContain('2 mascota');
+  });
+
+  it('un acuse no es el nombre de una mascota', () => {
+    const result = registrarMascotasLogic({ ...authorized, petCount: 1 }, { mascotas: [{ nombre: 'gracias', edad: '2' }] });
+    expect(result.ok).toBe(false);
+  });
+
+  it('sin edad no se guarda', () => {
+    const result = registrarMascotasLogic({ ...authorized, petCount: 1 }, { mascotas: [{ nombre: 'Ramón', edad: '' }] });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.motivo).toContain('Ramón');
+  });
+
+  it('reconoce los productos que exigen datos de mascota', () => {
+    expect(esProductoDeMascotas({ catalog }, { quoteProductId: 'medicina-prepagada-gatos' })).toBe(true);
+    expect(esProductoDeMascotas({ catalog }, { quoteProductId: 'asistencia-veterinaria' })).toBe(true);
+    expect(esProductoDeMascotas({ catalog }, { quoteProductId: 'vida' })).toBe(false);
+  });
+
+  it('regresión — emitirPoliza rechaza una póliza de mascotas sin sus datos', async () => {
+    const deps = { catalog, policies: { issue: jest.fn().mockResolvedValue({ policyId: 'pol-1' }) } };
+    const context = { ...dosGatos, cedula: '12345678', nombre: 'Juan Pérez', medicalInfoProvided: true };
+    const result = await emitirPolizaLogic(deps, 'conv-1', context);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.motivo).toContain('mascotas');
+    expect(deps.policies.issue).not.toHaveBeenCalled();
+  });
+
+  it('con los datos, emite', async () => {
+    const deps = { catalog, policies: { issue: jest.fn().mockResolvedValue({ policyId: 'pol-1' }) } };
+    const context = {
+      ...dosGatos, cedula: '12345678', nombre: 'Juan Pérez', medicalInfoProvided: true,
+      pets: [{ name: 'Ramón', age: '3', breed: '' }, { name: 'Luna', age: '1', breed: '' }],
+    };
+    await expect(emitirPolizaLogic(deps, 'conv-1', context)).resolves.toEqual({ ok: true, policyId: 'pol-1' });
   });
 });

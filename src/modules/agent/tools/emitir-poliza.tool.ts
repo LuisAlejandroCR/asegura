@@ -5,6 +5,7 @@ import { ConversationContext } from '../types';
 import { ToolDeps, ToolOutcome, requireAuthorization } from './types';
 import { isValidCedula, isValidEmail, isValidName } from './validar-datos.tool';
 import { requiresUnderwriting } from './aseguramiento.tool';
+import { esProductoDeMascotas } from './mascotas.tool';
 
 export function emitirPolizaLogic(
   deps: Pick<ToolDeps, 'policies' | 'catalog'>,
@@ -22,6 +23,10 @@ export function emitirPolizaLogic(
   // vida and the pet prepaid plans cannot be issued without the underwriting answers.
   if (requiresUnderwriting(deps, context) && !context.medicalInfoProvided) {
     faltan.push('las preguntas de aseguramiento');
+  }
+  // Without them the premium is computed on a count nobody confirmed and the PDF lists nothing.
+  if (esProductoDeMascotas(deps, context) && !context.pets?.length) {
+    faltan.push('los datos de las mascotas');
   }
   if (faltan.length) {
     return Promise.resolve({ ok: false, motivo: `Falta ${faltan.join(', ')} antes de emitir.` });
