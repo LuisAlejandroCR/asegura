@@ -8,3 +8,4 @@ export * from './consultar-afiliado.tool';
 export * from './aseguramiento.tool';
 export * from './emitir-poliza.tool';
 export * from './generar-link-pago.tool';
+export * from './seleccionar-producto.tool';

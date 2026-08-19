@@ -6,7 +6,7 @@ import { QuotingService } from '../../quoting/quoting.service';
 import {
   NOT_AUTHORIZED, cotizarLogic, validarDatosLogic, consultarAfiliadoLogic,
   emitirPolizaLogic, generarLinkPagoLogic, registrarAseguramientoLogic, requiresUnderwriting,
-  detectarTipoDocumento,
+  detectarTipoDocumento, seleccionarProductoLogic,
 } from './index';
 
 const quoting = new QuotingService(new ProductCatalog());
@@ -214,5 +214,69 @@ describe('validarDatos — reglas migradas de DATA_CAPTURE', () => {
     const result = validarDatosLogic({ cedula: bad });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.motivo).toContain('dígitos');
+  });
+});
+
+// Migrated from QUOTE_PRESENTED's back-reference block: the machine resolved "la primera" and
+// "prefiero la anterior" with regexes over shownProductIds. The model reads the transcript
+// instead, but it may only pin the quote to something the person was actually offered —
+// otherwise a back-reference silently becomes a different product at a different price.
+describe('seleccionarProducto — solo entre lo ya ofrecido', () => {
+  const catalog = new ProductCatalog();
+  const deps = { quoting, catalog };
+  const shown = { ...authorized, shownProductIds: ['asistencias-medicas', 'exequial'] };
+
+  it('fija la cotización en una opción ya mostrada', () => {
+    const result = seleccionarProductoLogic(deps, shown, { productId: 'exequial' });
+    expect(result).toMatchObject({ ok: true, productId: 'exequial' });
+    if (result.ok) expect(result.precioMensual).toBeGreaterThan(0);
+  });
+
+  it('regresión — rechaza un producto que nunca se ofreció', () => {
+    const result = seleccionarProductoLogic(deps, shown, { productId: 'vida' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.motivo).toContain('ya ofrecidas');
+  });
+
+  it('sin nada ofrecido todavía, manda a cotizar', () => {
+    const result = seleccionarProductoLogic(deps, authorized, { productId: 'vida' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.motivo).toContain('cotizar');
+  });
+
+  it('no funciona sin autorización', () => {
+    expect(seleccionarProductoLogic(deps, { shownProductIds: ['vida'] }, { productId: 'vida' }).ok).toBe(false);
+  });
+
+  it('un id inexistente no se acepta aunque figure como mostrado', () => {
+    const result = seleccionarProductoLogic(deps, { ...authorized, shownProductIds: ['inventado'] }, { productId: 'inventado' });
+    expect(result.ok).toBe(false);
+  });
+});
+
+// Migrated from the cross-sell block. The machine guards this with textual evidence of a
+// category, because trusting the model's inference on a decline once produced a second payment
+// link for the policy the person had just said was wrong. The router IS that inference, so the
+// guard has to live in the tool.
+describe('cotizar — no reofrece lo que la persona ya compró', () => {
+  const bought = { ...authorized, purchasedProductIds: ['vida'] };
+
+  it('regresión — rechaza cotizar un producto ya comprado y dice qué hacer', () => {
+    const result = cotizarLogic(quoting, { productCategory: 'vida' }, bought);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.motivo).toContain('ya compró');
+      expect(result.motivo).toContain('qué otra cosa');
+    }
+  });
+
+  it('otra categoría sí se cotiza tras la compra — el cross-sell sigue vivo', () => {
+    const result = cotizarLogic(quoting, { productCategory: 'mascotas', petType: 'gato' }, bought);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.cotizacion.productId).toBe('medicina-prepagada-gatos');
+  });
+
+  it('sin contexto se comporta como antes — los llamadores viejos no cambian', () => {
+    expect(cotizarLogic(quoting, { productCategory: 'vida' }).ok).toBe(true);
   });
 });

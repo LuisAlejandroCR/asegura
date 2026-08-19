@@ -185,6 +185,51 @@ const FLOWS: MultiTurnFixture[] = [
     ],
     compare: ['checkoutUrl'],
   },
+  {
+    // The back-reference block, end to end: "prefiero la anterior" must land on the product
+    // the person actually heard before, not re-quote whatever the category returns now.
+    name: 'QUOTE_PRESENTED — "la anterior" vuelve al producto ya ofrecido, no a otro',
+    start: {
+      state: ConversationState.QUOTE_PRESENTED,
+      context: {
+        autorizado: true,
+        productCategory: 'asistencia',
+        quoteProductId: 'exequial',
+        shownProductIds: ['asistencias-medicas', 'exequial'],
+      },
+    },
+    machineTurns: [{ user: 'prefiero la anterior' }],
+    routerTurns: [
+      {
+        user: 'prefiero la anterior',
+        modelTurns: [{ toolCalls: [call('seleccionar_producto', { productId: 'asistencias-medicas' })] }, { text: 'Volvemos a esa.' }],
+      },
+    ],
+    compare: ['quoteProductId'],
+  },
+  {
+    // The decline that once produced a second payment link: after a purchase, "no gracias"
+    // must close, never re-quote what was just bought.
+    name: 'cross-sell — un "no" tras la compra no vuelve a ofrecer lo comprado',
+    start: {
+      state: ConversationState.DISCOVERY,
+      context: {
+        autorizado: true,
+        hasCompletedPurchase: true,
+        purchasedProductIds: ['vida'],
+        awaitingCrossSellResponse: true,
+      },
+    },
+    machineTurns: [{ user: 'no gracias', intent: { isNegative: true } }],
+    routerTurns: [
+      {
+        user: 'no gracias',
+        modelTurns: [{ toolCalls: [call('cotizar', { productCategory: 'vida' })] }, { text: 'Entendido, quedo atento.' }],
+      },
+    ],
+    // Neither engine may end up re-quoting the product already owned.
+    compare: ['quoteProductId'],
+  },
 ];
 
 describe.each(FLOWS)('paridad de flujo — $name', (flow) => {

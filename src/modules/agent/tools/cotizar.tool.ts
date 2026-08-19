@@ -3,6 +3,7 @@
 
 import { AffiliateSignals } from '../../quoting/types';
 import { QuotingService } from '../../quoting/quoting.service';
+import { ConversationContext } from '../types';
 import { ToolOutcome } from './types';
 
 export const CATEGORIES = ['vida', 'hogar', 'accidentes', 'asistencia', 'mascotas'] as const;
@@ -26,6 +27,9 @@ export interface CotizacionEncontrada {
 export function cotizarLogic(
   quoting: QuotingService,
   args: CotizarArgs,
+  // Optional so the voice worker and the existing callers keep working; when present it stops
+  // a cross-sell from re-quoting something the person already owns.
+  context?: ConversationContext,
 ): ToolOutcome<{ cotizacion: CotizacionEncontrada }> {
   const signals: AffiliateSignals = {
     productCategory: args.productCategory,
@@ -42,6 +46,16 @@ export function cotizarLogic(
       ? 'No hay una opción para mascotas sin saber si es gato o perro. Pregúntalo.'
       : 'No encontré un producto para ese perfil en el catálogo.';
     return { ok: false, motivo };
+  }
+
+  // A decline in the cross-sell used to be read as a category by the model, which re-quoted
+  // the product just bought and issued a second payment link for it. Owning it is the guard.
+  const owned = context?.purchasedProductIds ?? [];
+  if (owned.includes(best.product.id)) {
+    return {
+      ok: false,
+      motivo: `La persona ya compró ${best.product.name}. No se lo vuelvas a ofrecer; pregúntale qué otra cosa quiere proteger.`,
+    };
   }
 
   return {

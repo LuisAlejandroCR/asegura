@@ -41,7 +41,12 @@ export function cotizarLogic(quoting: QuotingService, args: CotizarArgs): Cotiza
   };
 }
 
-export function createCotizarTool(quoting: QuotingService, onQuoted?: (productId: string) => void) {
+export function createCotizarTool(
+  quoting: QuotingService,
+  onQuoted?: (productId: string) => void,
+  // Read at call time, so a purchase made mid-call is already visible to the guard.
+  contextOf?: () => import('../modules/agent/types').ConversationContext,
+) {
   return tool({
     name: 'cotizar',
     description:
@@ -50,7 +55,7 @@ export function createCotizarTool(quoting: QuotingService, onQuoted?: (productId
       'ninguno de los dos. Solo lee en voz alta lo que esta herramienta devuelve.',
     parameters: cotizarParams,
     execute: async (args) => {
-      const result = sharedCotizar(quoting, args as CotizarArgs);
+      const result = sharedCotizar(quoting, args as CotizarArgs, contextOf?.());
       if (!result.ok) return { encontrado: false, motivo: result.motivo };
       // Remembered so emitirPoliza prices the same product the person just heard.
       onQuoted?.(result.cotizacion.productId);

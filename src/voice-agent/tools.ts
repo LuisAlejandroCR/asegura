@@ -5,7 +5,7 @@ import { tool } from '@livekit/agents';
 import { z } from 'zod';
 import {
   ToolDeps, consultarAfiliadoLogic, emitirPolizaLogic, generarLinkPagoLogic,
-  registrarAseguramientoLogic, validarDatosLogic,
+  registrarAseguramientoLogic, seleccionarProductoLogic, validarDatosLogic,
 } from '../modules/agent/tools';
 import { VoiceSessionState } from './session-state';
 
@@ -116,6 +116,21 @@ export function createPreguntasAseguramientoTool(deps: Pick<ToolDeps, 'catalog'>
     execute: async ({ respuestas }) => {
       const result = registrarAseguramientoLogic(deps, state.context, { respuestas });
       if (result.ok) state.merge({ medicalInfoProvided: true, medicalInfo: respuestas });
+      return result;
+    },
+  });
+}
+
+export function createSeleccionarProductoTool(deps: Pick<ToolDeps, 'quoting' | 'catalog'>, state: VoiceSessionState) {
+  return tool({
+    name: 'seleccionar_producto',
+    description:
+      'Fija la cotización en una opción que YA le ofreciste — cuando diga "la primera", ' +
+      '"la anterior" o "la más barata". Solo acepta productos ya mostrados.',
+    parameters: z.object({ productId: z.string().describe('El id del producto ya ofrecido.') }),
+    execute: async ({ productId }) => {
+      const result = seleccionarProductoLogic(deps, state.context, { productId });
+      if (result.ok) state.merge({ quoteProductId: result.productId });
       return result;
     },
   });

@@ -6,7 +6,7 @@ import { ChatTurn, INlpProvider, ToolSchema } from '../nlp/types';
 import { ConversationContext } from './types';
 import {
   ToolDeps, consultarAfiliadoLogic, cotizarLogic, emitirPolizaLogic,
-  generarLinkPagoLogic, registrarAseguramientoLogic, validarDatosLogic,
+  generarLinkPagoLogic, registrarAseguramientoLogic, seleccionarProductoLogic, validarDatosLogic,
 } from './tools';
 
 // The model may call at most this many tools per user message: a loop that keeps calling is
@@ -47,6 +47,18 @@ export class ToolRouterService {
           petType: { type: ['string', 'null'], enum: ['gato', 'perro', 'mixto', null] },
         },
         required: ['productCategory'],
+      },
+    },
+    {
+      name: 'seleccionar_producto',
+      description:
+        'Fija la cotización en una opción que YA se le ofreció a la persona — úsala cuando diga ' +
+        '"la primera", "la anterior", "la más barata" o nombre un precio que ya escuchó. ' +
+        'Solo acepta productos ya mostrados.',
+      parameters: {
+        type: 'object',
+        properties: { productId: { type: 'string', description: 'El id del producto ya ofrecido.' } },
+        required: ['productId'],
       },
     },
     {
@@ -154,14 +166,26 @@ export class ToolRouterService {
         return { result, context: ctx };
       }
       case 'cotizar': {
-        const result = cotizarLogic(this.deps.quoting, args as never);
+        const result = cotizarLogic(this.deps.quoting, args as never, ctx);
         if (result.ok) {
+          const id = result.cotizacion.productId;
+          const shown = ctx.shownProductIds ?? [];
           return {
             result,
-            context: { ...ctx, quoteProductId: result.cotizacion.productId, productCategory: (args.productCategory as string) ?? ctx.productCategory },
+            context: {
+              ...ctx,
+              quoteProductId: id,
+              productCategory: (args.productCategory as string) ?? ctx.productCategory,
+              // Recorded so a later back-reference can only land on something already offered.
+              shownProductIds: shown.includes(id) ? shown : [...shown, id],
+            },
           };
         }
         return { result, context: ctx };
+      }
+      case 'seleccionar_producto': {
+        const result = seleccionarProductoLogic(this.deps, ctx, { productId: String(args.productId ?? '') });
+        return { result, context: result.ok ? { ...ctx, quoteProductId: result.productId } : ctx };
       }
       case 'capturar_datos': {
         const result = validarDatosLogic(args as never);
