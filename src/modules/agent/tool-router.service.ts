@@ -45,6 +45,7 @@ export class ToolRouterService {
           dependents: { type: ['number', 'null'] },
           budget: { type: ['number', 'null'] },
           petType: { type: ['string', 'null'], enum: ['gato', 'perro', 'mixto', null] },
+          mensaje: { type: 'string', description: 'El mensaje completo de la persona, tal cual lo dijo.' },
         },
         required: ['productCategory'],
       },

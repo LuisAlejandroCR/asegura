@@ -8,8 +8,27 @@ import { ToolOutcome } from './types';
 
 export const CATEGORIES = ['vida', 'hogar', 'accidentes', 'asistencia', 'mascotas'] as const;
 
+// Asegura sells none of these. The category enum forces the model to pick one of the five
+// valid values, so without this a "seguro de carro" would be misclassified by construction and
+// answered with an unrelated product — rule #12 says say no honestly instead.
+const FUERA_DE_CATALOGO: Record<string, string> = {
+  vehicular: 'vehículos', vehiculo: 'vehículos', 'vehículo': 'vehículos',
+  carro: 'vehículos', moto: 'vehículos', motocicleta: 'vehículos', soat: 'vehículos',
+  empresa: 'empresas', negocio: 'empresas', 'compañía': 'empresas', compania: 'empresas',
+};
+
+export function detectarFueraDeCatalogo(text: string): string | null {
+  const t = text.toLowerCase();
+  for (const [keyword, label] of Object.entries(FUERA_DE_CATALOGO)) {
+    if (t.includes(keyword)) return label;
+  }
+  return null;
+}
+
 export interface CotizarArgs {
   productCategory: (typeof CATEGORIES)[number] | null;
+  // The raw turn, so a request for something outside the catalog is caught before scoring.
+  mensaje?: string;
   dependents?: number | null;
   budget?: number | null;
   petType?: 'gato' | 'perro' | 'mixto' | null;
@@ -31,6 +50,14 @@ export function cotizarLogic(
   // a cross-sell from re-quoting something the person already owns.
   context?: ConversationContext,
 ): ToolOutcome<{ cotizacion: CotizacionEncontrada }> {
+  const fuera = args.mensaje ? detectarFueraDeCatalogo(args.mensaje) : null;
+  if (fuera) {
+    return {
+      ok: false,
+      motivo: `Asegura no vende seguros de ${fuera}. Dilo con honestidad y ofrécele lo que sí hay: vida, accidentes, asistencia médica y mascotas.`,
+    };
+  }
+
   const signals: AffiliateSignals = {
     productCategory: args.productCategory,
     dependents: args.dependents ?? undefined,

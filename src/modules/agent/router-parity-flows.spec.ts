@@ -230,6 +230,22 @@ const FLOWS: MultiTurnFixture[] = [
     // Neither engine may end up re-quoting the product already owned.
     compare: ['quoteProductId'],
   },
+  {
+    // Rule #12 end to end: neither engine may answer a car-insurance request with a product.
+    name: 'DISCOVERY — pedir algo fuera del catálogo no termina en una cotización',
+    start: { state: ConversationState.DISCOVERY, context: { autorizado: true } },
+    machineTurns: [{ user: 'quiero un seguro para mi carro' }],
+    routerTurns: [
+      {
+        user: 'quiero un seguro para mi carro',
+        modelTurns: [
+          { toolCalls: [call('cotizar', { productCategory: 'accidentes', mensaje: 'quiero un seguro para mi carro' })] },
+          { text: 'No vendemos seguros de vehículos, pero sí vida, accidentes, asistencia y mascotas.' },
+        ],
+      },
+    ],
+    compare: ['quoteProductId'],
+  },
 ];
 
 describe.each(FLOWS)('paridad de flujo — $name', (flow) => {

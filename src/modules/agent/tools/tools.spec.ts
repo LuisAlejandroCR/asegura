@@ -6,7 +6,7 @@ import { QuotingService } from '../../quoting/quoting.service';
 import {
   NOT_AUTHORIZED, cotizarLogic, validarDatosLogic, consultarAfiliadoLogic,
   emitirPolizaLogic, generarLinkPagoLogic, registrarAseguramientoLogic, requiresUnderwriting,
-  detectarTipoDocumento, seleccionarProductoLogic,
+  detectarTipoDocumento, seleccionarProductoLogic, detectarFueraDeCatalogo,
 } from './index';
 
 const quoting = new QuotingService(new ProductCatalog());
@@ -278,5 +278,39 @@ describe('cotizar — no reofrece lo que la persona ya compró', () => {
 
   it('sin contexto se comporta como antes — los llamadores viejos no cambian', () => {
     expect(cotizarLogic(quoting, { productCategory: 'vida' }).ok).toBe(true);
+  });
+});
+
+// Migrated from DISCOVERY. The category enum only has the five Asegura sells, so the model is
+// forced to pick one — without this guard a request for car insurance would be misclassified
+// by construction and answered with an unrelated product, against rule #12.
+describe('cotizar — lo que no está en el catálogo se dice, no se sustituye', () => {
+  it.each([
+    ['quiero un seguro para mi carro', 'vehículos'],
+    ['seguro de moto', 'vehículos'],
+    ['necesito el SOAT', 'vehículos'],
+    ['un seguro para mi empresa', 'empresas'],
+    ['algo para mi negocio', 'empresas'],
+  ])('%s → %s', (mensaje, esperado) => {
+    expect(detectarFueraDeCatalogo(mensaje)).toBe(esperado);
+  });
+
+  it('no se confunde con lo que sí vendemos', () => {
+    for (const ok of ['seguro de vida', 'algo para mi gato', 'asistencia médica', 'accidentes personales']) {
+      expect(detectarFueraDeCatalogo(ok)).toBeNull();
+    }
+  });
+
+  it('regresión — cotizar rechaza y dice qué ofrecer en su lugar', () => {
+    const result = cotizarLogic(quoting, { productCategory: 'accidentes', mensaje: 'quiero asegurar mi carro' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.motivo).toContain('no vende seguros de vehículos');
+      expect(result.motivo).toContain('vida, accidentes');
+    }
+  });
+
+  it('una petición normal sigue cotizando', () => {
+    expect(cotizarLogic(quoting, { productCategory: 'vida', mensaje: 'quiero proteger a mi familia' }).ok).toBe(true);
   });
 });

@@ -25,6 +25,8 @@ export const cotizarParams = z.object({
     .describe('Presupuesto mensual en pesos colombianos que la persona mencionó, si lo dijo.'),
   petType: z.enum(['gato', 'perro', 'mixto']).nullable().optional()
     .describe('Solo si productCategory es mascotas: qué tipo de mascota(s) tiene. Pregúntalo, nunca lo supongas.'),
+  mensaje: z.string().optional()
+    .describe('Lo que dijo la persona, tal cual — sirve para detectar si pide algo que no vendemos.'),
 });
 
 export function cotizarLogic(quoting: QuotingService, args: CotizarArgs): CotizarResult {
