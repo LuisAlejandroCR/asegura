@@ -85,6 +85,13 @@ export class QuotingService {
       addReason(QuotingService.REASON_WEIGHT.species, `Para ${signals.petType}s`);
     }
 
+    // No species established: a species-specific plan is unquotable, because nothing here
+    // knows which one. Without this the tie-break fell to catalog order and quoted cats to
+    // someone who never mentioned a cat. The species-agnostic plan (pet: any) still scores.
+    if (!signals.petType && product.eligibility.pet && product.eligibility.pet !== 'any') {
+      return zero;
+    }
+
     // beneficiaries > 1 only: Groq's own schema shows "beneficiaries": 1 as an EXAMPLE, so the
     // model defaults to it with no real signal. "Cubre a 1 personas" as a personalized reason
     // is trivially true and undermines the pitch.

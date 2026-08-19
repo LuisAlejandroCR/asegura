@@ -701,3 +701,34 @@ describe('QuotingService FUZZ', () => {
     }
   });
 });
+
+// Reported from a live chat: someone who never mentioned a cat was quoted cat prepaid
+// medicine for three pets. The species filter only ran when petType was already known, so
+// with no species the three pet products all scored and CANONICAL_ORDER broke the tie —
+// and cats are listed before dogs.
+describe('QuotingService — never invents a species', () => {
+  const service = new QuotingService(new ProductCatalog());
+
+  it('regression — does not quote a cat-only or dog-only plan when no species is known', () => {
+    const scores = service.score({ productCategory: 'mascotas' });
+    const ids = scores.map((s) => s.productId);
+    expect(ids).not.toContain('medicina-prepagada-gatos');
+    expect(ids).not.toContain('medicina-prepagada-perros');
+  });
+
+  it('still offers the species-agnostic plan, so the answer is not empty', () => {
+    const scores = service.score({ productCategory: 'mascotas' });
+    expect(scores.map((s) => s.productId)).toContain('asistencia-veterinaria');
+  });
+
+  it('quotes the cat plan once the species is actually established', () => {
+    const scores = service.score({ productCategory: 'mascotas', petType: 'gato' });
+    expect(scores.map((s) => s.productId)).toContain('medicina-prepagada-gatos');
+    expect(scores.map((s) => s.productId)).not.toContain('medicina-prepagada-perros');
+  });
+
+  it('a mixed household still sees both, since mixto is an explicit answer', () => {
+    const ids = service.score({ productCategory: 'mascotas', petType: 'mixto' }).map((s) => s.productId);
+    expect(ids.some((id) => id === 'medicina-prepagada-gatos' || id === 'medicina-prepagada-perros')).toBe(true);
+  });
+});
