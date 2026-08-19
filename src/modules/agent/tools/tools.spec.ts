@@ -6,6 +6,7 @@ import { QuotingService } from '../../quoting/quoting.service';
 import {
   NOT_AUTHORIZED, cotizarLogic, validarDatosLogic, consultarAfiliadoLogic,
   emitirPolizaLogic, generarLinkPagoLogic, registrarAseguramientoLogic, requiresUnderwriting,
+  detectarTipoDocumento,
 } from './index';
 
 const quoting = new QuotingService(new ProductCatalog());
@@ -50,7 +51,7 @@ describe('cotizarLogic', () => {
 describe('validarDatosLogic', () => {
   it('accepts a dictated cedula and a spoken email', () => {
     const result = validarDatosLogic({ cedula: '1, 2, 3, 4, 5, 6, 7', email: 'juan arroba mail punto com' });
-    expect(result).toEqual({ ok: true, datos: { cedula: '1234567', email: 'juan@mail.com' } });
+    expect(result).toEqual({ ok: true, datos: { cedula: '1234567', documentType: 'CC', email: 'juan@mail.com' } });
   });
 
   it('rejects a cedula with thousands separators rather than silently changing it', () => {
@@ -172,5 +173,46 @@ describe('aseguramiento', () => {
 
   it('no se registra sin autorización', () => {
     expect(registrarAseguramientoLogic({ catalog }, { quoteProductId: 'vida' }, { respuestas: 'ok' })).toMatchObject({ ok: false });
+  });
+});
+
+// Migrated from the state machine's DATA_CAPTURE block: these rules used to live only there,
+// so the router would have accepted an acknowledgement as a name and filed every document as
+// a cedula de ciudadania.
+describe('validarDatos — reglas migradas de DATA_CAPTURE', () => {
+  it.each(['gracias', 'ok', 'listo', 'dale', 'bueno', 'ya'])(
+    'regresión — "%s" es un acuse, no un nombre',
+    (filler) => {
+      expect(validarDatosLogic({ nombre: filler }).ok).toBe(false);
+    },
+  );
+
+  it('un nombre real sigue pasando', () => {
+    expect(validarDatosLogic({ nombre: 'Juan Pérez' })).toEqual({ ok: true, datos: { nombre: 'Juan Pérez' } });
+  });
+
+  it.each([
+    ['12345678', 'CC'],
+    ['mi cédula de extranjería 12345678', 'CE'],
+    ['CE 12345678', 'CE'],
+    ['tarjeta de identidad 12345678', 'TI'],
+    ['TI 12345678', 'TI'],
+    ['NUIP 12345678', 'NUIP'],
+    ['NIP 12345678', 'NIP'],
+  ])('%s se archiva como %s', (text, expected) => {
+    expect(detectarTipoDocumento(text)).toBe(expected);
+  });
+
+  it('el tipo de documento se archiva junto con la cédula, no en otro turno', () => {
+    expect(validarDatosLogic({ cedula: '12345678', mensaje: 'mi cédula de extranjería es 12345678' })).toEqual({
+      ok: true,
+      datos: { cedula: '12345678', documentType: 'CE' },
+    });
+  });
+
+  it.each(['abc', '123', '12.345.678'])('regresión — "%s" no es una cédula válida', (bad) => {
+    const result = validarDatosLogic({ cedula: bad });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.motivo).toContain('dígitos');
   });
 });

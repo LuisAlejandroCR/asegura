@@ -54,7 +54,12 @@ export class ToolRouterService {
       description: 'Valida y guarda cédula, nombre y correo. Envía cada dato apenas lo tengas.',
       parameters: {
         type: 'object',
-        properties: { cedula: { type: 'string' }, nombre: { type: 'string' }, email: { type: 'string' } },
+        properties: {
+          cedula: { type: 'string', description: 'Solo los dígitos.' },
+          nombre: { type: 'string' },
+          email: { type: 'string' },
+          mensaje: { type: 'string', description: 'El mensaje completo, para leer si es CC, CE, TI, NIP o NUIP.' },
+        },
       },
     },
     {

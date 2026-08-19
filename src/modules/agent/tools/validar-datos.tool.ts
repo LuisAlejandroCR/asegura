@@ -13,9 +13,28 @@ export function normalizeName(text: string): string {
   return text.trim().replace(NAME_PREAMBLE_REGEX, '').trim();
 }
 
+// An acknowledgement is letters-only, so NAME_REGEX alone accepted "gracias" as a full name
+// and stored it. These are the words a person says instead of answering.
+const FILLER_WORDS = ['gracias', 'ok', 'okay', 'vale', 'listo', 'dale', 'bueno', 'ya', 'si', 'sí', 'no'];
+
 export function isValidName(text: string): boolean {
   const t = normalizeName(text);
+  if (FILLER_WORDS.includes(t.toLowerCase())) return false;
   return t.length >= 2 && t.length <= 80 && NAME_REGEX.test(t);
+}
+
+// Mirrors the state machine so both engines file the same document type. Order matters:
+// "cédula de extranjería" must win over the bare ce test.
+export type TipoDocumento = 'CC' | 'CE' | 'TI' | 'NIP' | 'NUIP';
+
+export function detectarTipoDocumento(text: string): TipoDocumento {
+  const t = text.toLowerCase();
+  if (t.includes('extranjer')) return 'CE';
+  if (t.includes('tarjeta de identidad') || /\bti\b/.test(t)) return 'TI';
+  if (/\bnuip\b/.test(t)) return 'NUIP';
+  if (/\bnip\b/.test(t)) return 'NIP';
+  if (/\bce\b/.test(t)) return 'CE';
+  return 'CC';
 }
 
 // Dictated emails spell the symbols out, and Whisper often adds a comma right after.
@@ -48,16 +67,26 @@ export interface DatosValidados {
   cedula?: string;
   nombre?: string;
   email?: string;
+  documentType?: TipoDocumento;
 }
 
-export function validarDatosLogic(args: DatosValidados): ToolOutcome<{ datos: DatosValidados }> {
+// `mensaje` carries the raw turn so the document type can be read from it. The cedula itself
+// stays strictly digits: loosening it here is how "12.345.678" would silently become 12345678.
+export function validarDatosLogic(
+  args: DatosValidados & { mensaje?: string },
+): ToolOutcome<{ datos: DatosValidados }> {
   const datos: DatosValidados = {};
   const invalidos: string[] = [];
 
   if (args.cedula !== undefined) {
     const c = normalizeSpokenCedula(args.cedula);
-    if (isValidCedula(c)) datos.cedula = c;
-    else invalidos.push('cédula (deben ser 6 a 10 dígitos, sin puntos)');
+    if (isValidCedula(c)) {
+      datos.cedula = c;
+      // Filed from the same turn that carried the number, exactly as the machine does.
+      datos.documentType = detectarTipoDocumento(args.mensaje ?? args.cedula);
+    } else {
+      invalidos.push('cédula (deben ser 6 a 10 dígitos, sin puntos)');
+    }
   }
   if (args.nombre !== undefined) {
     if (isValidName(args.nombre)) datos.nombre = normalizeName(args.nombre);
