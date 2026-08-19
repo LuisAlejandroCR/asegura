@@ -53,6 +53,28 @@ describe('PolicyService.issue', () => {
     expect(result).toEqual({ policyId: 'pol-42' });
   });
 
+  // Reported from a live PDF: someone with 4 pets on file bought Asistencias multiples — a
+  // family product — and the certificate read "$5.000 por mascota · Total para 4 mascotas".
+  // The total was right because computeTotalPremium guards on category; only the stored
+  // pet_count did not, and the PDF divides the total back down by it.
+  it('regresión — no guarda pet_count en un producto que no es de mascotas', async () => {
+    const { supabase, insert } = makeInsertSupabaseMock({ data: { id: 'pol-1' } });
+    const service = new PolicyService(supabase, makePdfMock());
+
+    await service.issue('conv-1', {
+      quoteProductId: 'asistencias-multiples',
+      cedula: '123456789',
+      nombre: 'Juan Pérez',
+      // Comes from the affiliate row, not from this purchase.
+      petCount: 4,
+    } as any);
+
+    const row = insert.mock.calls[0][0];
+    expect(row.pet_count).toBeNull();
+    // The premium was never multiplied either, so the certificate total stays correct.
+    expect(row.monthly_premium).toBe(20000);
+  });
+
   it('regression — stores the correctly multiplied premium and pet_count for multi-pet households', async () => {
     // The chat quote and the actual Wompi charge were already fixed to multiply by
     // petCount — the stored policy record (and therefore the final PDF) must match.
@@ -226,6 +248,47 @@ describe('PolicyService.findAllByWompiLinkId', () => {
     const supabase = makeArraySupabaseMock({ data: null, error: { message: 'connection failed' } });
     const service = new PolicyService(supabase, makePdfMock());
     await expect(service.findAllByWompiLinkId('link-abc-123')).resolves.toEqual([]);
+  });
+});
+
+// A policy stored before the pet_count rule still carries the bad number, so the PDF path
+// guards as well — otherwise every certificate reprinted from history keeps the wrong line.
+describe('PolicyService.generateFinalPdf — pet_count heredado', () => {
+  it('regresión — ignora un pet_count guardado en un producto que no es de mascotas', async () => {
+    const pdf = makePdfMock();
+    const service = new PolicyService(makeSupabaseMock(), pdf);
+
+    await service.generateFinalPdf({
+      id: 'pol-1',
+      product_id: 'asistencias-multiples',
+      nombre: 'Juan Pérez',
+      cedula: '123456',
+      email: 'juan@mail.com',
+      monthly_premium: 20000,
+      created_at: new Date().toISOString(),
+      pet_count: 4,
+      pets: null,
+    } as never);
+
+    expect(pdf.generate).toHaveBeenCalledWith(expect.objectContaining({ petCount: null }));
+  });
+
+  it('conserva el pet_count cuando el producto sí se cobra por mascota', async () => {
+    const pdf = makePdfMock();
+    const service = new PolicyService(makeSupabaseMock(), pdf);
+
+    await service.generateFinalPdf({
+      id: 'pol-2',
+      product_id: 'medicina-prepagada-gatos',
+      nombre: 'Juan Pérez',
+      cedula: '123456',
+      monthly_premium: 163600,
+      created_at: new Date().toISOString(),
+      pet_count: 2,
+      pets: null,
+    } as never);
+
+    expect(pdf.generate).toHaveBeenCalledWith(expect.objectContaining({ petCount: 2 }));
   });
 });
 

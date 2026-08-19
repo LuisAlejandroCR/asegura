@@ -4,6 +4,7 @@
 import { type JobContext, ServerOptions, cli, defineAgent, voice } from '@livekit/agents';
 import * as openai from '@livekit/agents-plugin-openai';
 import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
+import * as fs from 'fs';
 import dotenv from 'dotenv';
 import { VOICE_GREETING, createVoiceAgent } from './agent';
 import { VoiceSessionState } from './session-state';
@@ -21,7 +22,27 @@ function requireEnv(name: string): string {
 
 // Checked at startup, not inside entry(): a key missing there lets the worker register and
 // then fail per call with LiveKit's opaque "error in entry function" — no name, no stack.
-const ENTRY_REQUIRED_ENV = ['LLM_API_KEY', 'ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID'] as const;
+const REQUIRED_ENV = [
+  'LLM_API_KEY', 'ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID',
+  'LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET',
+] as const;
+
+// Reports the state of EVERY required variable, not just the first missing one. Failing on
+// the first says nothing about the other five, which turns "it is set" versus "the worker
+// says it is not" into guesswork — and variables are per service, so the answer is usually
+// that they live on a different one.
+export function describeRequiredEnv(env: NodeJS.ProcessEnv = process.env): {
+  ok: boolean;
+  report: string;
+} {
+  const lines = REQUIRED_ENV.map((name) => {
+    const value = env[name];
+    if (value === undefined) return `  ${name}: MISSING (not set on this service)`;
+    if (!value) return `  ${name}: EMPTY (set, but with no value)`;
+    return `  ${name}: ok (${value.length} chars)`;
+  });
+  return { ok: REQUIRED_ENV.every((name) => !!env[name]), report: lines.join('\n') };
+}
 
 export default defineAgent({
   entry: async (ctx: JobContext) => {
@@ -72,7 +93,17 @@ async function runSession(ctx: JobContext): Promise<void> {
 // Only start the worker when this file runs directly, never as a side effect of an import.
 if (require.main === module) {
   // Fail here, by name, instead of registering a worker that dies on every call.
-  for (const name of ENTRY_REQUIRED_ENV) requireEnv(name);
+  const env = describeRequiredEnv();
+  if (!env.ok) {
+    // Written to fd 2 directly: console output is an async pipe in a container and the throw
+    // below has dropped this line before.
+    try {
+      fs.writeSync(2, `voice-agent env check:\n${env.report}\n`);
+    } catch {
+      // fd 2 closed: the throw still names the first offender.
+    }
+  }
+  for (const name of REQUIRED_ENV) requireEnv(name);
   cli.runApp(
     new ServerOptions({
       agent: __filename,

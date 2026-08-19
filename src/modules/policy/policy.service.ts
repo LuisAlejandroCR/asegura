@@ -5,7 +5,7 @@ import { SupabaseService } from '../../database/supabase.service';
 import { PdfService } from './pdf.service';
 import { ProductCatalog } from '../quoting/product-catalog.service';
 import { IProductRepository } from '../quoting/types';
-import { computeTotalPremium } from '../quoting/pricing';
+import { computeTotalPremium, isPricedPerPet } from '../quoting/pricing';
 import { ConversationContext } from '../agent/types';
 import { classifyPetsBySpecies } from '../agent/breed-matcher';
 import { Policy } from './types';
@@ -49,7 +49,9 @@ export class PolicyService {
         nombre: context.nombre!,
         email: context.email ?? null,
         monthly_premium: monthlyPremium,
-        pet_count: context.petCount ?? null,
+        // petCount can arrive from the affiliate row on someone who owns pets and is buying
+        // something else entirely, so it is stored only when the premium was actually per pet.
+        pet_count: product && isPricedPerPet(product) ? context.petCount ?? null : null,
         pets: petsForPolicy,
         status: 'pending_payment',
       })
@@ -120,7 +122,8 @@ export class PolicyService {
         email: policy.email ?? undefined,
         monthlyPremium: policy.monthly_premium,
         issuedAt: new Date(policy.created_at),
-        petCount: policy.pet_count,
+        // Guarded here too, so a policy stored before this rule still prints correctly.
+        petCount: isPricedPerPet(product) ? policy.pet_count : null,
         pets: policy.pets ?? undefined,
       });
     } catch (err) {
