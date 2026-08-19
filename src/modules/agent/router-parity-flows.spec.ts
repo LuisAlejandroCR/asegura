@@ -116,6 +116,75 @@ const FLOWS: MultiTurnFixture[] = [
     ],
     compare: ['cedula', 'nombre', 'email', 'medicalInfoProvided', 'policyId'],
   },
+  {
+    name: 'QUOTE_PRESENTED — un "sí" deja elegido el mismo producto en los dos motores',
+    start: {
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { autorizado: true, productCategory: 'accidentes', quoteProductId: 'accidentes-personales' },
+    },
+    machineTurns: [{ user: 'sí', intent: { isAffirmative: true } }],
+    routerTurns: [{ user: 'sí', modelTurns: [{ text: 'Perfecto, ahora tus datos.' }] }],
+    compare: ['quoteProductId', 'productCategory'],
+  },
+  {
+    name: 'QUOTE_PRESENTED — "otro" no vuelve a ofrecer el mismo producto',
+    start: {
+      state: ConversationState.QUOTE_PRESENTED,
+      context: {
+        autorizado: true,
+        productCategory: 'accidentes',
+        quoteProductId: 'accidentes-personales',
+        shownProductIds: ['accidentes-personales'],
+      },
+    },
+    machineTurns: [{ user: 'otro', intent: { wantsAlternative: true } }],
+    // The router expresses the same thing by quoting again; the tool never returns a product
+    // the conversation already rejected because the model passes the category, not the id.
+    routerTurns: [
+      { user: 'otro', modelTurns: [{ toolCalls: [call('cotizar', { productCategory: 'accidentes' })] }, { text: 'Mira esta otra.' }] },
+    ],
+    compare: ['productCategory'],
+  },
+  {
+    name: 'PAYMENT — confirmar deja un link de pago en los dos motores',
+    start: {
+      state: ConversationState.PAYMENT,
+      context: {
+        autorizado: true,
+        productCategory: 'accidentes',
+        quoteProductId: 'accidentes-personales',
+        cedula: '12345678',
+        nombre: 'Juan Pérez',
+        policyId: 'pol-1',
+      },
+    },
+    machineTurns: [{ user: 'sí', intent: { isAffirmative: true } }],
+    routerTurns: [
+      { user: 'sí', modelTurns: [{ toolCalls: [call('generar_link_pago')] }, { text: 'Te dejo el link.' }] },
+    ],
+    compare: ['policyId'],
+  },
+  {
+    // Money: a second link for the same policy is a second charge waiting to happen.
+    name: 'PAYMENT — con un link vigente no se crea un segundo',
+    start: {
+      state: ConversationState.PAYMENT,
+      context: {
+        autorizado: true,
+        productCategory: 'accidentes',
+        quoteProductId: 'accidentes-personales',
+        cedula: '12345678',
+        nombre: 'Juan Pérez',
+        policyId: 'pol-1',
+        checkoutUrl: 'https://checkout.wompi.co/l/ya-existe',
+      },
+    },
+    machineTurns: [{ user: 'sí', intent: { isAffirmative: true } }],
+    routerTurns: [
+      { user: 'sí', modelTurns: [{ toolCalls: [call('generar_link_pago')] }, { text: 'Sigue activo.' }] },
+    ],
+    compare: ['checkoutUrl'],
+  },
 ];
 
 describe.each(FLOWS)('paridad de flujo — $name', (flow) => {

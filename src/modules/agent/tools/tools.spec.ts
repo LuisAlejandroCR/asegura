@@ -111,6 +111,18 @@ describe('generarLinkPagoLogic', () => {
     expect(result.ok).toBe(false);
   });
 
+  // Money: two Wompi links for one policy are two possible charges.
+  it('regresión — con un link vigente devuelve ese, no crea otro', async () => {
+    const createPaymentLink = jest.fn();
+    const deps = { quoting, payments: { isEnabled: true, createPaymentLink } };
+    const context = { ...authorized, productCategory: 'vida', checkoutUrl: 'https://checkout.wompi.co/l/ya-existe' };
+
+    const result = await generarLinkPagoLogic(deps, context, { policyId: 'pol-1' });
+
+    expect(result).toEqual({ ok: true, checkoutUrl: 'https://checkout.wompi.co/l/ya-existe' });
+    expect(createPaymentLink).not.toHaveBeenCalled();
+  });
+
   it('prices the link from the catalog, never from an argument', async () => {
     const createPaymentLink = jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.wompi.co/l/x' });
     const deps = { quoting, payments: { isEnabled: true, createPaymentLink } };

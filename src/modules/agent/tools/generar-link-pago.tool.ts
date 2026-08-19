@@ -14,6 +14,11 @@ export function generarLinkPagoLogic(
   if (!args.policyId) {
     return Promise.resolve({ ok: false, motivo: 'Primero hay que emitir la póliza.' });
   }
+  // A second link for the same policy is a second charge waiting to happen: hand back the one
+  // already issued. The state machine does this; a tool-driven engine has to as well.
+  if (context.checkoutUrl) {
+    return Promise.resolve({ ok: true, checkoutUrl: context.checkoutUrl });
+  }
   if (!deps.payments?.isEnabled) {
     return Promise.resolve({ ok: false, motivo: 'El pago en línea no está configurado.' });
   }
