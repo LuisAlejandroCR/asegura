@@ -15,13 +15,30 @@ import { WebSessionController } from './web-session.controller';
 import { WebSessionTokenService } from './web-session-token.service';
 import { WebLinkController } from './web-link.controller';
 import { WebLinkCodeService } from './web-link-code.service';
+import { ToolRouterService } from './tool-router.service';
+import { QuotingService } from '../quoting/quoting.service';
+import { AffiliateLookupService } from '../quoting/affiliate-lookup.service';
+import { PolicyService } from '../policy/policy.service';
+import { WompiService } from '../payments/wompi.service';
 
 @Module({
   imports: [ChannelModule, NlpModule, DatabaseModule, QuotingModule, PolicyModule, PaymentsModule, ConversationModule],
   // TwilioWebhookController and WebSessionController live here, not in ChannelModule: both
   // need AgentService directly, and ChannelModule can't import AgentModule back (cycle).
   controllers: [TwilioWebhookController, WebSessionController, WebLinkController],
-  providers: [AgentService, WebSessionTokenService, WebLinkCodeService],
+  providers: [
+    AgentService,
+    WebSessionTokenService,
+    WebLinkCodeService,
+    // Deps are assembled here rather than injected wholesale: the router's contract is a
+    // plain object so the voice worker, which has no DI, can build the same one.
+    {
+      provide: ToolRouterService,
+      inject: [QuotingService, AffiliateLookupService, PolicyService, WompiService],
+      useFactory: (quoting: QuotingService, affiliates: AffiliateLookupService, policies: PolicyService, payments: WompiService) =>
+        new ToolRouterService({ quoting, affiliates, policies, payments }),
+    },
+  ],
   exports: [AgentService],
 })
 export class AgentModule {}

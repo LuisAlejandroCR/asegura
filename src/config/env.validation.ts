@@ -109,6 +109,12 @@ class EnvironmentVariables {
   @IsOptional()
   WEB_APP_URL!: string;
 
+  // 'llm' routes the text channel through ToolRouterService instead of the state machine.
+  // Anything else, including unset, keeps the deterministic path.
+  @IsString()
+  @IsOptional()
+  AGENT_ROUTER!: string;
+
   @IsString()
   @IsOptional()
   ADMIN_CHAT_ID!: string;
