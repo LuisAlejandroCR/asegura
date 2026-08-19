@@ -6,17 +6,21 @@ import { ChatTurn, INlpProvider, ToolSchema } from '../nlp/types';
 import { ConversationContext } from './types';
 import {
   ToolDeps, consultarAfiliadoLogic, cotizarLogic, emitirPolizaLogic,
-  generarLinkPagoLogic, registrarAseguramientoLogic, registrarMascotasLogic,
-  seleccionarProductoLogic, validarDatosLogic,
+  ESCALATION_TEXT, contarTurnoFallido, escalarAHumanoLogic, generarLinkPagoLogic,
+  registrarAseguramientoLogic, registrarMascotasLogic, seleccionarProductoLogic, validarDatosLogic,
 } from './tools';
 
 // The model may call at most this many tools per user message: a loop that keeps calling is
 // a bug, and a person waiting on a reply must never wait on an unbounded chain.
 const MAX_TOOL_HOPS = 4;
 
+const ESCALATION_THRESHOLD_MESSAGE = 'every tool call was refused three turns running';
+
 export interface RouterReply {
   text: string;
   context: ConversationContext;
+  // The channel does the notifying: sending a message to an admin is transport, not a rule.
+  escalated?: boolean;
 }
 
 @Injectable()
@@ -30,6 +34,17 @@ export class ToolRouterService {
       name: 'autorizar',
       description: 'Registra que la persona autorizó (o no) el tratamiento de sus datos, Ley 1581.',
       parameters: { type: 'object', properties: { autoriza: { type: 'boolean' } }, required: ['autoriza'] },
+    },
+    {
+      name: 'escalar_a_humano',
+      description:
+        'Entrega la conversación a una persona del equipo. Úsala si no puedes ayudar, si te lo ' +
+        'piden, o ante un reclamo que no resuelves con las otras herramientas.',
+      parameters: {
+        type: 'object',
+        properties: { motivo: { type: 'string', description: 'Por qué escalas, para quien atienda.' } },
+        required: ['motivo'],
+      },
     },
     {
       name: 'consultar_afiliado',
@@ -147,10 +162,25 @@ export class ToolRouterService {
       }
 
       messages.push({ role: 'assistant', content: answer.text ?? '', toolCalls: answer.toolCalls });
+      let alguna = false;
+      let escalada = false;
       for (const call of answer.toolCalls) {
         const { result, context: next } = await this.run(conversationId, ctx, call.name, call.args);
         ctx = next;
+        if ((result as { ok?: boolean }).ok) alguna = true;
+        if (call.name === 'escalar_a_humano' && (result as { ok?: boolean }).ok) escalada = true;
         messages.push({ role: 'tool', toolCallId: call.id, content: JSON.stringify(result) });
+      }
+
+      if (escalada) {
+        return { text: ESCALATION_TEXT, context: { ...ctx, consecutiveUnclearReplies: 0 }, escalated: true };
+      }
+
+      const conteo = contarTurnoFallido(ctx, !alguna);
+      ctx = { ...ctx, consecutiveUnclearReplies: conteo.consecutiveUnclearReplies };
+      if (conteo.debeEscalar) {
+        this.logger.warn(`Escalating conversation ${conversationId}: ${ESCALATION_THRESHOLD_MESSAGE}`);
+        return { text: ESCALATION_TEXT, context: { ...ctx, consecutiveUnclearReplies: 0 }, escalated: true };
       }
     }
 
@@ -171,6 +201,10 @@ export class ToolRouterService {
       case 'autorizar': {
         const autoriza = args.autoriza === true;
         return { result: { ok: autoriza }, context: { ...ctx, autorizado: autoriza } };
+      }
+      case 'escalar_a_humano': {
+        const result = escalarAHumanoLogic(ctx, { motivo: String(args.motivo ?? '') });
+        return { result, context: result.ok ? { ...ctx, escalatedReason: result.motivo } : ctx };
       }
       case 'consultar_afiliado': {
         const result = consultarAfiliadoLogic(this.deps, ctx, { serie: String(args.serie ?? '') });

@@ -116,3 +116,56 @@ describe('I6 — a refusal never silently becomes a success', () => {
     expect(result.motivo).toBeTruthy();
   });
 });
+
+// Migrated from the machine's circuit breaker. It escalated on a COUNT, not on the model
+// saying it was stuck — a model rarely admits that. The router counts the same way: a turn
+// where every tool refused is its version of "I did not understand".
+describe('I7 — a person who keeps getting refused reaches a human', () => {
+  it('escalates after three turns where every tool call was refused', async () => {
+    const router = new ToolRouterService({ quoting });
+    let context = {};
+
+    for (let turn = 1; turn <= 3; turn++) {
+      // emitir_poliza with nothing captured is refused every time.
+      const nlp = hostileModel([{ toolCalls: [call('emitir_poliza')] }, { text: 'sigo aquí' }]);
+      const reply = await router.handle(nlp, 'conv-1', context, 'sys', [], 'emite ya');
+      context = reply.context;
+
+      if (turn < 3) {
+        expect(reply.escalated).toBeFalsy();
+      } else {
+        expect(reply.escalated).toBe(true);
+        expect(reply.text).toContain('líder de servicio');
+      }
+    }
+  });
+
+  it('un turno que sí avanza reinicia la cuenta', async () => {
+    const router = new ToolRouterService({ quoting });
+    const fallido = hostileModel([{ toolCalls: [call('emitir_poliza')] }, { text: 'x' }]);
+    let { context } = await router.handle(fallido, 'conv-1', {}, 'sys', [], 'emite');
+    expect(context.consecutiveUnclearReplies).toBe(1);
+
+    const bueno = hostileModel([{ toolCalls: [call('cotizar', { productCategory: 'vida' })] }, { text: 'ok' }]);
+    ({ context } = await router.handle(bueno, 'conv-1', { ...context, autorizado: true }, 'sys', [], 'quiero vida'));
+    expect(context.consecutiveUnclearReplies).toBe(0);
+  });
+
+  it('el modelo también puede escalar por su cuenta, con motivo', async () => {
+    const router = new ToolRouterService({ quoting });
+    const nlp = hostileModel([{ toolCalls: [call('escalar_a_humano', { motivo: 'reclamo por un cobro' })] }, { text: 'x' }]);
+
+    const reply = await router.handle(nlp, 'conv-1', { autorizado: true }, 'sys', [], 'quiero hablar con alguien');
+
+    expect(reply.escalated).toBe(true);
+    expect(reply.context.escalatedReason).toBe('reclamo por un cobro');
+  });
+
+  it('escalar sin motivo se rechaza — quien atienda necesita el contexto', async () => {
+    const router = new ToolRouterService({ quoting });
+    const nlp = hostileModel([{ toolCalls: [call('escalar_a_humano', { motivo: '' })] }, { text: 'x' }]);
+
+    const reply = await router.handle(nlp, 'conv-1', { autorizado: true }, 'sys', [], 'x');
+    expect(reply.escalated).toBeFalsy();
+  });
+});

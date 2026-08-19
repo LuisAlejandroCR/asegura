@@ -45,7 +45,7 @@ describe('Ley 1581 consent on the voice channel', () => {
   // without context.autorizado, which is asserted in modules/agent/tools/tools.spec.ts.
   it('carries the whole flow, not just cotizar — this is what audit 3.4 was about', () => {
     const agent = createVoiceAgent(new VoiceSessionState('conv-1'));
-    for (const name of ['autorizar', 'consultar_afiliado', 'cotizar', 'seleccionar_producto', 'capturar_datos', 'registrar_mascotas', 'preguntas_aseguramiento', 'emitir_poliza', 'generar_link_pago']) {
+    for (const name of ['autorizar', 'consultar_afiliado', 'cotizar', 'seleccionar_producto', 'capturar_datos', 'registrar_mascotas', 'preguntas_aseguramiento', 'escalar_a_humano', 'emitir_poliza', 'generar_link_pago']) {
       expect(agent.toolCtx.hasTool(name)).toBe(true);
     }
   });

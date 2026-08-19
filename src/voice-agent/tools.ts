@@ -5,7 +5,8 @@ import { tool } from '@livekit/agents';
 import { z } from 'zod';
 import {
   ToolDeps, consultarAfiliadoLogic, emitirPolizaLogic, generarLinkPagoLogic,
-  registrarAseguramientoLogic, registrarMascotasLogic, seleccionarProductoLogic, validarDatosLogic,
+  escalarAHumanoLogic, registrarAseguramientoLogic, registrarMascotasLogic,
+  seleccionarProductoLogic, validarDatosLogic,
 } from '../modules/agent/tools';
 import { VoiceSessionState } from './session-state';
 
@@ -152,6 +153,21 @@ export function createRegistrarMascotasTool(state: VoiceSessionState) {
     execute: async (args) => {
       const result = registrarMascotasLogic(state.context, args as never);
       if (result.ok) state.merge({ pets: result.mascotas });
+      return result;
+    },
+  });
+}
+
+export function createEscalarTool(state: VoiceSessionState) {
+  return tool({
+    name: 'escalar_a_humano',
+    description:
+      'Entrega la llamada a una persona del equipo: si no puedes ayudar, si te lo piden, o ' +
+      'ante un reclamo que no resuelves con las otras herramientas.',
+    parameters: z.object({ motivo: z.string().describe('Por qué escalas, para quien atienda.') }),
+    execute: async ({ motivo }) => {
+      const result = escalarAHumanoLogic(state.context, { motivo });
+      if (result.ok) state.merge({ escalatedReason: result.motivo });
       return result;
     },
   });

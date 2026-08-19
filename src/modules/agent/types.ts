@@ -115,6 +115,7 @@ interface ConversationContext {
   lastMessages?: Array<{ role: 'user' | 'agent'; text: string }>;
   // Reset on any understood turn; at the threshold the agent hands off to a human.
   consecutiveUnclearReplies?: number;
+  escalatedReason?: string;
   awaitingContactConsent?: boolean;
   // Waitlist flow, set sequentially: name → email → phone.
   awaitingContactName?: boolean;

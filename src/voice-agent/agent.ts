@@ -10,7 +10,7 @@ import { createCotizarTool } from './cotizar-tool';
 import {
   createAutorizarTool, createCapturarDatosTool, createConsultarAfiliadoTool,
   createEmitirPolizaTool, createGenerarLinkPagoTool, createPreguntasAseguramientoTool,
-  createRegistrarMascotasTool, createSeleccionarProductoTool,
+  createEscalarTool, createRegistrarMascotasTool, createSeleccionarProductoTool,
 } from './tools';
 
 // A worker-local ProductCatalog instance — no NestJS DI in this process. Same YAML files on
@@ -57,6 +57,9 @@ un dato no es válido, vuelve a pedir ESE dato. Después léele un resumen corto
 precio y sus datos) y pide confirmación. Solo entonces llama "emitir_poliza", y después
 "generar_link_pago". El link se lo dejas en el chat: nunca leas una URL en voz alta.
 
+Si no puedes ayudar, si te lo piden, o ante un reclamo que no resuelvas con estas
+herramientas, usa "escalar_a_humano" con el motivo. No insistas ni improvises una solución.
+
 Las herramientas mandan sobre ti: si una responde que no puede, dile a la persona lo que
 falta en tus palabras, no inventes un resultado.`;
 
@@ -75,6 +78,7 @@ export function createVoiceAgent(state: VoiceSessionState, deps: ToolDeps = { qu
       }, () => state.context),
       createSeleccionarProductoTool(deps, state),
       createCapturarDatosTool(state),
+      createEscalarTool(state),
       createRegistrarMascotasTool(state),
       createPreguntasAseguramientoTool(deps, state),
       createEmitirPolizaTool(deps, state),
