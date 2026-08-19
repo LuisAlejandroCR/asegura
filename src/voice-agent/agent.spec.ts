@@ -4,15 +4,16 @@
 // design — see its own header — so it's a script, not a unit under test).
 
 import { VOICE_GREETING, createVoiceAgent } from './agent';
+import { VoiceSessionState } from './session-state';
 
 describe('createVoiceAgent', () => {
   it('registers the cotizar tool', () => {
-    const agent = createVoiceAgent();
+    const agent = createVoiceAgent(new VoiceSessionState('conv-1'));
     expect(agent.toolCtx.hasTool('cotizar')).toBe(true);
   });
 
   it('instructions tell the model to never state a price without calling cotizar', () => {
-    const agent = createVoiceAgent();
+    const agent = createVoiceAgent(new VoiceSessionState('conv-1'));
     expect(String(agent.instructions)).toMatch(/cotizar/);
     expect(String(agent.instructions).toLowerCase()).toContain('nunca digas un precio');
   });
@@ -32,9 +33,20 @@ describe('Ley 1581 consent on the voice channel', () => {
     expect(VOICE_GREETING).not.toMatch(/https?:\/\/|[*_[\]`]/);
   });
 
-  it('instructions forbid cotizar and personal questions before authorization', () => {
-    const instructions = String(createVoiceAgent().instructions).toLowerCase();
+  it('instructions forbid personal questions and tools before authorization', () => {
+    const raw = String(createVoiceAgent(new VoiceSessionState('conv-1')).instructions).toLowerCase();
+    // The prompt is hard-wrapped, so compare on normalised whitespace.
+    const instructions = raw.replace(/\s+/g, ' ');
     expect(instructions).toContain('autorizar el tratamiento de sus datos');
-    expect(instructions).toMatch(/hasta que responda que sí[\s\S]*no uses la herramienta/);
+    expect(instructions).toContain('hasta que autorice no preguntes nada personal ni uses otra herramienta');
+  });
+
+  // The prompt is now the polite half. The binding half is that the shared tools refuse
+  // without context.autorizado, which is asserted in modules/agent/tools/tools.spec.ts.
+  it('carries the whole flow, not just cotizar — this is what audit 3.4 was about', () => {
+    const agent = createVoiceAgent(new VoiceSessionState('conv-1'));
+    for (const name of ['autorizar', 'consultar_afiliado', 'cotizar', 'capturar_datos', 'emitir_poliza', 'generar_link_pago']) {
+      expect(agent.toolCtx.hasTool(name)).toBe(true);
+    }
   });
 });

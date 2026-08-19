@@ -26,10 +26,32 @@ interface InsuranceIntent {
   dependents?: number | null;
 }
 
+// One turn of a tool-calling loop: either the model answered, or it asked for tools to run.
+interface ToolCallRequest {
+  name: string;
+  args: Record<string, unknown>;
+  id: string;
+}
+
+interface ChatTurn {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  toolCallId?: string;
+  toolCalls?: ToolCallRequest[];
+}
+
+interface ToolSchema {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
 interface INlpProvider {
   extractIntent(text: string, history?: Array<{ role: string; text: string }>): Promise<InsuranceIntent>;
   // False means extractIntent still answers, but from keyword matching, not the model.
   readonly isEnabled: boolean;
+  // Optional: a provider without it simply cannot drive the tool-calling router.
+  chatWithTools?(messages: ChatTurn[], tools: ToolSchema[]): Promise<{ text?: string; toolCalls?: ToolCallRequest[] }>;
 }
 
-export { InsuranceIntent, INlpProvider };
+export { InsuranceIntent, INlpProvider, ChatTurn, ToolCallRequest, ToolSchema };

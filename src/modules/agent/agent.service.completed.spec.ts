@@ -98,3 +98,58 @@ describe('AgentService — COMPLETED does not answer everything with the receipt
     expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.AUTHORIZATION, expect.anything());
   });
 });
+
+// Reported from a live chat: the person typed "no recibe audio" — a complaint that the web
+// page was broken — and got a full quote back. The message never reached a handler that
+// could recognise it, so it fell through to the quote gate.
+describe('AgentService — a broken channel is not a buying signal', () => {
+  it.each([
+    'no recibe audio',
+    'no se escucha nada',
+    'la página no carga',
+    'el link no funciona',
+    'no funciona',
+    'se queda cargando',
+    'no me deja entrar',
+  ])('answers the complaint instead of quoting: %s', async (complaint) => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { autorizado: true, productCategory: 'mascotas', petCount: 3 },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage(complaint));
+    await service.handleMessage({});
+
+    const sent = telegram.sendText.mock.calls[0][1] as string;
+    expect(sent).not.toContain('Tu cotización personalizada');
+    expect(sent).toContain('Sigamos aquí en el chat');
+    // A complaint must not advance the sale.
+    expect(conversations.saveState).not.toHaveBeenCalledWith('conv-1', ConversationState.QUOTE_PRESENTED, expect.anything());
+  });
+
+  // The reason the detector needs a technical subject: this phrase is a rejection of the
+  // quote, not a bug report, and it must keep reaching the alternatives flow.
+  it('"no me sirve" about a quote is NOT treated as a complaint', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { autorizado: true, productCategory: 'vida', quoteProductId: 'vida' },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('no me sirve, muéstrame otra'));
+    await service.handleMessage({});
+
+    // The alternatives path may reply through a different send method, so assert on
+    // everything that went out: had the complaint branch fired, its text would be here.
+    const sent = telegram.sendText.mock.calls.map((c: unknown[]) => String(c[1])).join(' | ');
+    expect(sent).not.toContain('Sigamos aquí en el chat');
+  });
+
+  it('an ordinary discovery answer still quotes', async () => {
+    const { service, telegram } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { autorizado: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('quiero un seguro de vida'));
+    await service.handleMessage({});
+
+    expect(telegram.sendText.mock.calls[0][1]).not.toContain('Sigamos aquí en el chat');
+  });
+});

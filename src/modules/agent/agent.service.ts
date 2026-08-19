@@ -16,6 +16,8 @@ import { NormalizedMessage } from '../channel/types';
 import { ConversationService } from './conversation.service';
 import { ConversationState, ConversationContext, Conversation, PetDetail, DocumentType } from './types';
 import { STATE_RESPONSES, formatNameList, progressFor } from './conversation-state.machine';
+// One implementation of the data rules for both channels: voice validates what text validates.
+import { isValidName, normalizeName, normalizeSpokenEmail as sharedNormalizeEmail } from './tools';
 import { pickPersistentFields } from './persistent-context';
 import { QuotingService } from '../quoting/quoting.service';
 import { AffiliateLookupService } from '../quoting/affiliate-lookup.service';
@@ -411,6 +413,27 @@ export class AgentService {
   private static readonly CLOSING_PLEASANTRY_PATTERN =
     /^(gracias|muchas gracias|listo|ok|oka?y|perfecto|todo bien|dale)\b/i;
 
+  // Two shapes only, so an ordinary rejection can never look like a complaint: a failure word
+  // WITH a technical subject, or a phrase that cannot mean anything else. "no me sirve" alone
+  // stays out of here — in QUOTE_PRESENTED it means "show me another one".
+  // Two shapes only, so an ordinary rejection can never look like a complaint: a failure word
+  // WITH a technical subject, or a phrase that cannot mean anything else. A bare "no me sirve"
+  // stays out on purpose — in QUOTE_PRESENTED that means "show me another one".
+  private static readonly CHANNEL_COMPLAINT_PATTERNS: RegExp[] = [
+    /\b(no|nunca|ni)\b[^.?!]{0,30}\b(audio|micrófono|microfono|sonido|voz|página|pagina|link|enlace|web|sitio|pantalla)\b/i,
+    /\b(audio|micrófono|microfono|sonido|voz|página|pagina|link|enlace|web|sitio|pantalla)\b[^.?!]{0,30}\b(no|falla|error)\b/i,
+    /\bno (funciona|carga|abre|responde|me deja entrar)\b/i,
+    /\bse queda cargando\b/i,
+    /\bno se (escucha|oye|ve)\b/i,
+  ];
+
+  private static isChannelComplaint(text: string): boolean {
+    return AgentService.CHANNEL_COMPLAINT_PATTERNS.some((re) => re.test(text));
+  }
+
+  private static readonly CHANNEL_COMPLAINT_TEXT =
+    'Perdón por eso 🙏 Sigamos aquí en el chat, que sí funciona — escríbeme o mándame un audio, como prefieras. Si quieres reintentar con la página, dime y te mando otro enlace.';
+
   private static readonly FAREWELL_AFTER_PURCHASE =
     'Listo, cierro por aquí 😊 No tienes que hacer nada más. Cuando quieras — una duda de coberturas, comparar otro plan, o proteger algo nuevo — escríbeme.';
 
@@ -552,6 +575,18 @@ export class AgentService {
           : STATE_RESPONSES[terminalState](context),
         nextState: terminalState,
       };
+    }
+
+    // Someone reporting that the page or the mic is broken is not answering a discovery
+    // question. Without this the message reached the quote gate and a complaint was sold to.
+    // Excluded past DATA_CAPTURE: there "no me carga" is about the payment link, which the
+    // payment flow answers itself.
+    if (
+      currentState !== ConversationState.DATA_CAPTURE &&
+      currentState !== ConversationState.PAYMENT &&
+      AgentService.isChannelComplaint(text)
+    ) {
+      return { text: AgentService.CHANNEL_COMPLAINT_TEXT };
     }
 
     switch (currentState) {
@@ -1405,7 +1440,7 @@ export class AgentService {
   private static readonly NAME_PREAMBLE_REGEX = /^(mi nombre completo es|mi nombre es|me llamo|yo soy|soy)\s*/i;
 
   private stripNamePreamble(text: string): string {
-    return text.trim().replace(AgentService.NAME_PREAMBLE_REGEX, '').trim();
+    return normalizeName(text);
   }
 
   // A cédula dictated digit-by-digit transcribes as "1, 2, 3...", which no contiguous \d{6,10}
@@ -1470,17 +1505,13 @@ export class AgentService {
   }
 
   private isValidHumanName(text: string): boolean {
-    const trimmed = text.trim();
-    return trimmed.length >= 2 && trimmed.length <= 80 && AgentService.NAME_REGEX.test(trimmed);
+    return isValidName(text);
   }
 
   // Voice dictation spells out email symbols ("arroba", "punto"), and Whisper often inserts a
   // comma right after — `[\s,]*` absorbs it, which a literal `\s+` did not.
   private normalizeSpokenEmail(text: string): string {
-    return text
-      .replace(/[\s,]*\barroba\b[\s,]*/gi, '@')
-      .replace(/[\s,]*\bpunto\b[\s,]*/gi, '.')
-      .replace(/\s+/g, '');
+    return sharedNormalizeEmail(text);
   }
 
   // True when ANY product in this purchase requires conditional underwriting.

@@ -6,6 +6,8 @@ import * as openai from '@livekit/agents-plugin-openai';
 import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
 import dotenv from 'dotenv';
 import { VOICE_GREETING, createVoiceAgent } from './agent';
+import { VoiceSessionState } from './session-state';
+import { buildVoiceDeps } from './deps';
 
 dotenv.config();
 
@@ -52,8 +54,15 @@ async function runSession(ctx: JobContext): Promise<void> {
       }),
     });
 
-    await session.start({ agent: createVoiceAgent(), room: ctx.room });
     await ctx.connect();
+
+    // The identity the token was minted with IS the conversationId (voice.controller.ts
+    // passes it), so a call opened from a chat link can close the sale against that same
+    // conversation. A standalone voz.html visit has a random identity and can only quote.
+    const participant = await ctx.waitForParticipant();
+    const state = new VoiceSessionState(participant.identity);
+
+    await session.start({ agent: createVoiceAgent(state, buildVoiceDeps()), room: ctx.room });
 
     // say(), not generateReply(): the Ley 1581 notice has to come out word for word. The
     // consent gate itself lives in the agent instructions — this worker holds no state.

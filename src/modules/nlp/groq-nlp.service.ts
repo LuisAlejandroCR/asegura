@@ -2,7 +2,7 @@
 // API. Deterministic post-processing corrects the model wherever the text itself is unambiguous.
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { INlpProvider, InsuranceIntent } from './types';
+import { ChatTurn, INlpProvider, InsuranceIntent, ToolCallRequest, ToolSchema } from './types';
 
 // Tagged so extractIntent can retry a 429 once instead of falling straight to fallbackIntent().
 class GroqRateLimitError extends Error {}
@@ -22,6 +22,58 @@ export class GroqNlpService implements INlpProvider {
     if (!this.apiKey) {
       this.logger.warn('LLM_API_KEY not set — NLP falls back to keyword-only matching, voice transcription disabled');
     }
+  }
+
+  // Groq speaks the OpenAI tool-calling shape, so the router can drive the shared tools
+  // without a second provider. Returns whatever the model asked for; running the tools and
+  // deciding what is allowed is the router's job, never this layer's.
+  async chatWithTools(
+    messages: ChatTurn[],
+    tools: ToolSchema[],
+  ): Promise<{ text?: string; toolCalls?: ToolCallRequest[] }> {
+    if (!this.apiKey) throw new Error('LLM_API_KEY not set — tool calling is unavailable');
+
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.apiKey}` },
+      body: JSON.stringify({
+        model: this.model,
+        messages: messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+          ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}),
+          ...(m.toolCalls
+            ? {
+                tool_calls: m.toolCalls.map((c) => ({
+                  id: c.id,
+                  type: 'function',
+                  function: { name: c.name, arguments: JSON.stringify(c.args) },
+                })),
+              }
+            : {}),
+        })),
+        tools: tools.map((t) => ({
+          type: 'function',
+          function: { name: t.name, description: t.description, parameters: t.parameters },
+        })),
+      }),
+    });
+
+    if (!response.ok) throw new Error(`Groq tool call failed: ${response.status}`);
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> } }>;
+    };
+    const message = data.choices?.[0]?.message;
+
+    const toolCalls = message?.tool_calls?.map((c) => ({
+      id: c.id,
+      name: c.function.name,
+      // A model can emit malformed JSON here; an empty object lets the tool refuse with a
+      // readable reason instead of crashing the turn.
+      args: safeParseArgs(c.function.arguments),
+    }));
+
+    return { text: message?.content ?? undefined, toolCalls };
   }
 
   get isEnabled(): boolean {
@@ -480,5 +532,14 @@ petAge/petBreed sueltos — cuando uses "pets", esos campos sueltos pueden queda
     if (hasDog && !hasCat) return 'perro';
     if (hasAll) return 'all';
     return null;
+  }
+}
+
+function safeParseArgs(raw: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
   }
 }
