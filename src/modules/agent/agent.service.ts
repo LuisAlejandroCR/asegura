@@ -1,6 +1,14 @@
-// agent.service.ts: the conversation orchestrator — routes every inbound message through
-// the state machine, asks the NLP layer for intent, and lets the rules engine decide product
-// and price.
+// agent.service.ts: the deterministic conversation engine for the text channels. Two layers
+// live here and they migrate differently — see docs/plan-router.md.
+//
+// ROUTING (what to say next, which state follows): being replaced by ToolRouterService. The
+// business rules it used to hold alone now live in modules/agent/tools, where both engines
+// enforce them — Ley 1581, underwriting, one payment link per policy.
+//
+// TRANSPORT (photo, contact share, document type, reply keyboards): stays here whatever the
+// routing engine is, and is per channel — Telegram and WhatsApp do not offer the same
+// primitives. The six awaitingSelfie/awaitingPhoneVerification/awaitingContact* flags belong
+// to this layer and never reach the router.
 
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -1431,13 +1439,6 @@ export class AgentService {
   // Backchannel words a voice transcription produces in reply to the agent's own message —
   // never a real person's full name.
   private static readonly FILLER_WORDS = ['gracias', 'ok', 'okay', 'vale', 'listo', 'dale', 'bueno', 'ya'];
-
-  // A name is letters only (including ñ and accents), never digits — "2+2" was once accepted.
-  private static readonly NAME_REGEX = /^[a-zA-ZÀ-ÖØ-öø-ÿ]+(?:['’-][a-zA-ZÀ-ÖØ-öø-ÿ]+|\s+[a-zA-ZÀ-ÖØ-öø-ÿ]+)*$/;
-
-  // NAME_REGEX allows "Mi nombre es Michelle Gómez" (all letters), so the lead-in restating the
-  // question got stored verbatim. Strip it before validating.
-  private static readonly NAME_PREAMBLE_REGEX = /^(mi nombre completo es|mi nombre es|me llamo|yo soy|soy)\s*/i;
 
   private stripNamePreamble(text: string): string {
     return normalizeName(text);
