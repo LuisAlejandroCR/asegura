@@ -4,7 +4,8 @@
 import { tool } from '@livekit/agents';
 import { z } from 'zod';
 import {
-  ToolDeps, consultarAfiliadoLogic, emitirPolizaLogic, generarLinkPagoLogic, validarDatosLogic,
+  ToolDeps, consultarAfiliadoLogic, emitirPolizaLogic, generarLinkPagoLogic,
+  registrarAseguramientoLogic, validarDatosLogic,
 } from '../modules/agent/tools';
 import { VoiceSessionState } from './session-state';
 
@@ -98,6 +99,23 @@ export function createGenerarLinkPagoTool(deps: Pick<ToolDeps, 'payments' | 'quo
     execute: async () => {
       const result = await generarLinkPagoLogic(deps, state.context, { policyId: state.context.policyId ?? '' });
       if (result.ok) state.merge({ checkoutUrl: result.checkoutUrl });
+      return result;
+    },
+  });
+}
+
+export function createPreguntasAseguramientoTool(deps: Pick<ToolDeps, 'catalog'>, state: VoiceSessionState) {
+  return tool({
+    name: 'preguntas_aseguramiento',
+    description:
+      'Registra lo que la persona respondió sobre su estado de salud. Vida y los planes de ' +
+      'medicina prepagada para mascotas no se pueden emitir sin esto — pregúntalo antes del resumen.',
+    parameters: z.object({
+      respuestas: z.string().describe('Lo que dijo sobre edad, enfermedades o historial clínico.'),
+    }),
+    execute: async ({ respuestas }) => {
+      const result = registrarAseguramientoLogic(deps, state.context, { respuestas });
+      if (result.ok) state.merge({ medicalInfoProvided: true, medicalInfo: respuestas });
       return result;
     },
   });

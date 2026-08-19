@@ -5,7 +5,7 @@ import { ProductCatalog } from '../../quoting/product-catalog.service';
 import { QuotingService } from '../../quoting/quoting.service';
 import {
   NOT_AUTHORIZED, cotizarLogic, validarDatosLogic, consultarAfiliadoLogic,
-  emitirPolizaLogic, generarLinkPagoLogic,
+  emitirPolizaLogic, generarLinkPagoLogic, registrarAseguramientoLogic, requiresUnderwriting,
 } from './index';
 
 const quoting = new QuotingService(new ProductCatalog());
@@ -118,5 +118,47 @@ describe('generarLinkPagoLogic', () => {
 
     expect(result).toEqual({ ok: true, checkoutUrl: 'https://checkout.wompi.co/l/x' });
     expect(createPaymentLink).toHaveBeenCalledWith(expect.objectContaining({ amountCOP: expect.any(Number) }));
+  });
+});
+
+// vida and the pet prepaid plans cannot be issued without underwriting answers. The rule sits
+// in the contract, not the prompt — the same call made for Ley 1581.
+describe('aseguramiento', () => {
+  const catalog = new ProductCatalog();
+  const deps = { catalog, policies: { issue: jest.fn().mockResolvedValue({ policyId: 'pol-1' }) } };
+  const readyForVida = { ...authorized, cedula: '12345678', nombre: 'Juan Pérez', quoteProductId: 'vida' };
+
+  beforeEach(() => deps.policies.issue.mockClear());
+
+  it('sabe qué productos lo exigen y cuáles no', () => {
+    expect(requiresUnderwriting({ catalog }, { quoteProductId: 'vida' })).toBe(true);
+    expect(requiresUnderwriting({ catalog }, { quoteProductId: 'medicina-prepagada-gatos' })).toBe(true);
+    expect(requiresUnderwriting({ catalog }, { quoteProductId: 'accidentes-personales' })).toBe(false);
+  });
+
+  it('regresión — emitirPoliza rechaza vida sin las respuestas de salud', async () => {
+    const result = await emitirPolizaLogic(deps, 'conv-1', readyForVida);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.motivo).toContain('aseguramiento');
+    expect(deps.policies.issue).not.toHaveBeenCalled();
+  });
+
+  it('emite vida una vez registradas', async () => {
+    const result = await emitirPolizaLogic(deps, 'conv-1', { ...readyForVida, medicalInfoProvided: true });
+    expect(result).toEqual({ ok: true, policyId: 'pol-1' });
+  });
+
+  it('un producto sin aseguramiento no queda bloqueado', async () => {
+    const context = { ...authorized, cedula: '12345678', nombre: 'Juan Pérez', quoteProductId: 'accidentes-personales' };
+    await expect(emitirPolizaLogic(deps, 'conv-1', context)).resolves.toEqual({ ok: true, policyId: 'pol-1' });
+  });
+
+  it('registrar exige una respuesta real, no una cadena vacía', () => {
+    expect(registrarAseguramientoLogic({ catalog }, { ...readyForVida, respuestas: '' } as never, { respuestas: '' }).ok).toBe(false);
+    expect(registrarAseguramientoLogic({ catalog }, readyForVida, { respuestas: 'Tengo 34 años, sin enfermedades.' }).ok).toBe(true);
+  });
+
+  it('no se registra sin autorización', () => {
+    expect(registrarAseguramientoLogic({ catalog }, { quoteProductId: 'vida' }, { respuestas: 'ok' })).toMatchObject({ ok: false });
   });
 });

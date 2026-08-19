@@ -16,7 +16,7 @@ const config = new ConfigService();
 
 export function buildVoiceDeps(): ToolDeps {
   const catalog = new ProductCatalog();
-  const deps: ToolDeps = { quoting: new QuotingService(catalog) };
+  const deps: ToolDeps = { quoting: new QuotingService(catalog), catalog };
 
   const affiliates = new AffiliateLookupService(config);
   affiliates.onApplicationBootstrap();

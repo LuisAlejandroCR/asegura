@@ -2,6 +2,7 @@
 // own script because they need a different number of turns to reach the same place; only the
 // end of the exchange is compared. This is the evidence the regex branches can be retired.
 import { ConversationState } from './types';
+import { ProductCatalog } from '../quoting/product-catalog.service';
 import { MultiTurnFixture, call, pick, quoting, runMachine, runRouter } from './router-parity.harness';
 
 const policies = { issue: jest.fn().mockResolvedValue({ policyId: 'pol-1' }) };
@@ -9,7 +10,7 @@ const payments = {
   isEnabled: true,
   createPaymentLink: jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.wompi.co/l/x' }),
 };
-const deps = { quoting, policies, payments };
+const deps = { quoting, policies, payments, catalog: new ProductCatalog() };
 
 const FLOWS: MultiTurnFixture[] = [
   {
@@ -87,6 +88,33 @@ const FLOWS: MultiTurnFixture[] = [
       { user: 'sí', modelTurns: [{ toolCalls: [call('emitir_poliza')] }, { text: 'Emitida.' }] },
     ],
     compare: ['cedula', 'nombre', 'email', 'policyId'],
+  },
+  {
+    // The flow that exposed the gap: vida cannot be issued until the underwriting answers
+    // exist. Both engines now ask for them and only then close.
+    name: 'cierre con aseguramiento — vida exige preguntas de salud antes de emitir',
+    start: {
+      state: ConversationState.DATA_CAPTURE,
+      context: { autorizado: true, quoteProductId: 'vida', productCategory: 'vida' },
+    },
+    machineTurns: [
+      { user: '12345678' },
+      { user: 'Juan Pérez' },
+      { user: 'juan@email.com' },
+      { user: 'Tengo 34 años y no tengo enfermedades' },
+      { user: 'sí', intent: { isAffirmative: true } },
+    ],
+    routerTurns: [
+      { user: '12345678', modelTurns: [{ toolCalls: [call('capturar_datos', { cedula: '12345678' })] }, { text: '¿Nombre?' }] },
+      { user: 'Juan Pérez', modelTurns: [{ toolCalls: [call('capturar_datos', { nombre: 'Juan Pérez' })] }, { text: '¿Correo?' }] },
+      { user: 'juan@email.com', modelTurns: [{ toolCalls: [call('capturar_datos', { email: 'juan@email.com' })] }, { text: '¿Tu estado de salud?' }] },
+      {
+        user: 'Tengo 34 años y no tengo enfermedades',
+        modelTurns: [{ toolCalls: [call('preguntas_aseguramiento', { respuestas: 'Tengo 34 años y no tengo enfermedades' })] }, { text: 'Te leo el resumen.' }],
+      },
+      { user: 'sí', modelTurns: [{ toolCalls: [call('emitir_poliza')] }, { text: 'Emitida.' }] },
+    ],
+    compare: ['cedula', 'nombre', 'email', 'medicalInfoProvided', 'policyId'],
   },
 ];
 

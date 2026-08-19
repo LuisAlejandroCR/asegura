@@ -9,12 +9,13 @@ import { VoiceSessionState } from './session-state';
 import { createCotizarTool } from './cotizar-tool';
 import {
   createAutorizarTool, createCapturarDatosTool, createConsultarAfiliadoTool,
-  createEmitirPolizaTool, createGenerarLinkPagoTool,
+  createEmitirPolizaTool, createGenerarLinkPagoTool, createPreguntasAseguramientoTool,
 } from './tools';
 
 // A worker-local ProductCatalog instance — no NestJS DI in this process. Same YAML files on
 // disk as the backend, never a second source of truth.
-const quoting = new QuotingService(new ProductCatalog());
+const catalog = new ProductCatalog();
+const quoting = new QuotingService(catalog);
 
 // Spoken verbatim, never through the LLM: a legal disclosure the model may paraphrase away
 // is not a disclosure. Plain prose, no markdown or URLs — a TTS engine reads it aloud.
@@ -45,6 +46,10 @@ Si es para mascotas, PREGUNTA si es gato o perro; nunca lo supongas.
 Si la persona menciona que es afiliada y te da su ID, usa "consultar_afiliado" para no
 preguntarle lo que Colsubsidio ya sabe.
 
+Vida y los planes de medicina prepagada para mascotas exigen preguntas de salud: hazlas y
+guárdalas con "preguntas_aseguramiento" antes del resumen. Si "emitir_poliza" dice que
+faltan, es que ese paso no se hizo.
+
 Para cerrar la venta: cuando diga que quiere el seguro, pídele cédula, nombre completo y
 correo, y guarda cada dato con "capturar_datos" apenas lo tengas. Si la herramienta dice que
 un dato no es válido, vuelve a pedir ESE dato. Después léele un resumen corto (producto,
@@ -54,7 +59,7 @@ precio y sus datos) y pide confirmación. Solo entonces llama "emitir_poliza", y
 Las herramientas mandan sobre ti: si una responde que no puede, dile a la persona lo que
 falta en tus palabras, no inventes un resultado.`;
 
-export function createVoiceAgent(state: VoiceSessionState, deps: ToolDeps = { quoting }): voice.Agent {
+export function createVoiceAgent(state: VoiceSessionState, deps: ToolDeps = { quoting, catalog }): voice.Agent {
   return voice.Agent.create({
     instructions: INSTRUCTIONS,
     tools: [
@@ -62,6 +67,7 @@ export function createVoiceAgent(state: VoiceSessionState, deps: ToolDeps = { qu
       createConsultarAfiliadoTool(deps, state),
       createCotizarTool(deps.quoting, (productId) => state.merge({ quoteProductId: productId })),
       createCapturarDatosTool(state),
+      createPreguntasAseguramientoTool(deps, state),
       createEmitirPolizaTool(deps, state),
       createGenerarLinkPagoTool({ ...deps, quoting: deps.quoting }, state),
     ],

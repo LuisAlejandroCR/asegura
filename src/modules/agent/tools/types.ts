@@ -9,6 +9,8 @@ export interface ToolDeps {
   quoting: import('../../quoting/quoting.service').QuotingService;
   affiliates?: { findBySerie(serie: string): unknown; isEnabled(): boolean };
   policies?: { issue(conversationId: string, context: ConversationContext): Promise<{ policyId: string }> };
+  // Needed to know which products require underwriting; QuotingService keeps its own private.
+  catalog?: { getProduct(id: string): { requiresUnderwriting?: boolean; name: string } | undefined };
   payments?: {
     isEnabled: boolean;
     createPaymentLink(params: { policyId: string; productName: string; amountCOP: number }): Promise<{ checkoutUrl: string }>;

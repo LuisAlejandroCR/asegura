@@ -17,6 +17,7 @@ import { WebLinkController } from './web-link.controller';
 import { WebLinkCodeService } from './web-link-code.service';
 import { ToolRouterService } from './tool-router.service';
 import { QuotingService } from '../quoting/quoting.service';
+import { ProductCatalog } from '../quoting/product-catalog.service';
 import { AffiliateLookupService } from '../quoting/affiliate-lookup.service';
 import { PolicyService } from '../policy/policy.service';
 import { WompiService } from '../payments/wompi.service';
@@ -34,9 +35,14 @@ import { WompiService } from '../payments/wompi.service';
     // plain object so the voice worker, which has no DI, can build the same one.
     {
       provide: ToolRouterService,
-      inject: [QuotingService, AffiliateLookupService, PolicyService, WompiService],
-      useFactory: (quoting: QuotingService, affiliates: AffiliateLookupService, policies: PolicyService, payments: WompiService) =>
-        new ToolRouterService({ quoting, affiliates, policies, payments }),
+      inject: [QuotingService, AffiliateLookupService, PolicyService, WompiService, 'IProductRepository'],
+      useFactory: (
+        quoting: QuotingService,
+        affiliates: AffiliateLookupService,
+        policies: PolicyService,
+        payments: WompiService,
+        catalog: ProductCatalog,
+      ) => new ToolRouterService({ quoting, affiliates, policies, payments, catalog }),
     },
   ],
   exports: [AgentService],

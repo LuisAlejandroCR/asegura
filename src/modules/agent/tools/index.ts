@@ -5,5 +5,6 @@ export * from './types';
 export * from './cotizar.tool';
 export * from './validar-datos.tool';
 export * from './consultar-afiliado.tool';
+export * from './aseguramiento.tool';
 export * from './emitir-poliza.tool';
 export * from './generar-link-pago.tool';

@@ -6,7 +6,7 @@ import { ChatTurn, INlpProvider, ToolSchema } from '../nlp/types';
 import { ConversationContext } from './types';
 import {
   ToolDeps, consultarAfiliadoLogic, cotizarLogic, emitirPolizaLogic,
-  generarLinkPagoLogic, validarDatosLogic,
+  generarLinkPagoLogic, registrarAseguramientoLogic, validarDatosLogic,
 } from './tools';
 
 // The model may call at most this many tools per user message: a loop that keeps calling is
@@ -55,6 +55,17 @@ export class ToolRouterService {
       parameters: {
         type: 'object',
         properties: { cedula: { type: 'string' }, nombre: { type: 'string' }, email: { type: 'string' } },
+      },
+    },
+    {
+      name: 'preguntas_aseguramiento',
+      description:
+        'Registra las respuestas de salud que exigen vida y los planes de medicina prepagada ' +
+        'para mascotas. Sin esto no se puede emitir esos productos.',
+      parameters: {
+        type: 'object',
+        properties: { respuestas: { type: 'string', description: 'Lo que respondió la persona sobre su estado de salud.' } },
+        required: ['respuestas'],
       },
     },
     {
@@ -150,6 +161,15 @@ export class ToolRouterService {
       case 'capturar_datos': {
         const result = validarDatosLogic(args as never);
         return { result, context: result.ok ? { ...ctx, ...result.datos } : ctx };
+      }
+      case 'preguntas_aseguramiento': {
+        const result = registrarAseguramientoLogic(this.deps, ctx, { respuestas: String(args.respuestas ?? '') });
+        return {
+          result,
+          context: result.ok
+            ? { ...ctx, medicalInfoProvided: true, medicalInfo: String(args.respuestas ?? '') }
+            : ctx,
+        };
       }
       case 'emitir_poliza': {
         const result = await emitirPolizaLogic(this.deps, conversationId, ctx);

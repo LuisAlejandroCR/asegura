@@ -4,9 +4,10 @@
 import { ConversationContext } from '../types';
 import { ToolDeps, ToolOutcome, requireAuthorization } from './types';
 import { isValidCedula, isValidEmail, isValidName } from './validar-datos.tool';
+import { requiresUnderwriting } from './aseguramiento.tool';
 
 export function emitirPolizaLogic(
-  deps: Pick<ToolDeps, 'policies'>,
+  deps: Pick<ToolDeps, 'policies' | 'catalog'>,
   conversationId: string,
   context: ConversationContext,
 ): Promise<ToolOutcome<{ policyId: string }>> {
@@ -18,6 +19,10 @@ export function emitirPolizaLogic(
   if (!context.nombre || !isValidName(context.nombre)) faltan.push('nombre');
   if (context.email && !isValidEmail(context.email)) faltan.push('correo');
   if (!context.quoteProductId) faltan.push('el producto cotizado');
+  // vida and the pet prepaid plans cannot be issued without the underwriting answers.
+  if (requiresUnderwriting(deps, context) && !context.medicalInfoProvided) {
+    faltan.push('las preguntas de aseguramiento');
+  }
   if (faltan.length) {
     return Promise.resolve({ ok: false, motivo: `Falta ${faltan.join(', ')} antes de emitir.` });
   }
