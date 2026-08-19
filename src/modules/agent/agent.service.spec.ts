@@ -4557,7 +4557,9 @@ describe('AgentService — terminal-state restart', () => {
     expect(secondText).toContain('Ingresa tu ID');
   });
 
-  it('does NOT restart COMPLETED on an ordinary message — still requires an exact greeting keyword (deliberately deferred scope)', async () => {
+  // Reported from a live chat: COMPLETED answered anything it did not recognise with the
+  // purchase receipt, so a real question got "tu seguro está activo". It asks now instead.
+  it('does NOT restart COMPLETED on an ordinary message — it asks what is needed, keeping the terminal row', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.COMPLETED,
       context: { hasCompletedPurchase: true, nombre: 'Ana', cedula: '123' },
@@ -4565,9 +4567,15 @@ describe('AgentService — terminal-state restart', () => {
     telegram.normalize.mockResolvedValue(makeMessage('¿cuál de todos es mejor para mi?'));
     await service.handleMessage({});
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    expect(sentText).toContain('¡Todo listo!');
-    // No state transition — same terminal row, KYC data untouched.
-    expect(conversations.saveState).not.toHaveBeenCalled();
+    expect(sentText).not.toContain('¡Todo listo!');
+    expect(sentText).toContain('No estoy seguro de qué necesitas');
+    // No state transition and the KYC data survives. It does save now: the unclear counter
+    // has to persist for three of these in a row to escalate instead of looping.
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1',
+      ConversationState.COMPLETED,
+      expect.objectContaining({ nombre: 'Ana', cedula: '123' }),
+    );
   });
 
   // A COMPLETED customer asking about their OWN,
@@ -4615,7 +4623,9 @@ describe('AgentService — terminal-state restart', () => {
       telegram.normalize.mockResolvedValue(makeMessage('gracias, todo bien'));
       await service.handleMessage({});
       const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-      expect(sentText).toContain('¡Todo listo!');
+      // Thanks is a goodbye: it gets the farewell, not the receipt and not a follow-up question.
+      expect(sentText).not.toContain('¡Todo listo!');
+      expect(sentText.toLowerCase()).toContain('cierro por aquí');
     });
 
     it('falls back to the generic COMPLETED text when purchasedProductIds is empty/absent', async () => {

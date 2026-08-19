@@ -407,6 +407,16 @@ export class AgentService {
   // Escalates to a human instead of repeating "no logré entender" forever. Counts only turns
   // explicitly flagged unclear, so an ordinary follow-up question never trips it.
   private static readonly UNCLEAR_REPLY_ESCALATION_THRESHOLD = 3;
+  // Deliberately narrow: only what a person says when they are done, never a real request.
+  private static readonly CLOSING_PLEASANTRY_PATTERN =
+    /^(gracias|muchas gracias|listo|ok|oka?y|perfecto|todo bien|dale)\b/i;
+
+  private static readonly FAREWELL_AFTER_PURCHASE =
+    'Listo, cierro por aquí 😊 No tienes que hacer nada más. Cuando quieras — una duda de coberturas, comparar otro plan, o proteger algo nuevo — escríbeme.';
+
+  private static readonly COMPLETED_UNCLEAR_TEXT =
+    'No estoy seguro de qué necesitas 🤔 Puedo contarte qué cubre tu seguro, compararte otro plan, o proteger algo nuevo. ¿Cuál te sirve?';
+
   private static readonly ESCALATION_TEXT =
     'Parece que no te estoy ayudando bien, serás redirigido a mi líder de servicio 🙏';
 
@@ -536,7 +546,10 @@ export class AgentService {
         ? ConversationState.COMPLETED
         : ConversationState.ABANDONED;
       return {
-        text: STATE_RESPONSES[terminalState](context),
+        // Someone who says "terminar" is leaving, not asking whether their policy is active.
+        text: context.hasCompletedPurchase
+          ? AgentService.FAREWELL_AFTER_PURCHASE
+          : STATE_RESPONSES[terminalState](context),
         nextState: terminalState,
       };
     }
@@ -612,11 +625,7 @@ export class AgentService {
         }
         // Checked before the hola/ayuda restart: "necesito ayuda con mi póliza" is about an
         // existing purchase. Gated on purchasedProductIds, since policyIds are already cleared.
-        if (
-          currentState === ConversationState.COMPLETED &&
-          context.purchasedProductIds?.length &&
-          AgentService.POLICY_INQUIRY_PATTERN.test(text)
-        ) {
+        if (currentState === ConversationState.COMPLETED && AgentService.POLICY_INQUIRY_PATTERN.test(text)) {
           return this.answerPolicyInquiry(context);
         }
         if (text.includes('hola') || text.includes('ayuda') || text.includes('inicio') || text === '/start') {
@@ -625,6 +634,16 @@ export class AgentService {
             text: STATE_RESPONSES[ConversationState.GREETING](context),
             nextState: ConversationState.AUTHORIZATION,
           };
+        }
+        // COMPLETED used to answer anything it did not recognise with the purchase
+        // confirmation, so a stray "1" got "tu seguro está activo". Flagging it unclear also
+        // lets the circuit breaker escalate instead of repeating forever.
+        if (currentState === ConversationState.COMPLETED) {
+          // Thanks is a goodbye, not a request — answering it with a question reads as nagging.
+          if (AgentService.CLOSING_PLEASANTRY_PATTERN.test(text)) {
+            return { text: AgentService.FAREWELL_AFTER_PURCHASE };
+          }
+          return { text: AgentService.COMPLETED_UNCLEAR_TEXT, unclearReply: true };
         }
         return {
           text: STATE_RESPONSES[currentState]?.(context) ?? STATE_RESPONSES[ConversationState.COMPLETED](context),

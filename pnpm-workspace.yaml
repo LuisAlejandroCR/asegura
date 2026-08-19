@@ -10,9 +10,3 @@ allowBuilds:
 
 onlyBuiltDependencies:
   - '@nestjs/core'
-
-# The local end-of-turn model is ~1 GB resident in BOTH the worker and its inference child,
-# and this stack is cloud STT/LLM/TTS only. Skipping the platform binary makes the native
-# binding unavailable, which the framework handles by disabling local EOT with a warning.
-ignoredOptionalDependencies:
-  - '@livekit/local-inference-*'
