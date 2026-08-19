@@ -1,5 +1,7 @@
 // pdf.service.spec.ts: tests policy PDF generation end-to-end — per-pet premium lines,
 // the pets table, optional email, every document type, and the audit QR target.
+// Every test that renders a real PDF carries a 15s budget: pdfkit under a loaded runner
+// blows jest's 5s default, and that failure reads as a regression that is not one.
 
 import { PdfService } from './pdf.service';
 
@@ -32,12 +34,12 @@ describe('PdfService.generate', () => {
     expect(buffer.length).toBeGreaterThan(0);
     // A real PDF starts with the %PDF- magic header
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
-  });
+  }, 15000);
 
   it('still generates a valid PDF when email is omitted', async () => {
     const buffer = await service.generate(baseData({ email: undefined }));
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
-  });
+  }, 15000);
 });
 
 // petCount pricing display
@@ -83,7 +85,7 @@ describe('PdfService — petCount pricing display', () => {
   it('still generates a valid PDF end-to-end when petCount is provided', async () => {
     const buffer = await service.generate(baseData({ petCount: 3 }));
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
-  });
+  }, 15000);
 
   it('still generates a valid PDF end-to-end when a pets table is provided', async () => {
     const buffer = await service.generate(baseData({
@@ -94,12 +96,12 @@ describe('PdfService — petCount pricing display', () => {
       ],
     }));
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
-  });
+  }, 15000);
 
   it('still generates a valid PDF when pets is an empty array', async () => {
     const buffer = await service.generate(baseData({ pets: [] }));
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
-  });
+  }, 15000);
 
   it('still generates a valid PDF when documentType is provided (CE, TI, NIP, NUIP)', async () => {
     // 5 real sequential PDF generations (~1.2s each) — comfortably past Jest's 5000ms

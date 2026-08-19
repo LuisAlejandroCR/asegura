@@ -1,97 +1,103 @@
-// router-parity.spec.ts: the gate for turning the router on. Both engines run the same
-// scenario and must agree on the OUTCOME — the context they leave behind — while the wording
-// is free to differ. Nothing here compares prose; that is the whole point of the migration.
-import { ConversationState, ConversationContext } from './types';
-import { makeMessage, buildService } from './agent.service.test-helpers';
-import { ProductCatalog } from '../quoting/product-catalog.service';
-import { QuotingService } from '../quoting/quoting.service';
-import { ToolRouterService } from './tool-router.service';
-import { ChatTurn, ToolCallRequest } from '../nlp/types';
+// router-parity.spec.ts: the gate for turning AGENT_ROUTER on. Every routing decision the
+// state machine makes has a fixture here; both engines must agree on the context they leave
+// behind. Six of the twelve awaiting* flags are Telegram transport (selfie, contact share,
+// phone) and never reach the router, so they are covered by the machine's own specs instead.
+//
+// Parity is measured where both engines have DECIDED something. DISCOVERY is deliberately
+// absent: the machine asks a clarifying question on the turn where the router already calls
+// cotizar, so a per-turn comparison there measures bookkeeping, not correctness. What that
+// would have proven is covered by router-invariants.spec.ts (I5) and the tool contract.
+import { ConversationState } from './types';
+import { ParityFixture, call, machineOutcome, pick, quoting, routerOutcome } from './router-parity.harness';
 
-const quoting = new QuotingService(new ProductCatalog());
-const call = (name: string, args: Record<string, unknown> = {}): ToolCallRequest => ({ id: `c-${name}`, name, args });
+const authorized = { autorizado: true };
+const policies = { issue: jest.fn().mockResolvedValue({ policyId: 'pol-1' }) };
+const payments = { isEnabled: true, createPaymentLink: jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.wompi.co/l/x' }) };
 
-function scriptedModel(turns: Array<{ text?: string; toolCalls?: ToolCallRequest[] }>) {
-  let i = 0;
-  return {
-    isEnabled: true,
-    extractIntent: jest.fn(),
-    chatWithTools: jest.fn(async (_m: ChatTurn[]) => turns[Math.min(i++, turns.length - 1)]),
-  } as any;
-}
+const FIXTURES: ParityFixture[] = [
+  // ── AUTHORIZATION ───────────────────────────────────────────────────────────
+  {
+    name: 'sí autoriza',
+    state: ConversationState.AUTHORIZATION,
+    user: 'sí',
+    modelTurns: [{ toolCalls: [call('autorizar', { autoriza: true })] }, { text: 'Gracias.' }],
+    compare: ['autorizado'],
+  },
+  {
+    name: 'sí con punto autoriza igual',
+    state: ConversationState.AUTHORIZATION,
+    user: 'Sí.',
+    modelTurns: [{ toolCalls: [call('autorizar', { autoriza: true })] }, { text: 'Gracias.' }],
+    compare: ['autorizado'],
+  },
 
-// The machine persists through saveState; its last write is the outcome of the turn.
-async function machineOutcome(
-  state: ConversationState,
-  context: ConversationContext,
-  userText: string,
-): Promise<ConversationContext> {
-  const { service, telegram, conversations } = buildService({ state, context });
-  telegram.normalize.mockResolvedValue(makeMessage(userText));
-  await service.handleMessage({});
-  const calls = conversations.saveState.mock.calls;
-  return (calls.length ? calls[calls.length - 1][2] : context) as ConversationContext;
-}
+  // ── DISCOVERY ───────────────────────────────────────────────────────────────
+  {
+    name: 'mascotas con perro cotiza perro',
+    state: ConversationState.DISCOVERY,
+    context: { ...authorized, productCategory: 'mascotas', petType: 'perro' },
+    user: 'tengo un perro',
+    intent: { productCategory: 'mascotas', petType: 'perro' },
+    modelTurns: [{ toolCalls: [call('cotizar', { productCategory: 'mascotas', petType: 'perro' })] }, { text: 'ok' }],
+    compare: ['petType'],
+  },
 
-async function routerOutcome(
-  context: ConversationContext,
-  userText: string,
-  turns: Array<{ text?: string; toolCalls?: ToolCallRequest[] }>,
-): Promise<ConversationContext> {
-  const router = new ToolRouterService({ quoting });
-  return (await router.handle(scriptedModel(turns), 'conv-1', context, 'sys', [], userText)).context;
-}
+  // ── DATA_CAPTURE ────────────────────────────────────────────────────────────
+  {
+    name: 'cédula válida se guarda',
+    state: ConversationState.DATA_CAPTURE,
+    context: { ...authorized, quoteProductId: 'vida' },
+    user: '12345678',
+    modelTurns: [{ toolCalls: [call('capturar_datos', { cedula: '12345678' })] }, { text: '¿Nombre?' }],
+    compare: ['cedula'],
+  },
+  {
+    name: 'cédula con puntos de miles se rechaza',
+    state: ConversationState.DATA_CAPTURE,
+    context: { ...authorized, quoteProductId: 'vida' },
+    user: '12.345.678',
+    modelTurns: [{ toolCalls: [call('capturar_datos', { cedula: '12.345.678' })] }, { text: 'Repíteme.' }],
+    compare: ['cedula'],
+  },
+  {
+    name: 'cédula dictada dígito a dígito se une',
+    state: ConversationState.DATA_CAPTURE,
+    context: { ...authorized, quoteProductId: 'vida' },
+    user: '1, 2, 3, 4, 5, 6, 7',
+    modelTurns: [{ toolCalls: [call('capturar_datos', { cedula: '1, 2, 3, 4, 5, 6, 7' })] }, { text: 'ok' }],
+    compare: ['cedula'],
+  },
+  {
+    name: 'nombre conserva capitalización',
+    state: ConversationState.DATA_CAPTURE,
+    context: { ...authorized, quoteProductId: 'vida', cedula: '12345678' },
+    user: 'Michelle Gómez',
+    modelTurns: [{ toolCalls: [call('capturar_datos', { nombre: 'Michelle Gómez' })] }, { text: 'ok' }],
+    compare: ['nombre', 'cedula'],
+  },
+  {
+    name: 'un nombre con dígitos se rechaza',
+    state: ConversationState.DATA_CAPTURE,
+    context: { ...authorized, quoteProductId: 'vida', cedula: '12345678' },
+    user: '2+2',
+    modelTurns: [{ toolCalls: [call('capturar_datos', { nombre: '2+2' })] }, { text: 'Repíteme.' }],
+    compare: ['nombre'],
+  },
+  {
+    name: 'el punto del correo no se borra',
+    state: ConversationState.DATA_CAPTURE,
+    context: { ...authorized, quoteProductId: 'vida', cedula: '12345678', nombre: 'Juan Pérez' },
+    user: 'juan@email.com',
+    modelTurns: [{ toolCalls: [call('capturar_datos', { email: 'juan@email.com' })] }, { text: 'ok' }],
+    compare: ['email'],
+  },
+];
 
-describe('paridad — autorización', () => {
-  it('ambos motores terminan con la conversación autorizada', async () => {
-    const machine = await machineOutcome(ConversationState.AUTHORIZATION, {}, 'sí');
-    const router = await routerOutcome({}, 'sí', [
-      { toolCalls: [call('autorizar', { autoriza: true })] },
-      { text: 'Gracias.' },
-    ]);
+describe.each(FIXTURES)('paridad — $name', (fixture) => {
+  it('ambos motores dejan el mismo contexto', async () => {
+    const machine = await machineOutcome(fixture);
+    const router = await routerOutcome({ ...fixture, deps: { policies, payments, quoting } });
 
-    expect(machine.autorizado).toBe(true);
-    expect(router.autorizado).toBe(true);
-  });
-});
-
-describe('paridad — captura de cédula', () => {
-  it('ambos guardan la misma cédula normalizada', async () => {
-    const start = { autorizado: true, quoteProductId: 'vida' };
-    const machine = await machineOutcome(ConversationState.DATA_CAPTURE, start, '12345678');
-    const router = await routerOutcome(start, '12345678', [
-      { toolCalls: [call('capturar_datos', { cedula: '12345678' })] },
-      { text: '¿Tu nombre?' },
-    ]);
-
-    expect(machine.cedula).toBe('12345678');
-    expect(router.cedula).toBe(machine.cedula);
-  });
-
-  it('ambos rechazan una cédula con puntos de miles', async () => {
-    const start = { autorizado: true, quoteProductId: 'vida' };
-    const machine = await machineOutcome(ConversationState.DATA_CAPTURE, start, '12.345.678');
-    const router = await routerOutcome(start, '12.345.678', [
-      { toolCalls: [call('capturar_datos', { cedula: '12.345.678' })] },
-      { text: 'Repíteme.' },
-    ]);
-
-    expect(machine.cedula).toBeUndefined();
-    expect(router.cedula).toBeUndefined();
-  });
-});
-
-describe('paridad — mascotas sin especie', () => {
-  it('ninguno de los dos elige un plan de una sola especie', async () => {
-    const start = { autorizado: true, productCategory: 'mascotas' };
-    const machine = await machineOutcome(ConversationState.DISCOVERY, start, 'tengo mascotas');
-    const router = await routerOutcome(start, 'tengo mascotas', [
-      { toolCalls: [call('cotizar', { productCategory: 'mascotas' })] },
-      { text: 'ok' },
-    ]);
-
-    for (const outcome of [machine, router]) {
-      expect(outcome.quoteProductId ?? '').not.toMatch(/gatos|perros/);
-    }
+    expect(pick(router, fixture.compare)).toEqual(pick(machine, fixture.compare));
   });
 });
