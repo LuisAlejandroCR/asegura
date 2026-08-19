@@ -1,7 +1,15 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "buildCommand": "pnpm run build"
+    "buildCommand": "pnpm run build",
+    "watchPatterns": [
+      "src/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "tsconfig*.json",
+      "nest-cli.json",
+      "railway.json"
+    ]
   },
   "deploy": {
     "startCommand": "node dist/main",
