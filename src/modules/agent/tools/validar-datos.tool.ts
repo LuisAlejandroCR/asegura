@@ -27,6 +27,29 @@ export function isValidName(text: string): boolean {
 // "cédula de extranjería" must win over the bare ce test.
 export type TipoDocumento = 'CC' | 'CE' | 'TI' | 'NIP' | 'NUIP';
 
+// Ordered by how common they are in Colombia, so a prompt or a menu offers CC first.
+export const TIPOS_DOCUMENTO: readonly TipoDocumento[] = ['CC', 'CE', 'TI', 'NIP', 'NUIP'];
+
+export const TIPOS_DOCUMENTO_ETIQUETAS: Record<TipoDocumento, string> = {
+  CC: 'cédula de ciudadanía',
+  CE: 'cédula de extranjería',
+  TI: 'tarjeta de identidad',
+  NIP: 'número de identificación personal',
+  NUIP: 'número único de identificación personal',
+};
+
+// null means the person did not say which one — the caller should ask instead of assuming.
+export function tipoDocumentoDeclarado(text: string): TipoDocumento | null {
+  const t = text.toLowerCase();
+  if (t.includes('extranjer')) return 'CE';
+  if (t.includes('tarjeta de identidad') || /\bti\b/.test(t)) return 'TI';
+  if (/\bnuip\b/.test(t)) return 'NUIP';
+  if (/\bnip\b/.test(t)) return 'NIP';
+  if (/\bce\b/.test(t)) return 'CE';
+  if (t.includes('ciudadan') || /\bcc\b/.test(t)) return 'CC';
+  return null;
+}
+
 export function detectarTipoDocumento(text: string): TipoDocumento {
   const t = text.toLowerCase();
   if (t.includes('extranjer')) return 'CE';
@@ -70,11 +93,17 @@ export interface DatosValidados {
   documentType?: TipoDocumento;
 }
 
+// True when a number was captured but nobody said which document it is, so the agent should
+// ask rather than file it as a cedula de ciudadania by default.
+export function faltaTipoDocumento(datos: DatosValidados, declarado: TipoDocumento | null): boolean {
+  return !!datos.cedula && declarado === null;
+}
+
 // `mensaje` carries the raw turn so the document type can be read from it. The cedula itself
 // stays strictly digits: loosening it here is how "12.345.678" would silently become 12345678.
 export function validarDatosLogic(
   args: DatosValidados & { mensaje?: string },
-): ToolOutcome<{ datos: DatosValidados }> {
+): ToolOutcome<{ datos: DatosValidados; preguntarTipo?: string }> {
   const datos: DatosValidados = {};
   const invalidos: string[] = [];
 
@@ -82,8 +111,10 @@ export function validarDatosLogic(
     const c = normalizeSpokenCedula(args.cedula);
     if (isValidCedula(c)) {
       datos.cedula = c;
-      // Filed from the same turn that carried the number, exactly as the machine does.
-      datos.documentType = detectarTipoDocumento(args.mensaje ?? args.cedula);
+      // An explicit answer wins; otherwise read it from the turn, and fall back to the most
+      // common one. `preguntarTipo` in the result tells the caller it was a fallback.
+      const declarado = args.documentType ?? tipoDocumentoDeclarado(args.mensaje ?? args.cedula);
+      datos.documentType = declarado ?? 'CC';
     } else {
       invalidos.push('cédula (deben ser 6 a 10 dígitos, sin puntos)');
     }
@@ -99,5 +130,14 @@ export function validarDatosLogic(
   }
 
   if (invalidos.length) return { ok: false, motivo: `No pude validar: ${invalidos.join(', ')}.` };
+
+  const declarado = args.documentType ?? (args.cedula ? tipoDocumentoDeclarado(args.mensaje ?? args.cedula) : null);
+  if (faltaTipoDocumento(datos, declarado)) {
+    return {
+      ok: true,
+      datos,
+      preguntarTipo: `Quedó como cédula de ciudadanía. Confírmalo o pregúntale si es otra: ${TIPOS_DOCUMENTO.map((t) => TIPOS_DOCUMENTO_ETIQUETAS[t]).join(', ')}.`,
+    };
+  }
   return { ok: true, datos };
 }

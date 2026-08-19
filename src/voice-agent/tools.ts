@@ -5,7 +5,7 @@ import { tool } from '@livekit/agents';
 import { z } from 'zod';
 import {
   ToolDeps, consultarAfiliadoLogic, emitirPolizaLogic, generarLinkPagoLogic,
-  escalarAHumanoLogic, registrarAseguramientoLogic, registrarMascotasLogic,
+  escalarAHumanoLogic, registrarAseguramientoLogic, registrarLeadLogic, registrarMascotasLogic,
   seleccionarProductoLogic, validarDatosLogic,
 } from '../modules/agent/tools';
 import { VoiceSessionState } from './session-state';
@@ -59,6 +59,9 @@ export function createCapturarDatosTool(state: VoiceSessionState) {
       cedula: z.string().nullable().optional().describe('Cédula dictada, solo dígitos.'),
       nombre: z.string().nullable().optional().describe('Nombre completo tal como lo dijo.'),
       email: z.string().nullable().optional().describe('Correo dictado; "arroba" y "punto" se aceptan en palabras.'),
+      mensaje: z.string().optional().describe('Lo que dijo, tal cual.'),
+      documentType: z.enum(['CC', 'CE', 'TI', 'NIP', 'NUIP']).optional()
+        .describe('Qué documento dijo que es. Si no lo dijo, pregúntaselo — no lo supongas.'),
     }),
     execute: async (args) => {
       const result = validarDatosLogic({
@@ -168,6 +171,32 @@ export function createEscalarTool(state: VoiceSessionState) {
     execute: async ({ motivo }) => {
       const result = escalarAHumanoLogic(state.context, { motivo });
       if (result.ok) state.merge({ escalatedReason: result.motivo });
+      return result;
+    },
+  });
+}
+
+export function createRegistrarLeadTool(state: VoiceSessionState) {
+  return tool({
+    name: 'registrar_lead',
+    description:
+      'Guarda los datos de la persona para que el equipo la contacte, cuando no hay una opción ' +
+      'en el catálogo para lo que necesita. Requiere nombre y un correo o un teléfono.',
+    parameters: z.object({
+      nombre: z.string().optional(),
+      email: z.string().optional(),
+      telefono: z.string().optional(),
+      interes: z.string().optional().describe('Qué buscaba, para quien la contacte.'),
+    }),
+    execute: async (args) => {
+      const result = registrarLeadLogic(state.context, args);
+      if (result.ok) {
+        state.merge({
+          contactName: result.lead.nombre,
+          contactEmail: result.lead.email,
+          contactPhone: result.lead.telefono,
+        });
+      }
       return result;
     },
   });

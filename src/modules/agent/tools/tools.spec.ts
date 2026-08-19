@@ -7,7 +7,8 @@ import {
   NOT_AUTHORIZED, cotizarLogic, validarDatosLogic, consultarAfiliadoLogic,
   emitirPolizaLogic, generarLinkPagoLogic, registrarAseguramientoLogic, requiresUnderwriting,
   detectarTipoDocumento, seleccionarProductoLogic, detectarFueraDeCatalogo,
-  registrarMascotasLogic, esProductoDeMascotas,
+  registrarMascotasLogic, esProductoDeMascotas, registrarLeadLogic,
+  tipoDocumentoDeclarado, TIPOS_DOCUMENTO,
 } from './index';
 
 const quoting = new QuotingService(new ProductCatalog());
@@ -52,7 +53,8 @@ describe('cotizarLogic', () => {
 describe('validarDatosLogic', () => {
   it('accepts a dictated cedula and a spoken email', () => {
     const result = validarDatosLogic({ cedula: '1, 2, 3, 4, 5, 6, 7', email: 'juan arroba mail punto com' });
-    expect(result).toEqual({ ok: true, datos: { cedula: '1234567', documentType: 'CC', email: 'juan@mail.com' } });
+    // preguntarTipo comes along because nobody said which document it is.
+    expect(result).toMatchObject({ ok: true, datos: { cedula: '1234567', documentType: 'CC', email: 'juan@mail.com' } });
   });
 
   it('rejects a cedula with thousands separators rather than silently changing it', () => {
@@ -376,5 +378,80 @@ describe('registrarMascotas', () => {
       pets: [{ name: 'Ramón', age: '3', breed: '' }, { name: 'Luna', age: '1', breed: '' }],
     };
     await expect(emitirPolizaLogic(deps, 'conv-1', context)).resolves.toEqual({ ok: true, policyId: 'pol-1' });
+  });
+});
+
+// Migrated from 'lead capture after category exhaustion'. Notifying whoever picks it up is
+// transport; what belongs in the contract is that the lead can actually be acted on.
+describe('registrarLead', () => {
+  it('reutiliza lo que la conversación ya sabe en vez de volver a preguntar', () => {
+    const context = { ...authorized, nombre: 'Juan Pérez', email: 'juan@mail.com' };
+    expect(registrarLeadLogic(context, {})).toEqual({
+      ok: true,
+      lead: { nombre: 'Juan Pérez', email: 'juan@mail.com' },
+    });
+  });
+
+  it('regresión — un nombre sin forma de contacto no es un lead', () => {
+    const result = registrarLeadLogic({ ...authorized }, { nombre: 'Juan Pérez' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.motivo).toContain('correo o un teléfono');
+  });
+
+  it('un teléfono solo alcanza', () => {
+    const result = registrarLeadLogic({ ...authorized }, { nombre: 'Juan Pérez', telefono: '+573001112233' });
+    expect(result).toMatchObject({ ok: true, lead: { telefono: '+573001112233' } });
+  });
+
+  it('valida el correo con la misma regla que el resto', () => {
+    expect(registrarLeadLogic({ ...authorized }, { nombre: 'Juan Pérez', email: 'no-es-correo' }).ok).toBe(false);
+  });
+
+  it('acepta un correo dictado por voz', () => {
+    const result = registrarLeadLogic({ ...authorized }, { nombre: 'Juan Pérez', email: 'juan arroba mail punto com' });
+    expect(result).toMatchObject({ ok: true, lead: { email: 'juan@mail.com' } });
+  });
+
+  it('guarda qué buscaba, para quien la contacte', () => {
+    const result = registrarLeadLogic({ ...authorized }, { nombre: 'Ana', telefono: '3001112233', interes: 'seguro de bicicleta' });
+    expect(result).toMatchObject({ ok: true, lead: { interes: 'seguro de bicicleta' } });
+  });
+
+  it('no registra sin autorización', () => {
+    expect(registrarLeadLogic({ nombre: 'Juan Pérez', email: 'juan@mail.com' } as never, {}).ok).toBe(false);
+  });
+});
+
+describe('tipo de documento — se pregunta, no se asume', () => {
+  it('un número pelado sigue quedando como CC, pero pide confirmarlo', () => {
+    const result = validarDatosLogic({ cedula: '12345678' });
+    expect(result).toMatchObject({ ok: true, datos: { documentType: 'CC' } });
+    if (result.ok) {
+      expect(result.preguntarTipo).toContain('cédula de ciudadanía');
+      expect(result.preguntarTipo).toContain('tarjeta de identidad');
+    }
+  });
+
+  it('si la persona lo dijo, no vuelve a preguntar', () => {
+    const result = validarDatosLogic({ cedula: '12345678', mensaje: 'mi cédula de extranjería es 12345678' });
+    expect(result).toMatchObject({ ok: true, datos: { documentType: 'CE' } });
+    if (result.ok) expect(result.preguntarTipo).toBeUndefined();
+  });
+
+  it('una respuesta explícita del modelo gana sobre la detección', () => {
+    const result = validarDatosLogic({ cedula: '12345678', documentType: 'TI', mensaje: '12345678' });
+    expect(result).toMatchObject({ ok: true, datos: { documentType: 'TI' } });
+    if (result.ok) expect(result.preguntarTipo).toBeUndefined();
+  });
+
+  it('distingue "lo dijo" de "no lo dijo"', () => {
+    expect(tipoDocumentoDeclarado('12345678')).toBeNull();
+    expect(tipoDocumentoDeclarado('mi cc es 12345678')).toBe('CC');
+    expect(tipoDocumentoDeclarado('cédula de ciudadanía')).toBe('CC');
+  });
+
+  it('los cinco tipos, con CC primero por ser el más común', () => {
+    expect(TIPOS_DOCUMENTO[0]).toBe('CC');
+    expect(TIPOS_DOCUMENTO).toHaveLength(5);
   });
 });

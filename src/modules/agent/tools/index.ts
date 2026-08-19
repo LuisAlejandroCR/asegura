@@ -9,5 +9,6 @@ export * from './aseguramiento.tool';
 export * from './emitir-poliza.tool';
 export * from './generar-link-pago.tool';
 export * from './escalar.tool';
+export * from './lead.tool';
 export * from './mascotas.tool';
 export * from './seleccionar-producto.tool';

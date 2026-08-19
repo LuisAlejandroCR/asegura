@@ -6,7 +6,7 @@ import { ChatTurn, INlpProvider, ToolSchema } from '../nlp/types';
 import { ConversationContext } from './types';
 import {
   ToolDeps, consultarAfiliadoLogic, cotizarLogic, emitirPolizaLogic,
-  ESCALATION_TEXT, contarTurnoFallido, escalarAHumanoLogic, generarLinkPagoLogic,
+  ESCALATION_TEXT, contarTurnoFallido, escalarAHumanoLogic, generarLinkPagoLogic, registrarLeadLogic,
   registrarAseguramientoLogic, registrarMascotasLogic, seleccionarProductoLogic, validarDatosLogic,
 } from './tools';
 
@@ -34,6 +34,21 @@ export class ToolRouterService {
       name: 'autorizar',
       description: 'Registra que la persona autorizó (o no) el tratamiento de sus datos, Ley 1581.',
       parameters: { type: 'object', properties: { autoriza: { type: 'boolean' } }, required: ['autoriza'] },
+    },
+    {
+      name: 'registrar_lead',
+      description:
+        'Guarda los datos de la persona para que el equipo la contacte, cuando el catálogo no ' +
+        'tiene una opción para lo que necesita. Requiere nombre y un correo o un teléfono.',
+      parameters: {
+        type: 'object',
+        properties: {
+          nombre: { type: 'string' },
+          email: { type: 'string' },
+          telefono: { type: 'string' },
+          interes: { type: 'string', description: 'Qué buscaba, para quien la contacte.' },
+        },
+      },
     },
     {
       name: 'escalar_a_humano',
@@ -87,7 +102,12 @@ export class ToolRouterService {
           cedula: { type: 'string', description: 'Solo los dígitos.' },
           nombre: { type: 'string' },
           email: { type: 'string' },
-          mensaje: { type: 'string', description: 'El mensaje completo, para leer si es CC, CE, TI, NIP o NUIP.' },
+          mensaje: { type: 'string', description: 'El mensaje completo de la persona, tal cual.' },
+          documentType: {
+            type: 'string',
+            enum: ['CC', 'CE', 'TI', 'NIP', 'NUIP'],
+            description: 'Qué documento dijo que es. Si no lo dijo, pregúntaselo: no lo supongas.',
+          },
         },
       },
     },
@@ -201,6 +221,15 @@ export class ToolRouterService {
       case 'autorizar': {
         const autoriza = args.autoriza === true;
         return { result: { ok: autoriza }, context: { ...ctx, autorizado: autoriza } };
+      }
+      case 'registrar_lead': {
+        const result = registrarLeadLogic(ctx, args as never);
+        return {
+          result,
+          context: result.ok
+            ? { ...ctx, contactName: result.lead.nombre, contactEmail: result.lead.email, contactPhone: result.lead.telefono }
+            : ctx,
+        };
       }
       case 'escalar_a_humano': {
         const result = escalarAHumanoLogic(ctx, { motivo: String(args.motivo ?? '') });
