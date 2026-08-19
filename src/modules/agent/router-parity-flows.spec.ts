@@ -65,6 +65,29 @@ const FLOWS: MultiTurnFixture[] = [
     ],
     compare: ['email'],
   },
+  {
+    // The whole sale in one exchange: this is the evidence the router can replace the machine.
+    name: 'cierre completo — captura, confirmación y emisión',
+    start: {
+      state: ConversationState.DATA_CAPTURE,
+      // accidentes-personales, not vida: vida requires underwriting questions and the router
+      // has no capability for those yet (see docs/plan-router.md, blocker for block E).
+      context: { autorizado: true, quoteProductId: 'accidentes-personales', productCategory: 'accidentes' },
+    },
+    machineTurns: [
+      { user: '12345678' },
+      { user: 'Juan Pérez' },
+      { user: 'juan@email.com' },
+      { user: 'sí', intent: { isAffirmative: true } },
+    ],
+    routerTurns: [
+      { user: '12345678', modelTurns: [{ toolCalls: [call('capturar_datos', { cedula: '12345678' })] }, { text: '¿Nombre?' }] },
+      { user: 'Juan Pérez', modelTurns: [{ toolCalls: [call('capturar_datos', { nombre: 'Juan Pérez' })] }, { text: '¿Correo?' }] },
+      { user: 'juan@email.com', modelTurns: [{ toolCalls: [call('capturar_datos', { email: 'juan@email.com' })] }, { text: 'Te leo el resumen.' }] },
+      { user: 'sí', modelTurns: [{ toolCalls: [call('emitir_poliza')] }, { text: 'Emitida.' }] },
+    ],
+    compare: ['cedula', 'nombre', 'email', 'policyId'],
+  },
 ];
 
 describe.each(FLOWS)('paridad de flujo — $name', (flow) => {
