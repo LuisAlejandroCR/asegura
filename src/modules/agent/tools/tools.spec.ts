@@ -8,7 +8,7 @@ import {
   emitirPolizaLogic, generarLinkPagoLogic, registrarAseguramientoLogic, requiresUnderwriting,
   detectarTipoDocumento, seleccionarProductoLogic, detectarFueraDeCatalogo,
   registrarMascotasLogic, esProductoDeMascotas, registrarLeadLogic,
-  tipoDocumentoDeclarado, TIPOS_DOCUMENTO,
+  tipoDocumentoDeclarado, TIPOS_DOCUMENTO, TIPOS_DOCUMENTO_OFRECIDOS,
 } from './index';
 
 const quoting = new QuotingService(new ProductCatalog());
@@ -202,6 +202,10 @@ describe('validarDatos — reglas migradas de DATA_CAPTURE', () => {
     ['TI 12345678', 'TI'],
     ['NUIP 12345678', 'NUIP'],
     ['NIP 12345678', 'NIP'],
+    ['PEP 12345678', 'PEP'],
+    ['mi permiso especial de permanencia 12345678', 'PEP'],
+    // 'pep' dentro de otra palabra no es un tipo de documento.
+    ['pepito 12345678', 'CC'],
   ])('%s se archiva como %s', (text, expected) => {
     expect(detectarTipoDocumento(text)).toBe(expected);
   });
@@ -427,8 +431,11 @@ describe('tipo de documento — se pregunta, no se asume', () => {
     const result = validarDatosLogic({ cedula: '12345678' });
     expect(result).toMatchObject({ ok: true, datos: { documentType: 'CC' } });
     if (result.ok) {
+      // Se ofrecen los tres que trae la gente; leer los seis en voz alta no es una pregunta.
       expect(result.preguntarTipo).toContain('cédula de ciudadanía');
-      expect(result.preguntarTipo).toContain('tarjeta de identidad');
+      expect(result.preguntarTipo).toContain('cédula de extranjería');
+      expect(result.preguntarTipo).toContain('PEP');
+      expect(result.preguntarTipo).not.toContain('tarjeta de identidad');
     }
   });
 
@@ -450,8 +457,13 @@ describe('tipo de documento — se pregunta, no se asume', () => {
     expect(tipoDocumentoDeclarado('cédula de ciudadanía')).toBe('CC');
   });
 
-  it('los cinco tipos, con CC primero por ser el más común', () => {
+  it('se aceptan seis tipos, con CC primero por ser el más común', () => {
     expect(TIPOS_DOCUMENTO[0]).toBe('CC');
-    expect(TIPOS_DOCUMENTO).toHaveLength(5);
+    expect(TIPOS_DOCUMENTO).toHaveLength(6);
+    expect(TIPOS_DOCUMENTO).toContain('PEP');
+  });
+
+  it('se preguntan solo tres, aunque se acepten los seis', () => {
+    expect(TIPOS_DOCUMENTO_OFRECIDOS).toEqual(['CC', 'CE', 'PEP']);
   });
 });

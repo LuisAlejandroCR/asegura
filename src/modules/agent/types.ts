@@ -25,7 +25,7 @@ interface PetDetail {
 
 // Colombian ID documents — not everyone has a CC: CE (extranjería), TI (minors), and the
 // NIP/NUIP numbering used for newborns and special cases.
-type DocumentType = 'CC' | 'CE' | 'TI' | 'NIP' | 'NUIP';
+type DocumentType = 'CC' | 'CE' | 'PEP' | 'TI' | 'NIP' | 'NUIP';
 
 interface ConversationContext {
   autorizado?: boolean;

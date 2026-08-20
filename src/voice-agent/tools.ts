@@ -60,7 +60,7 @@ export function createCapturarDatosTool(state: VoiceSessionState) {
       nombre: z.string().nullable().optional().describe('Nombre completo tal como lo dijo.'),
       email: z.string().nullable().optional().describe('Correo dictado; "arroba" y "punto" se aceptan en palabras.'),
       mensaje: z.string().optional().describe('Lo que dijo, tal cual.'),
-      documentType: z.enum(['CC', 'CE', 'TI', 'NIP', 'NUIP']).optional()
+      documentType: z.enum(['CC', 'CE', 'PEP', 'TI', 'NIP', 'NUIP']).optional()
         .describe('Qué documento dijo que es. Si no lo dijo, pregúntaselo — no lo supongas.'),
     }),
     execute: async (args) => {
@@ -68,6 +68,8 @@ export function createCapturarDatosTool(state: VoiceSessionState) {
         ...(args.cedula ? { cedula: args.cedula } : {}),
         ...(args.nombre ? { nombre: args.nombre } : {}),
         ...(args.email ? { email: args.email } : {}),
+        ...(args.documentType ? { documentType: args.documentType } : {}),
+        ...(args.mensaje ? { mensaje: args.mensaje } : {}),
       });
       if (result.ok) state.merge(result.datos);
       return result;

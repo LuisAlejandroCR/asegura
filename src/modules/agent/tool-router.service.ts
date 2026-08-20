@@ -105,7 +105,7 @@ export class ToolRouterService {
           mensaje: { type: 'string', description: 'El mensaje completo de la persona, tal cual.' },
           documentType: {
             type: 'string',
-            enum: ['CC', 'CE', 'TI', 'NIP', 'NUIP'],
+            enum: ['CC', 'CE', 'PEP', 'TI', 'NIP', 'NUIP'],
             description: 'Qué documento dijo que es. Si no lo dijo, pregúntaselo: no lo supongas.',
           },
         },

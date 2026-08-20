@@ -25,14 +25,19 @@ export function isValidName(text: string): boolean {
 
 // Mirrors the state machine so both engines file the same document type. Order matters:
 // "cédula de extranjería" must win over the bare ce test.
-export type TipoDocumento = 'CC' | 'CE' | 'TI' | 'NIP' | 'NUIP';
+export type TipoDocumento = 'CC' | 'CE' | 'PEP' | 'TI' | 'NIP' | 'NUIP';
 
 // Ordered by how common they are in Colombia, so a prompt or a menu offers CC first.
-export const TIPOS_DOCUMENTO: readonly TipoDocumento[] = ['CC', 'CE', 'TI', 'NIP', 'NUIP'];
+export const TIPOS_DOCUMENTO: readonly TipoDocumento[] = ['CC', 'CE', 'PEP', 'TI', 'NIP', 'NUIP'];
+
+// Lo que se ofrece al preguntar: los tres que trae la gente en la práctica. Los demás se
+// siguen aceptando si la persona los nombra, pero no se leen en voz alta.
+export const TIPOS_DOCUMENTO_OFRECIDOS: readonly TipoDocumento[] = ['CC', 'CE', 'PEP'];
 
 export const TIPOS_DOCUMENTO_ETIQUETAS: Record<TipoDocumento, string> = {
   CC: 'cédula de ciudadanía',
   CE: 'cédula de extranjería',
+  PEP: 'PEP',
   TI: 'tarjeta de identidad',
   NIP: 'número de identificación personal',
   NUIP: 'número único de identificación personal',
@@ -41,6 +46,7 @@ export const TIPOS_DOCUMENTO_ETIQUETAS: Record<TipoDocumento, string> = {
 // null means the person did not say which one — the caller should ask instead of assuming.
 export function tipoDocumentoDeclarado(text: string): TipoDocumento | null {
   const t = text.toLowerCase();
+  if (/\bpep\b/.test(t) || t.includes('permiso especial')) return 'PEP';
   if (t.includes('extranjer')) return 'CE';
   if (t.includes('tarjeta de identidad') || /\bti\b/.test(t)) return 'TI';
   if (/\bnuip\b/.test(t)) return 'NUIP';
@@ -52,6 +58,7 @@ export function tipoDocumentoDeclarado(text: string): TipoDocumento | null {
 
 export function detectarTipoDocumento(text: string): TipoDocumento {
   const t = text.toLowerCase();
+  if (/\bpep\b/.test(t) || t.includes('permiso especial')) return 'PEP';
   if (t.includes('extranjer')) return 'CE';
   if (t.includes('tarjeta de identidad') || /\bti\b/.test(t)) return 'TI';
   if (/\bnuip\b/.test(t)) return 'NUIP';
@@ -136,7 +143,7 @@ export function validarDatosLogic(
     return {
       ok: true,
       datos,
-      preguntarTipo: `Quedó como cédula de ciudadanía. Confírmalo o pregúntale si es otra: ${TIPOS_DOCUMENTO.map((t) => TIPOS_DOCUMENTO_ETIQUETAS[t]).join(', ')}.`,
+      preguntarTipo: `Quedó como cédula de ciudadanía. Pregúntale cuál es: ${TIPOS_DOCUMENTO_OFRECIDOS.map((t) => TIPOS_DOCUMENTO_ETIQUETAS[t]).join(', ')}.`,
     };
   }
   return { ok: true, datos };
