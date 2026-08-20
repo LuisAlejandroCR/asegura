@@ -62,6 +62,20 @@ export function describeSessionError(error: unknown): string {
   return parts.join(' ');
 }
 
+// Leídos de participant_pb: el worker solo registra "participant disconnect", que no
+// distingue a alguien colgando de una identidad duplicada o de una caída de señal.
+const MOTIVOS_DESCONEXION: Record<number, string> = {
+  0: 'UNKNOWN_REASON', 1: 'CLIENT_INITIATED', 2: 'DUPLICATE_IDENTITY', 3: 'SERVER_SHUTDOWN',
+  4: 'PARTICIPANT_REMOVED', 5: 'ROOM_DELETED', 6: 'STATE_MISMATCH', 7: 'JOIN_FAILURE',
+  8: 'MIGRATION', 9: 'SIGNAL_CLOSE', 10: 'ROOM_CLOSED', 11: 'USER_UNAVAILABLE',
+  12: 'USER_REJECTED', 13: 'SIP_TRUNK_FAILURE', 14: 'CONNECTION_TIMEOUT',
+};
+
+export function describeDisconnect(reason: number | undefined): string {
+  if (reason === undefined) return 'sin motivo reportado';
+  return `${MOTIVOS_DESCONEXION[reason] ?? 'motivo desconocido'} (${reason})`;
+}
+
 // Left unset, AgentSession builds an InferenceTurnDetector and asks for the local end-of-turn
 // executor on every turn — excluded from the install, so it fails and end-of-turn degrades to a
 // positive default. The Silero VAD is the only turn boundary this worker has.
@@ -136,6 +150,10 @@ async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
       if (siguiente === fase) return;
       fase = siguiente;
       void agent.updateTools(herramientasDeFase(state, deps, siguiente));
+    });
+
+    ctx.room.on('participantDisconnected', (p: { identity?: string; disconnectReason?: number }) => {
+      console.error('[asegura-voice] se fue el participante: ' + describeDisconnect(p.disconnectReason));
     });
 
     await session.start({ agent, room: ctx.room });

@@ -3,7 +3,7 @@
 // end-of-turn executor this install excludes. Both shipped once and only showed on a live call.
 import type { JobProcess } from '@livekit/agents';
 import { VAD, initializeLogger, voice } from '@livekit/agents';
-import agent, { TURN_HANDLING, checkTtsAccess, describeSessionError } from './main';
+import agent, { TURN_HANDLING, checkTtsAccess, describeDisconnect, describeSessionError } from './main';
 
 // AgentSession logs from its field initializers; outside cli.runApp nothing has set the logger up.
 beforeAll(() => initializeLogger({ pretty: false, level: 'silent' }));
@@ -101,5 +101,20 @@ describe('voice worker TTS access', () => {
     const result = await checkTtsAccess(fakeFetch(200), { ELEVENLABS_VOICE_ID: 'v', ELEVENLABS_API_KEY: 'k' });
 
     expect(result).toMatchObject({ ok: true, fatal: false });
+  });
+});
+
+// "participant disconnect" es lo único que dejaba el worker cuando la llamada se cortaba, y no
+// distingue a alguien colgando de una identidad duplicada, que es lo que pasa con dos pestañas.
+describe('motivo de desconexión', () => {
+  it('nombra el motivo que manda LiveKit', () => {
+    expect(describeDisconnect(1)).toContain('CLIENT_INITIATED');
+    expect(describeDisconnect(2)).toContain('DUPLICATE_IDENTITY');
+    expect(describeDisconnect(14)).toContain('CONNECTION_TIMEOUT');
+  });
+
+  it('no se calla cuando no viene motivo ni cuando es uno que no conoce', () => {
+    expect(describeDisconnect(undefined)).toBe('sin motivo reportado');
+    expect(describeDisconnect(99)).toContain('99');
   });
 });
