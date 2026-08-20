@@ -3,7 +3,7 @@
 // end-of-turn executor this install excludes. Both shipped once and only showed on a live call.
 import type { JobProcess } from '@livekit/agents';
 import { VAD, initializeLogger, llm, voice } from '@livekit/agents';
-import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, hayRespaldoElevenLabs, usaElevenLabs, usaGroqLlm } from './main';
+import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, describirProveedores, hayRespaldoElevenLabs, normalizarBaseUrl, usaElevenLabs, usaGroqLlm } from './main';
 
 // AgentSession logs from its field initializers; outside cli.runApp nothing has set the logger up.
 beforeAll(() => initializeLogger({ pretty: false, level: 'silent' }));
@@ -220,4 +220,31 @@ describe('respaldos verbales', () => {
 
     expect(session.sessionOptions.turnHandling.interruption.resumeFalseInterruption).toBe(true);
   }, 30000);
+});
+
+// La barra final convierte la ruta en `openai//chat/completions`, que Google responde con un 404
+// sin cuerpo: idéntico a un modelo inexistente o a una ruta equivocada.
+describe('base URL del proveedor', () => {
+  it('quita la barra final para no duplicarla al pegar la ruta', () => {
+    expect(normalizarBaseUrl('https://x.dev/v1beta/openai/')).toBe('https://x.dev/v1beta/openai');
+    expect(normalizarBaseUrl('https://x.dev/v1beta/openai///')).toBe('https://x.dev/v1beta/openai');
+    expect(normalizarBaseUrl('  https://x.dev/v1beta/openai  ')).toBe('https://x.dev/v1beta/openai');
+  });
+
+  it('dice qué proveedor quedó puesto, sin filtrar la clave', () => {
+    const dicho = describirProveedores({
+      VOICE_LLM_BASE_URL: 'https://x.dev/v1beta/openai/',
+      VOICE_LLM_MODEL: 'gemini-2.5-flash',
+      VOICE_LLM_API_KEY: 'secreta-no-imprimir',
+    });
+
+    expect(dicho).toContain('gemini-2.5-flash');
+    expect(dicho).toContain('https://x.dev/v1beta/openai');
+    expect(dicho).not.toContain('secreta-no-imprimir');
+  });
+
+  it('nombra la pasarela y Groq cuando son los que están puestos', () => {
+    expect(describirProveedores({})).toContain('pasarela');
+    expect(describirProveedores({ VOICE_LLM: 'groq' })).toContain('Groq');
+  });
 });

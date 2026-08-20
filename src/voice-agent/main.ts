@@ -148,6 +148,27 @@ export function usaGroqLlm(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.VOICE_LLM === 'groq';
 }
 
+// El SDK pega `/chat/completions` a la base tal cual: con la barra final queda `openai//chat`,
+// que Google responde 404 sin cuerpo, indistinguible de un modelo inexistente.
+export function normalizarBaseUrl(url: string): string {
+  return url.trim().replace(/\/+$/, '');
+}
+
+// Sin esto, un 404 sin cuerpo no dice si sobra una barra, falta `v1beta/openai` o el modelo no
+// existe. La clave nunca se imprime.
+export function describirProveedores(env: NodeJS.ProcessEnv = process.env): string {
+  const modelo = env.VOICE_LLM_BASE_URL
+    ? `${env.VOICE_LLM_MODEL || 'gemini-2.5-flash'} vía ${normalizarBaseUrl(env.VOICE_LLM_BASE_URL)}`
+    : usaGroqLlm(env)
+      ? `${env.LLM_MODEL || 'openai/gpt-oss-120b'} vía Groq`
+      : `${env.VOICE_LLM_MODEL || 'google/gemini-2.5-flash'} vía la pasarela de LiveKit`;
+  const voz = usaElevenLabs(env)
+    ? 'ElevenLabs propia'
+    : `${env.VOICE_TTS_MODEL || 'elevenlabs/eleven_multilingual_v2'} por la pasarela` +
+      (hayRespaldoElevenLabs(env) ? ' con ElevenLabs de respaldo' : ' sin respaldo');
+  return `modelo: ${modelo} | voz: ${voz}`;
+}
+
 function construirLlm() {
   // Groq y la pasarela se agotaron el mismo día, cada una por su lado. Con una base URL
   // compatible con OpenAI —Google AI Studio, Cerebras, OpenRouter— cambiar de proveedor deja de
@@ -157,7 +178,7 @@ function construirLlm() {
     return new openai.LLM({
       model: process.env.VOICE_LLM_MODEL || 'gemini-2.5-flash',
       apiKey: requireEnv('VOICE_LLM_API_KEY'),
-      baseURL,
+      baseURL: normalizarBaseUrl(baseURL),
     });
   }
   if (usaGroqLlm()) {
@@ -294,6 +315,8 @@ async function startWorker(): Promise<void> {
     fs.writeSync(2, `voice-agent tts check: ${tts.detail}\n`);
     if (tts.fatal) process.exit(1);
   }
+  fs.writeSync(1, `voice-agent ${describirProveedores()}
+`);
   cli.runApp(
     new ServerOptions({
       agent: __filename,
