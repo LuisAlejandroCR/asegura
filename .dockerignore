@@ -1,0 +1,31 @@
+# .dockerignore: keeps the build context to source plus the affiliate CSV. Without it the
+# context is over a gigabyte of analytics output, private docs and demo videos.
+
+node_modules
+apps/*/node_modules
+dist
+apps/*/dist
+build
+coverage
+
+.git
+.github
+.claude
+.env
+.env.*
+!.env.example
+
+analytics
+docs
+descubrimientos
+asegura-knowledge-base
+src/videos
+apps/web/public
+*.md
+!README.md
+
+Dockerfile
+.dockerignore
+*.log
+.DS_Store
+Thumbs.db

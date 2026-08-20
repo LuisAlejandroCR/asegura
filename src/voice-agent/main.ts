@@ -47,6 +47,11 @@ export function describeRequiredEnv(env: NodeJS.ProcessEnv = process.env): {
 
 type VoiceProcessData = { vad?: VAD };
 
+// Left unset, AgentSession builds an InferenceTurnDetector and asks for the local end-of-turn
+// executor on every turn — excluded from the install, so it fails and end-of-turn degrades to a
+// positive default. The Silero VAD is the only turn boundary this worker has.
+export const TURN_HANDLING = { turnDetection: 'vad' } as const;
+
 export default defineAgent<VoiceProcessData>({
   // Groq Whisper is batch, not streaming: without a VAD nothing decides where a user turn
   // ends, so no audio is ever sent to transcribe and the caller waits forever.
@@ -67,6 +72,7 @@ export default defineAgent<VoiceProcessData>({
 async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
     const session = new voice.AgentSession({
       vad: ctx.proc.userData.vad ?? (await silero.VAD.load()),
+      turnHandling: TURN_HANDLING,
       stt: openai.STT.withGroq({
         model: 'whisper-large-v3-turbo',
         apiKey: requireEnv('LLM_API_KEY'),
