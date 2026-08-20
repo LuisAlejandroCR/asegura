@@ -131,6 +131,35 @@ async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
     session.say(VOICE_GREETING);
 }
 
+// A key and a voice id that exist still buy nothing: a free plan answers 402 for library
+// voices, the plugin drops the frame as an unknown context, and the caller hears a worker that
+// looks healthy in every log. Only a real synthesis proves the pair can speak.
+export async function checkTtsAccess(
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ ok: boolean; fatal: boolean; detail: string }> {
+  try {
+    const response = await fetchImpl(
+      `https://api.elevenlabs.io/v1/text-to-speech/${env.ELEVENLABS_VOICE_ID}`,
+      {
+        method: 'POST',
+        headers: { 'xi-api-key': env.ELEVENLABS_API_KEY ?? '', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'Hola', model_id: 'eleven_multilingual_v2' }),
+      },
+    );
+    if (response.ok) return { ok: true, fatal: false, detail: 'ok' };
+
+    const body = (await response.json().catch(() => null)) as { detail?: { message?: string } } | null;
+    return {
+      ok: false,
+      fatal: [401, 402, 403, 404].includes(response.status),
+      detail: `${response.status} ${body?.detail?.message ?? 'no message'}`,
+    };
+  } catch (err) {
+    return { ok: false, fatal: false, detail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 // Only start the worker when this file runs directly, never as a side effect of an import.
 if (require.main === module) {
   // Fail here, by name, instead of registering a worker that dies on every call.
@@ -145,6 +174,15 @@ if (require.main === module) {
     }
   }
   for (const name of REQUIRED_ENV) requireEnv(name);
+  void startWorker();
+}
+
+async function startWorker(): Promise<void> {
+  const tts = await checkTtsAccess();
+  if (!tts.ok) {
+    fs.writeSync(2, `voice-agent tts check: ${tts.detail}\n`);
+    if (tts.fatal) process.exit(1);
+  }
   cli.runApp(
     new ServerOptions({
       agent: __filename,

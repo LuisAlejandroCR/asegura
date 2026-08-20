@@ -3,7 +3,7 @@
 // end-of-turn executor this install excludes. Both shipped once and only showed on a live call.
 import type { JobProcess } from '@livekit/agents';
 import { VAD, initializeLogger, voice } from '@livekit/agents';
-import agent, { TURN_HANDLING, describeSessionError } from './main';
+import agent, { TURN_HANDLING, checkTtsAccess, describeSessionError } from './main';
 
 // AgentSession logs from its field initializers; outside cli.runApp nothing has set the logger up.
 beforeAll(() => initializeLogger({ pretty: false, level: 'silent' }));
@@ -62,5 +62,44 @@ describe('voice worker error reporting', () => {
 
     expect(described).toContain('tts_error');
     expect(described).toContain('socket hang up');
+  });
+});
+
+describe('voice worker TTS access', () => {
+  const fakeFetch = (status: number, message?: string) =>
+    (async () =>
+      ({
+        ok: status === 200,
+        status,
+        json: async () => ({ detail: { message } }),
+      }) as unknown as Response) as unknown as typeof fetch;
+
+  // A library voice on a free plan answers 402 forever: every call connects, transcribes and
+  // then says nothing at all, which no other check in this worker would catch.
+  it('treats a plan or key rejection as fatal and quotes the provider', async () => {
+    const result = await checkTtsAccess(
+      fakeFetch(402, 'Free users cannot use library voices via the API.'),
+      { ELEVENLABS_VOICE_ID: 'v', ELEVENLABS_API_KEY: 'k' },
+    );
+
+    expect(result).toMatchObject({ ok: false, fatal: true });
+    expect(result.detail).toContain('402');
+    expect(result.detail).toContain('library voices');
+  });
+
+  it('keeps the worker alive when the provider is merely unreachable', async () => {
+    const failing = (async () => {
+      throw new Error('socket hang up');
+    }) as unknown as typeof fetch;
+
+    const result = await checkTtsAccess(failing, { ELEVENLABS_VOICE_ID: 'v', ELEVENLABS_API_KEY: 'k' });
+
+    expect(result).toMatchObject({ ok: false, fatal: false });
+  });
+
+  it('passes when the voice actually synthesizes', async () => {
+    const result = await checkTtsAccess(fakeFetch(200), { ELEVENLABS_VOICE_ID: 'v', ELEVENLABS_API_KEY: 'k' });
+
+    expect(result).toMatchObject({ ok: true, fatal: false });
   });
 });
