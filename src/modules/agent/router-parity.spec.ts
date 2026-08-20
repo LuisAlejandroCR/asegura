@@ -1,12 +1,7 @@
-// router-parity.spec.ts: the gate for turning AGENT_ROUTER on. Every routing decision the
-// state machine makes has a fixture here; both engines must agree on the context they leave
-// behind. Six of the twelve awaiting* flags are Telegram transport (selfie, contact share,
-// phone) and never reach the router, so they are covered by the machine's own specs instead.
-//
-// Parity is measured where both engines have DECIDED something. DISCOVERY is deliberately
-// absent: the machine asks a clarifying question on the turn where the router already calls
-// cotizar, so a per-turn comparison there measures bookkeeping, not correctness. What that
-// would have proven is covered by router-invariants.spec.ts (I5) and the tool contract.
+// router-parity.spec.ts: the gate for turning AGENT_ROUTER on — every routing decision has a
+// fixture and both engines must agree on the context they leave behind. DISCOVERY is absent on
+// purpose: the machine clarifies where the router already quotes, so per-turn comparison there
+// measures bookkeeping; router-invariants.spec.ts covers what it would have proven.
 import { ConversationState } from './types';
 import { ParityFixture, call, machineOutcome, pick, quoting, routerOutcome } from './router-parity.harness';
 

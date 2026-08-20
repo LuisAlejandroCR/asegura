@@ -194,10 +194,8 @@ describe('AgentService — AUTHORIZATION', () => {
 });
 
 // Affiliate ID lookup
-// "sí" asks a one-shot affiliate-ID question before DISCOVERY starts — a decline, an
-// unrecognized ID, or the lookup being disabled (missing CSV) all proceed to DISCOVERY
-// identically, just without the rangoSalarial boost. F01 hybrid buttons move here too
-// (Step 4) — the real first moment DISCOVERY actually begins.
+// A decline, an unrecognized ID or a disabled lookup all proceed to DISCOVERY identically,
+// just without the rangoSalarial boost. The F01 buttons appear here, where DISCOVERY begins.
 describe('AgentService — affiliate ID lookup', () => {
   it('a decline ("no") proceeds to DISCOVERY with F01 buttons, no rangoSalarial set', async () => {
     const { service, telegram, conversations, affiliateLookup } = buildService({
@@ -392,11 +390,8 @@ describe('AgentService — affiliate ID lookup', () => {
       state: ConversationState.AUTHORIZATION,
       context: { autorizado: true, awaitingAffiliateId: true, discoveryFilter: true },
     });
-    // A literally empty msg.text bails out of handleMessage entirely before reaching
-    // this gate (see the `!msg.text && !msg.contact && !msg.photo` guard) — so to
-    // actually exercise the `!rawText.trim()` branch of `declines`, the message needs to
-    // be non-empty but reduce to nothing once punctuation is stripped (same trim/strip
-    // agent.service.ts applies to every incoming message before routing it).
+    // An empty msg.text bails out of handleMessage before this gate, so exercising the
+    // `!rawText.trim()` branch needs a message that reduces to nothing once punctuation is stripped.
     telegram.normalize.mockResolvedValue(makeMessage('...'));
     await service.handleMessage({});
     expect(conversations.saveState).toHaveBeenCalledWith(
@@ -404,11 +399,8 @@ describe('AgentService — affiliate ID lookup', () => {
     );
   });
 
-  // A non-numeric, non-"no" answer
-  // ("Juan" — voice misheard the ID question, or a genuine misunderstanding) used to be
-  // silently treated as an implicit decline, advancing to DISCOVERY without ever
-  // telling the user their answer didn't make sense. Only digits or an explicit "no"
-  // may pass this gate now.
+  // A non-numeric, non-"no" answer used to pass as an implicit decline without telling the user
+  // their answer made no sense. Only digits or an explicit "no" may pass this gate.
   it('regression — a non-numeric, non-"no" reply ("Juan") is rejected and re-asked, never silently let through', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.AUTHORIZATION,
@@ -578,11 +570,8 @@ describe('AgentService — F01 button taps deterministically force productCatego
   });
 });
 
-// KYC — phone verification via Telegram's native contact-share button
-// "simple KYC to know the user is real... Telegram autocomplete as
-// autoconfirmation and avoid user leave the chat" — confirmed approach is Telegram's
-// native request_contact button (no SMS/Twilio provider), fired once at the very start
-// of DATA_CAPTURE, before any other question.
+// KYC — phone verification via Telegram's native contact-share button, fired once at the very
+// start of DATA_CAPTURE, before any other question. No SMS provider involved.
 
 describe('AgentService — KYC phone verification gate', () => {
   it('"sí" in QUOTE_PRESENTED requests phone verification instead of the first data-capture question when not yet verified', async () => {
@@ -669,12 +658,8 @@ describe('AgentService — KYC phone verification gate', () => {
   });
 });
 
-// KYC — cosmetic selfie step
-// User feedback: "let user know that the camera will open, take the selfie immediately,
-// simulate a KYC as cosmetic and let the user know it was successfully approved... this
-// is possible with a third-party service integrated into the chat to avoid false
-// identity" (a future, real integration). This step does NOT perform any real face
-// matching or liveness check — any photo received counts as "confirmed".
+// KYC — cosmetic selfie step. No face matching and no liveness check: any photo counts as
+// confirmed, and the code says so rather than implying a real identity check.
 
 describe('AgentService — KYC cosmetic selfie step', () => {
   // Same "never loop forever" fix as phone verification above — this is a cosmetic,
@@ -977,11 +962,8 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     });
   });
 
-  // Real bug confirmed live in the production Supabase policies table: a policy's
-  // nombre column literally contained "Mi nombre es Michelle Gómez Gómez" — NAME_REGEX
-  // allows it (it's all letters/spaces, no digits/symbols) so it passed validation and
-  // was stored verbatim, preamble included. A user answering "¿Cuál es tu nombre
-  // completo?" naturally often restates the question as a lead-in.
+  // NAME_REGEX accepts any letters and spaces, so "Mi nombre es Michelle Gómez" passed validation
+  // and was stored verbatim in a real policy. People restate the question as a lead-in.
   describe('regression — a self-introduction preamble is stripped before the nombre is stored', () => {
     const cases: [string, string][] = [
       ['Mi nombre es Michelle Gómez Gómez', 'Michelle Gómez Gómez'],
@@ -1260,12 +1242,9 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
   });
 
   it('regression — aborts instead of charging a hardcoded fallback amount when no product resolves', async () => {
-    // Real gap found in a hardcoded-values audit: createPaymentLinkFlow used to fall
-    // back to a flat, arbitrary $20.000 COP charge via Wompi whenever no product could
-    // be resolved (e.g. a stale/invalid quoteProductId survived into DATA_CAPTURE with
-    // no matching catalog entry) — a customer could be charged an amount unrelated to
-    // anything they were ever quoted. Must abort — no policy is issued in this state
-    // either, so there is nothing legitimate to charge for.
+    // createPaymentLinkFlow used to fall back to a flat $20.000 charge when no product resolved,
+    // so a customer could be charged an amount they were never quoted. It must abort instead:
+    // no policy is issued in that state either, so there is nothing legitimate to charge for.
     const { service, telegram, wompi, conversations } = buildService({
       state: ConversationState.DATA_CAPTURE,
       context: { cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@test.com' }, // no quoteProductId at all
@@ -1319,13 +1298,9 @@ describe('AgentService — conditional underwriting gate', () => {
     );
   });
 
-  // The generic "edad, enfermedad, historial clínico" question
-  // is only fully correct for a HUMAN product (vida) — a human's age is never captured
-  // anywhere else in the flow. For a PET product (medicina-prepagada-gatos/perros), the
-  // pet's age is ALWAYS already captured by the Step-0 per-pet loop (name/edad/raza)
-  // before this gate is ever reached, so re-asking it is redundant; there's also no
-  // "historial clínico" question for a pet, only whether it has a preexisting illness —
-  // and the question must name the actual pet(s) by name, not speak generically.
+  // The age/illness/history question is only correct for a human product: a pet's age is always
+  // captured by the Step-0 loop, there is no clinical history for a pet, and the question must
+  // name the actual pets instead of speaking generically.
   it('regression — a pet product asks only about illness, names the pet, and never re-asks age', async () => {
     const { service, telegram } = buildService({
       state: ConversationState.DATA_CAPTURE,
@@ -1430,12 +1405,8 @@ describe('AgentService — conditional underwriting gate', () => {
   });
 });
 
-// Payment method choice
-// "at the end let user choose if they want to pay with Tarjeta Colsubsidio or Link de
-// pago" — both route to the exact same real Wompi checkout link (no new payment rail,
-// nothing faked): Wompi already accepts card payments, so this is a wording/framing
-// choice, not a second payment integration. Deliberately does NOT claim the payment
-// already succeeded before it actually has — that would be dishonest to the user.
+// Payment method choice: both options route to the same real Wompi checkout link — Wompi already
+// takes cards, so this is framing, not a second rail. Neither claims the payment already happened.
 
 describe('AgentService — payment method choice (Tarjeta Colsubsidio vs Link de pago)', () => {
   // Same root cause as the KYC infinite-loop fixes above:
@@ -1663,13 +1634,8 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
     expect(sentText).toMatch(/mascota/i);
   });
 
-  // A 3-pet voice message ("Bruna...Ramón...Pancha...")
-  // had Bruna silently dropped by the NLP extraction (fixed separately in
-  // groq-nlp.service.ts). The user, believing all 3 pets were already given, was asked
-  // for a "missing" 3rd pet and re-stated Pancha's details again — which got pushed as a
-  // literal duplicate entry, corrupting the final paid, issued policy. This guard is the
-  // second line of defense: even if the NLP still under-extracts for some other message,
-  // re-stating an already-collected pet's exact name must never create a duplicate.
+  // Second line of defense against the dropped-pet bug: even if the NLP under-extracts, re-stating
+  // an already-collected pet name must never create a duplicate entry in a paid policy.
   it('regression — re-stating an already-collected pet name does not create a duplicate entry', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DATA_CAPTURE,
@@ -1797,11 +1763,8 @@ describe('AgentService — DATA_CAPTURE per-pet details for mascotas', () => {
     );
   });
 
-  // A 3-pet message ("Bruna... Ramón... Pancha...")
-  // came back with Pancha duplicated and Bruna missing. Every correction attempt by name
-  // ("Pancha, 10 años, Cocker") always matched the FIRST "Pancha", never the duplicate;
-  // ordinal attempts ("el tercero es Ramón...") were not understood at all. The corrupted
-  // data made it all the way into the final, paid, issued policy PDF.
+  // Correcting by name always matched the first pet with that name, never the duplicate, and
+  // ordinal attempts were not understood at all — the corrupted data reached the issued PDF.
   it('regression — a name matching two pets asks which one instead of silently updating the first', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DATA_CAPTURE,
@@ -2009,13 +1972,9 @@ describe('AgentService — PAYMENT webhook-driven confirmation', () => {
 });
 
 // abandonIntent vs. an already-completed purchase
-// Real live-test bug (confirmed directly in the production Supabase conversations
-// table): two conversations that had ALREADY completed a real, Wompi-approved purchase
-// ended up with state='abandoned' after the customer later declined to buy anything
-// more. processMessage's top-level abandonIntent check fires for any state except
-// GREETING/QUOTE_PRESENTED — including the post-purchase DISCOVERY follow-up — with no
-// awareness a policy already exists. "Abandoned before buying anything" and "bought
-// something, then declined more" must never share a conversation status.
+// The top-level check fires for every state except GREETING and QUOTE_PRESENTED, with no awareness
+// that a policy already exists. "Abandoned before buying" and "bought, then declined more" must
+// never share a conversation status.
 describe('AgentService — abandonIntent after an already-completed purchase', () => {
   it('regression — abandonIntent ends as COMPLETED, not ABANDONED, when hasCompletedPurchase is true', async () => {
     const { service, telegram, conversations } = buildService({
@@ -2049,11 +2008,8 @@ describe('AgentService — abandonIntent after an already-completed purchase', (
 // QUOTE_PRESENTED — no-repeat invariant
 
 // QUOTE_PRESENTED — back-reference resolution
-// "Prefiero la anterior.", "Quiero la primera opción que me ofreciste.", "la que vale
-// 16.800", "¿alguna más económica?" all reference a SPECIFIC already-shown product (or a
-// cheaper one among them) -- none had a handler before this fix; they either fell
-// through to a blind re-show of the CURRENT product, or (worse) got matched as a false
-// confirmation of it via a bare "quiero" substring.
+// References to an already-shown product had no handler: they fell through to a blind re-show of
+// the current one, or got matched as a false confirmation of it via a bare "quiero" substring.
 describe('AgentService — QUOTE_PRESENTED back-reference resolution', () => {
   const asistenciasMedicas = PRODUCTS.find((p) => p.id === 'asistencias-medicas')!; // $16.800
   const asistenciasMultiples = PRODUCTS.find((p) => p.id === 'asistencias-multiples')!; // $20.000
@@ -2159,12 +2115,9 @@ describe('AgentService — QUOTE_PRESENTED back-reference resolution', () => {
   });
 });
 
-// QUOTE_PRESENTED — category exhaustion no longer resets to DISCOVERY
-// Resetting productCategory/coverage and transitioning
-// to DISCOVERY when a category runs out of unseen options let the NEXT ambiguous
-// message's hallucinated productCategory silently start a brand-new, unrelated quote (an
-// "asistencia" shopper ended up with "vida"). Staying anchored in QUOTE_PRESENTED means
-// back-reference resolution and the cross-sell-defer check both keep working.
+// QUOTE_PRESENTED — category exhaustion stays anchored
+// Resetting to DISCOVERY let the next ambiguous message's hallucinated category start an unrelated
+// quote. Staying anchored keeps back-reference resolution and the cross-sell defer working.
 describe('AgentService — QUOTE_PRESENTED category exhaustion stays anchored', () => {
   it('regression — exhausting a category stays in QUOTE_PRESENTED, keeps productCategory/coverage/quoteProductId, and offers the waitlist', async () => {
     const p1 = PRODUCTS[0];
@@ -2195,14 +2148,9 @@ describe('AgentService — QUOTE_PRESENTED category exhaustion stays anchored', 
 });
 
 // Lead capture — waitlist offer when a category's alternatives run out
-// AwaitingContactConsent was set by
-// handleQuotation (category exhaustion, above) but only ever CHECKED inside
-// `case ConversationState.AUTHORIZATION` in processMessage — unreachable, since the
-// conversation stays anchored in QUOTE_PRESENTED with no nextState change. The reply to
-// "¿te interesa?" silently fell through to handleQuotation's normal logic instead, with
-// no working answer path at all. Fixed by checking the flag at the top of handleQuotation
-// itself. This whole flow (consent → name → email → phone → admin notification → end
-// chat) had ZERO test coverage before this round — the gap that let it ship broken.
+// awaitingContactConsent was set by handleQuotation but only read inside the AUTHORIZATION case,
+// unreachable from a conversation anchored in QUOTE_PRESENTED, so the reply had no answer path.
+// The whole flow shipped with zero coverage — the gap that let it ship broken.
 describe('AgentService — lead capture after category exhaustion', () => {
   it('"sí" to the waitlist offer moves to DATA_CAPTURE and asks for a name', async () => {
     const { service, telegram, conversations } = buildService({
@@ -2348,12 +2296,8 @@ describe('AgentService — lead capture after category exhaustion', () => {
     expect(telegram.sendText).toHaveBeenCalledTimes(1);
   });
 
-  // A RETURNING customer (nombre/email
-  // already known — the greeting itself says "Ya tengo parte de tu perfil de una
-  // conversación anterior") still got asked "¿cuál es tu nombre?" then "¿cuál es tu
-  // correo?" from scratch when accepting the waitlist offer, instead of reusing what's
-  // already known — the exact "nunca preguntar lo que ya sabemos" violation the
-  // affiliate-ID/persistent-memory features exist to prevent elsewhere.
+  // A returning customer whose name and email are already known was asked for both from scratch —
+  // the same "nunca preguntar lo que ya sabemos" violation the persistent memory exists to prevent.
   describe('regression — never re-asks for name/email/phone already known from an earlier purchase', () => {
     it('skips straight to asking for email when nombre is already known', async () => {
       const { service, telegram, conversations } = buildService({
@@ -2433,11 +2377,8 @@ describe('AgentService — lead capture after category exhaustion', () => {
   });
 });
 
-// A voice-dictated email kept failing the
-// same way 4 times in a row — Whisper's punctuation model inserts a comma right after a
-// spoken filler word ("arroba," instead of clean trailing whitespace), and the original
-// `\s+arroba\s+`/`\s+punto\s+` patterns required LITERAL whitespace on both sides, so the
-// comma silently broke the match and left "arroba" un-converted to "@".
+// Whisper inserts a comma right after a spoken filler word, and the original patterns required
+// literal whitespace on both sides, so "arroba," silently never converted to "@".
 describe('AgentService — normalizeSpokenEmail handles ASR-inserted commas around "arroba"/"punto"', () => {
   it.each([
     ['juan arroba, gmail punto com', 'juan@gmail.com'],
@@ -2531,12 +2472,8 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     }
   });
 
-  // After declining a cross-sell quote with a plain "No, está bien.",
-  // the agent kept cycling to ANOTHER alternative product instead of letting the user go
-  // — the OLD code treated `isNegative` exactly like `wantsAlternative` (any "no" always
-  // meant "show me something else"). AGENTS.md's own UX rule says a "no" gets an
-  // alternative OR a polite close — only "alternative" was ever implemented. A bare
-  // decline (isNegative, no explicit "show me more") must now end politely instead.
+  // The old code treated isNegative exactly like wantsAlternative, so any "no" meant "show me
+  // something else". The UX rule promises an alternative OR a polite close; only one existed.
   it('regression — a plain decline ("No, está bien.") ends politely instead of cycling to another product', async () => {
     const { service, telegram, conversations, quoting } = buildService({
       state: ConversationState.QUOTE_PRESENTED,
@@ -2553,14 +2490,9 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     expect(sentText.toLowerCase()).toMatch(/aquí estoy|cuando quieras/);
   });
 
-  // Same bug class as the "stuck at abandoned despite
-  // completed purchase" fix (task #78) — but via a DIFFERENT code path that fix never
-  // touched. Task #78 only patched the top-level abandonIntent check, which explicitly
-  // skips QUOTE_PRESENTED (line ~135). A plain decline of a POST-PURCHASE cross-sell
-  // quote ("No, está bien.") goes through THIS branch instead (added by task #71), which
-  // unconditionally set nextState=ABANDONED with no hasCompletedPurchase check at all —
-  // so a customer who already has an active, paid policy and simply declines to buy a
-  // second one gets their conversation marked 'abandoned' again.
+  // Same bug class as the abandoned-despite-purchase fix, via a path that fix never touched: this
+  // branch set ABANDONED unconditionally, so declining a post-purchase cross-sell marked a
+  // customer with an active paid policy as abandoned.
   it('regression — a plain decline of a post-purchase cross-sell ends in COMPLETED, not ABANDONED, when hasCompletedPurchase is true', async () => {
     const { service, telegram, conversations, quoting } = buildService({
       state: ConversationState.QUOTE_PRESENTED,
@@ -2589,14 +2521,9 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     );
   });
 
-  // "No, pero no tengo gatos. No sé por
-  // qué pensaste que tenía gatos..." while a gato-specific quote was showing got the
-  // IDENTICAL quote card re-shown verbatim — this nuanced, multi-clause correction
-  // didn't trip Groq's own isAffirmative/isNegative/wantsAlternative classification
-  // (simulated here with a neutral intent, matching what actually shipped), so nothing
-  // caught it and it fell through to the generic re-show. An explicit "no tengo <the
-  // species just quoted>" must now pivot back to DISCOVERY instead, regardless of what
-  // the LLM classified the message as.
+  // A multi-clause correction ("no tengo gatos") trips none of the LLM's affirmative, negative or
+  // alternative classifications, so it fell through to the generic re-show. Denying the species
+  // currently quoted must pivot to DISCOVERY regardless of what the model classified.
   describe('QUOTE_PRESENTED — explicit denial of the currently-quoted pet species', () => {
     it('regression — "no tengo gatos" while a gato quote is showing pivots to DISCOVERY instead of re-showing the same quote', async () => {
       const { service, telegram, conversations, quoting } = buildService({
@@ -2642,14 +2569,9 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     });
   });
 
-  // User said "salir" then "terminar" right
-  // after a quote was shown, and got the IDENTICAL quote card re-shown verbatim both
-  // times, with zero acknowledgment. Root cause: handleQuotation never checked
-  // intent.abandonIntent at all — and the top-level abandonIntent check in
-  // processMessage explicitly excludes QUOTE_PRESENTED (it has its own richer branching
-  // for isAffirmative/isNegative/wantsAlternative), so an unambiguous exit word fell
-  // through every branch to the neutral catch-all at the bottom, which just re-shows the
-  // quote unchanged.
+  // handleQuotation never checked abandonIntent, and the top-level check excludes QUOTE_PRESENTED
+  // because this state has its own richer branching — so an unambiguous exit word fell through
+  // every branch to the catch-all that re-shows the quote unchanged.
   it('regression — "salir" ends the conversation instead of re-showing the same quote', async () => {
     const { service, telegram, conversations, quoting } = buildService({
       state: ConversationState.QUOTE_PRESENTED,
@@ -2727,12 +2649,8 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
     expect(sentText).not.toContain('precio accesible');
   });
 
-  // A genuinely unparseable message ("2+2", sent live by two
-  // different users) silently got the exact same quote card re-shown with zero
-  // acknowledgment — indistinguishable from a legitimate follow-up question. Only a
-  // message with NO letters at all (never true for a real Spanish question) gets a
-  // clarification prefix — the regression above ("¿Ese es el único plan?", a real
-  // question) must keep being answered with a plain, unprefixed re-show.
+  // Only a message with no letters at all — never true of a real Spanish question — gets the
+  // clarification prefix; a genuine follow-up question must keep getting a plain re-show.
   it('regression — a message with no letters at all ("2+2") gets a clarification prefix, not a silent re-show', async () => {
     const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
     const { service, telegram } = buildService({
@@ -2749,11 +2667,8 @@ describe('AgentService — QUOTE_PRESENTED no-repeat on "otro"', () => {
 });
 
 // QUOTE_PRESENTED / DISCOVERY — out-of-catalog category mentions
-// Real bug independently confirmed by both a live test session and a teammate's
-// findings report: asking for a category we don't sell ("vehicular", "seguro vehicular")
-// silently re-showed the unrelated, already-quoted product verbatim (Seguro de vida,
-// twice, identically) instead of honestly saying we don't offer it. The agent must never
-// silently pretend an unrelated stale quote answers a genuinely different question.
+// Asking for a category we don't sell used to re-show the unrelated quoted product verbatim. The
+// agent must never let a stale quote stand in for an answer to a different question.
 
 describe('AgentService — QUOTE_PRESENTED honest response to an out-of-catalog category', () => {
   it('regression — "vehicular" does not silently re-show the unrelated current quote', async () => {
@@ -2828,11 +2743,8 @@ describe('AgentService — QUOTE_PRESENTED honest response to an out-of-catalog 
 });
 
 // QUOTE_PRESENTED — explain/compare meta-questions
-// "¿Cuál es mejor?" / "Cuéntame más de ellos" / "Explícame de qué se trata" carry no
-// affirmative/negative/alternative signal, so they used to fall through to the same
-// truncated quote card being silently re-shown every time — read by the user as "it just
-// pushes the most complete option no matter what I ask". These must get the actual
-// product detail instead.
+// These carry no affirmative, negative or alternative signal, so they fell through to the same
+// truncated card being re-shown. They must get the actual product detail instead.
 describe('AgentService — QUOTE_PRESENTED explain/compare meta-questions', () => {
   it.each([
     '¿Cuál es mejor?',
@@ -2902,13 +2814,9 @@ describe('AgentService — QUOTE_PRESENTED explain/compare meta-questions', () =
 
 describe('AgentService — QUOTE_PRESENTED cross-sell for personal coverage', () => {
   it('regression — asking about coverage "para mí" during a pet quote defers it instead of abandoning the pending purchase', async () => {
-    // "restore the flow": a quote in progress must never be abandoned for a
-    // cross-sell mention — real live-test bug, repeated across many live sessions: "para
-    // mí, qué hay" during an UNCONFIRMED mascotas quote used to immediately replace it
-    // with a different product, so the mascotas purchase was silently dropped before
-    // ever reaching payment ("continue offering products when I already chose"). Now it
-    // acknowledges, keeps the pet quote pending, and defers the follow-up until after
-    // this purchase is paid (see wompi-webhook.controller.ts).
+    // A quote in progress must never be dropped for a cross-sell mention: an unconfirmed mascotas
+    // quote used to be replaced outright and the purchase disappeared before payment. It now
+    // acknowledges, keeps the quote pending, and defers the follow-up until after this purchase.
     const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
     const { service, telegram, conversations } = buildService({
       state: ConversationState.QUOTE_PRESENTED,
@@ -3035,11 +2943,8 @@ describe('AgentService — QUOTE_PRESENTED explicit category mention defers, doe
   });
 
   it('regression — a plain confirmation reaches DATA_CAPTURE even if the LLM spuriously sets productCategory with no category actually named in the text', async () => {
-    // "Sí, quiero esa." confirmed a shown quote, but the LLM
-    // sometimes returns a productCategory value anyway despite the message naming no
-    // category at all — this used to hijack a clear purchase confirmation into an
-    // unwanted category switch, and DATA_CAPTURE was never reached ("after confirm,
-    // keeps offering more insurance").
+    // The LLM sometimes returns a productCategory even when the message names none, which used to
+    // hijack a clear purchase confirmation into a category switch and never reach DATA_CAPTURE.
     const asistenciaProduct = PRODUCTS.find(p => p.category === 'asistencia')!;
     const { service, telegram, quoting } = buildService({
       state: ConversationState.QUOTE_PRESENTED,
@@ -3077,11 +2982,8 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     );
   });
 
-  // "Tengo dos perros y un gato." already answers
-  // the breakdown question, and the counts ARE captured from it — but the mixto branch
-  // asked "¿Cuántos gatos y cuántos perros tienes?" anyway, so the user had to repeat
-  // themselves. The context assertion in the test below this one never caught it because
-  // it checks the saved counts, not the reply the person actually reads.
+  // The counts are captured from the same message that reveals a mixed household, but the mixto
+  // branch asked for them again. Asserting the saved context never caught it — only the reply does.
   it('regression — counts stated in the SAME message that reveals a mixed household are not asked for again', async () => {
     const { service, telegram } = buildService({
       state: ConversationState.DISCOVERY,
@@ -3114,12 +3016,8 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     );
   });
 
-  // A genuinely mixed household (2 dogs + 1 cat) got quoted a
-  // SINGLE product (medicina-prepagada-gatos, cat-only) multiplied by the TOTAL pet
-  // count (3) — charging the 2 dogs at the cat rate. The user explicitly rejected it:
-  // "eso no es para gatos, para los perros que hay". A mixto household with an explicit
-  // per-species count must be quoted as BOTH species-specific products, each priced
-  // against its OWN count, not one product against the combined total.
+  // A mixed household was quoted one cat-only product multiplied by the total pet count, charging
+  // the dogs at the cat rate. Each species must be quoted as its own product against its own count.
   it('regression — a mixed household (2 dogs + 1 cat) is quoted BOTH species products at their own per-species price, not one product x total count', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DISCOVERY,
@@ -3177,11 +3075,8 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     expect(savedContext.petType).toBe('mixto'); // never narrowed away by the misread petResolution
   });
 
-  // Same bug as above, but split across TWO messages instead of one — completing a
-  // partial count ("un gato" then "dos perros") also mentions the completing species,
-  // which can equally get petResolution misread as a narrowing ('perro') rather than a
-  // count supplement. The fix must clear it based on the MERGED per-species counts
-  // (both known after this turn), not just on what the current message alone mentioned.
+  // Same bug split across two messages: the completing message also names a species, which can be
+  // misread as narrowing. The fix keys on the merged per-species counts, not the current message.
   it('regression — completing a split count answer ("un gato" then "dos perros") asks gatos/perros/todos, even if the 2nd message\'s petResolution is misread as a single species', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DISCOVERY,
@@ -3217,11 +3112,8 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     );
   });
 
-  // After the correct combined mixed-species quote
-  // above, "otro" searched for a totally unrelated THIRD product (e.g.
-  // asistencia-veterinaria) and priced it against the raw cross-species petCount (3) —
-  // wrong total, AND a consent mismatch: saying "sí" right after would silently confirm
-  // the ORIGINAL 2-product purchase, not the different product just shown.
+  // "otro" during an active mixed-species purchase surfaced an unrelated third product priced
+  // against the combined count — and a "sí" right after would confirm the original two, not it.
   it('regression — "otro" during an active mixed-species purchase re-shows the combined quote instead of a 3rd unrelated product', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.QUOTE_PRESENTED,
@@ -3270,14 +3162,9 @@ describe('AgentService — DISCOVERY mixed pets', () => {
     expect(sentText).not.toContain('245.400');
   });
 
-  // After narrowing a mixto household
-  // ("1 gato + 1 perro") down to "solo gato" (petType: 'gato'), asking for "otro"
-  // surfaced asistencia-veterinaria (eligibility.pet: 'any') priced against the STALE
-  // combined petCount (2) instead of the narrowed single species (1) — the transcript
-  // showed "📊 Total para 2 mascotas: $29.000/mes" for a quote the user explicitly asked
-  // to be "solo para el gato" (just the cat). petCountForProduct only special-cased
-  // gato/perro-RESTRICTED products; an 'any'-eligibility product fell through to the raw
-  // combined petCount, ignoring the narrowing entirely.
+  // petCountForProduct only special-cased species-restricted products, so an 'any'-eligibility
+  // alternative fell through to the raw combined count and ignored a narrowing the user had
+  // explicitly asked for.
   it('regression — an "otro" alternative with eligibility.pet="any" respects a narrowed single-species petType, not the stale combined petCount', async () => {
     const gatoProduct = PRODUCTS.find(p => p.id === 'medicina-prepagada-gatos')!;
     const vetProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;
@@ -3325,14 +3212,9 @@ describe('AgentService — DISCOVERY mixed pets', () => {
 });
 
 // QUOTE_PRESENTED — switching species after narrowing a mixed-species quote
-// "solo perros" worked (narrowed the
-// combined gato+perro quote down to just perros), but a FOLLOW-UP "solo gato" — trying
-// to switch to the OTHER species — just re-showed the SAME perros quote, and asking to
-// see "todos" (both) again didn't restore the combined quote either. Root cause: the
-// switching guard gated on `context.selectedProductIds.length > 1`, true only for the
-// ORIGINAL combined quote — once narrowed to one species, selectedProductIds.length
-// becomes 1, so the guard never fired again for any later switch. This describe block
-// had zero test coverage before this fix — the gap that let it ship broken.
+// The switching guard keyed on selectedProductIds.length > 1, true only for the original combined
+// quote: once narrowed it never fired again, so switching to the other species or back to both
+// was impossible. This block had zero coverage before the fix.
 describe('AgentService — QUOTE_PRESENTED switching species in a mixed household', () => {
   it('regression — "solo gato" after already narrowing to "solo perros" switches to the cat quote, not a repeat of perros', async () => {
     const gatoProduct = PRODUCTS.find(p => p.id === 'medicina-prepagada-gatos')!;
@@ -3408,12 +3290,8 @@ describe('AgentService — QUOTE_PRESENTED switching species in a mixed househol
 });
 
 // DATA_CAPTURE — pet-count collection respects a narrowed single-species purchase
-// After narrowing a mixed household ("1
-// gata + 2 perros") down to "solo perros", the per-pet details summary still showed 3
-// pets (Bruna the cat included) instead of 2 (only the dogs) — firstDataCaptureQuestion
-// and the pet-collection loop both used the raw combined context.petCount as "how many
-// pets to collect", the same bug class already fixed for pricing (petCountForProduct)
-// but never applied to pet-name collection.
+// firstDataCaptureQuestion and the collection loop used the raw combined petCount, the same bug
+// class already fixed for pricing but never applied to collecting pet names.
 describe('AgentService — DATA_CAPTURE pet count respects species narrowing', () => {
   it('regression — after narrowing to "solo perros", only 2 pets (not the combined 3) are asked for', async () => {
     const { service, telegram } = buildService({
@@ -3538,10 +3416,8 @@ describe('AgentService — DISCOVERY productCategory inference', () => {
 });
 
 // DISCOVERY — catalog-honesty bridge
-// "Quiero asegurar mi carro" during DISCOVERY had no branch at all — no vehicular/
-// empresa product exists, so it silently extracted no category and looped forever on
-// the generic tier-1 question. QUOTE_PRESENTED already had this exact check
-// (detectOutOfCatalogCategory); DISCOVERY never did.
+// Asking for a product we don't sell extracted no category and looped forever on the tier-1
+// question; QUOTE_PRESENTED already had this check and DISCOVERY never did.
 describe('AgentService — DISCOVERY catalog-honesty bridge', () => {
   it('regression — "quiero asegurar mi carro" gives an honest redirect instead of looping', async () => {
     const { service, telegram, quoting } = buildService({
@@ -3665,11 +3541,8 @@ describe('AgentService — DISCOVERY pet count and quote pricing', () => {
 });
 
 // DISCOVERY — must know species before quoting mascotas
-// Real live-test gap: "Tengo dos mascotas y yo." went straight to a quote without the
-// agent ever learning cat/dog/mixed. The real catalog has species-restricted products
-// (medicina-prepagada-gatos / medicina-prepagada-perros) alongside a generic one —
-// quoting blind risks missing the more specific, better-matching product and skips the
-// per-profile personalization judges look for ("¿por qué este seguro para esta persona?").
+// The catalog has species-restricted products alongside a generic one, so quoting blind risks
+// missing the better match and skips the per-profile reason the whole pitch rests on.
 
 describe('AgentService — DISCOVERY asks species before quoting mascotas', () => {
   it('regression — "Tengo dos mascotas y yo" asks cat/dog/mixed instead of quoting blind', async () => {
@@ -3708,11 +3581,8 @@ describe('AgentService — DISCOVERY asks species before quoting mascotas', () =
     await service.handleMessage({});
     expect(quoting.bestQuote).not.toHaveBeenCalled();
     const sentText = telegram.sendText.mock.calls[0]?.[1] as string;
-    // This asserted "¿Cuántos gatos" — but the message already states both
-    // counts, so re-asking them was the repeated-question bug. The guarantee this test
-    // exists for is unchanged: the species gate must not swallow the mixto path into a
-    // blind quote (bestQuote above). It now lands on the which-pet clarification, which
-    // is what the test name says it protects.
+    // The guarantee is unchanged — the species gate must not swallow the mixto path into a blind
+    // quote — but the assertion now lands on the which-pet clarification instead of re-asking counts.
     expect(sentText).toMatch(/los gatos, los perros, o para todos/i);
   });
 });
@@ -3768,14 +3638,9 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
     expect(sentText).not.toMatch(/protegerte a ti mismo/i);
   });
 
-  // The symmetric case to the "no" pivot
-  // above was missing — "Sí?" answering "¿Tienes familia o personas que dependen de ti?"
-  // names no category on its own, so it fell through to "No logré entender bien eso."
-  // plus the ENTIRE compound question repeated verbatim, reading as the agent ignoring a
-  // clear "yes" answer. The user's next message ("1 millón") likely came from genuinely
-  // mistaking "tu ingreso" (a category to protect) for a request to state an income
-  // figure — a confusion made worse by getting stuck on the same repeated question with
-  // no acknowledgment or clearer ask.
+  // The symmetric case to the "no" pivot was missing: a bare "Sí?" names no category, so it fell
+  // through to "No logré entender" plus the entire compound question repeated verbatim, reading
+  // as the agent ignoring a clear yes.
   it('regression — "Sí?" to the opening discovery question pivots to a direct category ask instead of repeating the full question', async () => {
     const { service, telegram } = buildService({
       state: ConversationState.DISCOVERY,
@@ -3817,13 +3682,9 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
   });
 
   it('regression — quotes a named category even when coverage is empty (fallback NLP never fills coverage)', async () => {
-    // GroqNlpService.fallbackIntent() (used whenever Groq is
-    // unreachable, e.g. LLM_API_KEY unset) always returns coverage: [] — it has no
-    // keyword extraction for coverage at all. hasEnoughInfo required BOTH productCategory
-    // AND coverage.length, so a clear category signal ("vida, accidentes y asistencia
-    // médica") got stuck re-asking the same generic DISCOVERY question forever, even
-    // though QuotingService.evaluateProduct only needs productCategory to score a
-    // product > 0 — coverage is a scoring bonus there, never a hard requirement.
+    // fallbackIntent always returns an empty coverage array, and hasEnoughInfo required both it and
+    // productCategory, so a clear category signal looped on the same question forever — even though
+    // evaluateProduct only needs the category to score a product above zero.
     const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
     const { service, telegram, quoting, conversations } = buildService({
       state: ConversationState.DISCOVERY,
@@ -3843,14 +3704,9 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
   });
 
   it('regression — attempts a quote instead of looping forever on the unanswerable "ages" question', async () => {
-    // Once coverage and beneficiaries are both known (usually from a
-    // spurious Groq default — its schema example shows "beneficiaries": 1) but
-    // productCategory was never extracted, STATE_RESPONSES[DISCOVERY] asks "¿En qué rango
-    // de edades están?" forever — no field in the intent schema captures a human
-    // beneficiary's age (only petAge, for pets), and QuotingService never uses ages at
-    // all, so this question can NEVER be answered. Live conversation looped 4+ turns on
-    // exactly this ("todos", pet ages, "yo tengo 33", family ages) with productCategory
-    // stuck at null the entire time.
+    // With coverage and beneficiaries known but no category, DISCOVERY asked for age ranges forever:
+    // no field captures a human beneficiary's age and the scoring never uses ages, so that question
+    // can never be answered.
     const anyProduct = PRODUCTS[0];
     const { service, telegram, quoting, conversations } = buildService({
       state: ConversationState.DISCOVERY,
@@ -3869,13 +3725,8 @@ describe('AgentService — DISCOVERY unclear message handling', () => {
     expect(saveCall?.[1]).toBe(ConversationState.QUOTE_PRESENTED);
   });
 
-  // The guard above required BOTH coverage
-  // AND beneficiaries before attempting a best-effort quote — matching the OLD "rango de
-  // Edades" text's own trigger condition from before the cleanup that swapped
-  // its copy for "¿Cuántas personas son en tu familia o grupo familiar?" but left this
-  // guard's condition untouched. Coverage getting set WITHOUT beneficiaries (e.g. a vague
-  // "proteger a mi familia" message) fell through this gap straight to that dead text —
-  // confirmed live: it has no functional handler for its own answer at all.
+  // The guard required both coverage and beneficiaries before attempting a best-effort quote, so
+  // coverage arriving alone fell through to a dead question that has no handler for its own answer.
   it('regression — attempts a quote instead of showing the dead "cuántas personas en tu familia" text when coverage is known but beneficiaries never was', async () => {
     const anyProduct = PRODUCTS[0];
     const { service, telegram, quoting, conversations } = buildService({
@@ -4104,10 +3955,8 @@ describe('AgentService — DISCOVERY lost-context resilience', () => {
 });
 
 // Post-purchase cross-sell decline
-// After a purchase, wompi-webhook.controller.ts asks "¿Quieres proteger algo más?" and
-// resets the conversation to DISCOVERY. A decline ("No, está bien así.") used to fall
-// through DISCOVERY's generic "no entendí" acknowledgment — the agent literally
-// ignoring a clear, polite "I'm done" right after a purchase.
+// The webhook asks "¿Quieres proteger algo más?" and resets to DISCOVERY, where a decline used to
+// fall through the generic acknowledgment — ignoring a clear "I'm done" right after a purchase.
 describe('AgentService — DISCOVERY polite decline of the post-purchase cross-sell offer', () => {
   it('regression — declining ends the conversation politely instead of "no entendí"', async () => {
     const { service, telegram, conversations } = buildService({
@@ -4125,12 +3974,8 @@ describe('AgentService — DISCOVERY polite decline of the post-purchase cross-s
     );
   });
 
-  // Groq's isNegative classification has no prompt example covering
-  // elliptical negations like these, and misclassified both as isNegative=false — the
-  // decline went unrecognized, the one-shot awaitingCrossSellResponse flag was consumed
-  // anyway, and the conversation kept cycling (generic "no entendí" re-ask) instead of
-  // ending on the very first "no". A message that starts with the standalone word "no"
-  // is an unambiguous decline regardless of what the LLM extracted.
+  // Elliptical negations were misclassified as not negative, the one-shot flag was consumed anyway,
+  // and the conversation kept cycling. A message starting with a standalone "no" is a decline.
   it.each([
     'No, ningún otro. Gracias.',
     'No, no estoy interesado en ningún.',
@@ -4201,14 +4046,10 @@ describe('AgentService — DISCOVERY polite decline of the post-purchase cross-s
     );
   });
 
-  // "No, la póliza está mal." is an unambiguous decline
-  // with ZERO real category words in it -- but Groq occasionally hallucinates SOME
-  // productCategory from text like this anyway. The old check trusted intent.productCategory
-  // directly, so the hallucination silently defeated the decline, cleared the one-shot flag,
-  // and let the conversation fall through into re-quoting the stale quoteProductId still in
-  // context -- which is how a customer who said their policy was WRONG ended up with a
-  // second Wompi payment link for the exact same product. Fixed: only a real, deterministic
-  // category mention in the TEXT itself (not the LLM's unfounded guess) can override a decline.
+  // The old check trusted intent.productCategory, which the model can hallucinate from a decline
+  // with no category words at all — that defeated the decline and re-quoted the stale product, so a
+  // customer reporting a wrong policy got a second payment link for it. Only a real category
+  // mention in the text may override a decline.
   it('regression — a decline with a hallucinated productCategory but no real category words still ends politely, not falls through to re-quote', async () => {
     const { service, telegram, conversations, quoting } = buildService({
       state: ConversationState.DISCOVERY,
@@ -4260,11 +4101,8 @@ describe('AgentService FUZZ — cédula validation', () => {
   });
 });
 
-// Dictating a cédula digit-by-digit by voice ("uno, dos, tres...")
-// gets transcribed with commas between each individual digit ("1, 2, 3, 4, 5, 6, 7, 8,
-// 9") — the existing \b\d{6,10}\b regex needs a CONTIGUOUS digit run, so this never
-// matched at all. Must NOT affect the existing, intentionally-rejected typed-formatted
-// cases ("12.345.678", "1234 5678") — those use multi-digit groups, not lone digits.
+// A cédula dictated digit by digit transcribes with commas between digits, which the contiguous
+// \b\d{6,10}\b run never matched. Typed formats with multi-digit groups stay rejected.
 describe('AgentService — cédula dictated digit-by-digit with commas', () => {
   it.each([
     ['1, 2, 3, 4, 5, 6, 7, 8, 9', '123456789'],
@@ -4406,12 +4244,9 @@ describe('AgentService INVARIANT — underwriting question matches catalog flag 
   );
 });
 
-// 30s "come back to chat" reminder
-// This app is otherwise fully stateless (driven only by incoming Telegram messages) — the
-// reminder is the one place with an in-memory timer, scoped per conversation id. Every
-// incoming message must cancel any reminder pending for THIS conversation (proof the user
-// is still there) before scheduling a fresh one for the response about to go out —
-// except when the conversation just reached a terminal state, where nudging is pointless.
+// Reminder scheduling
+// The one place with an in-memory timer, scoped per conversation id: every incoming message must
+// cancel the pending reminder before scheduling a fresh one, except on a terminal state.
 describe('AgentService — 30s reminder scheduling', () => {
   it('cancels any pending reminder for this conversation on every incoming message', async () => {
     const { service, reminders } = buildService({ state: ConversationState.GREETING });
@@ -4486,13 +4321,9 @@ describe('AgentService — 30s reminder scheduling', () => {
 });
 
 // Terminal-state restart
-// ReminderService's auto-close message explicitly promises "cuando quieras continuar,
-// aquí estoy — 24/7" — but only an EXACT hola/ayuda/inicio/start match ever restarted an
-// ABANDONED/REJECTED conversation. A real follow-up question fell through to the static
-// STATE_RESPONSES[currentState] text with no nextState, so the SAME terminal row got
-// reused forever — every later message got the identical canned reply, no matter what it
-// Said. two different follow-up questions in a row both got "Entendido.
-// Cuando quieras retomar, aquí estoy — 24/7, sin esperas." verbatim.
+// The auto-close message promises the conversation can resume any time, but only an exact
+// hola/ayuda/inicio/start match restarted it: any other follow-up reused the same terminal row
+// forever, answering every later message with the identical canned reply.
 describe('AgentService — terminal-state restart', () => {
   it('restarts (shows the GREETING text) on an ordinary follow-up message when state is ABANDONED, not just on a greeting keyword', async () => {
     const { service, telegram, conversations } = buildService({
@@ -4530,13 +4361,9 @@ describe('AgentService — terminal-state restart', () => {
     expect(conversations.saveState).toHaveBeenCalledWith('conv-1', ConversationState.AUTHORIZATION, expect.anything());
   });
 
-  // After "Hola." restarted an ABANDONED
-  // conversation, the user's very next message — even an immediate "Sí." — got the
-  // IDENTICAL "¡Hola!... Escríbeme 'sí' para empezar." text a second time before the
-  // authorization question was ever actually evaluated, forcing a THIRD message just to
-  // move past it. Root cause: the restart handler rendered GREETING's text (which already
-  // asks for authorization) but set nextState back to GREETING, so the next turn re-ran
-  // case GREETING and rendered the exact same text again.
+  // The restart handler rendered GREETING's text, which already asks for authorization, but set
+  // nextState back to GREETING — so the next turn rendered the same text again and the person
+  // needed a third message just to move past it.
   it('regression — does not repeat the GREETING/authorization text on the message right after a restart', async () => {
     const { service, telegram, conversations } = buildService({ state: ConversationState.ABANDONED });
     telegram.normalize.mockResolvedValue(makeMessage('Hola.'));
@@ -4703,11 +4530,8 @@ describe('AgentService — terminal-state restart', () => {
       expect(savedContext.petSpeciesCounts).toBeUndefined();
     });
 
-    // Reproduces the exact reported symptom
-    // end-to-end — a conversation restarted from ABANDONED with a stale mixed-species
-    // profile left over from an earlier, unrelated mascotas inquiry. Tapping "Mi mascota"
-    // fresh must ask the species question again, never jump straight to a one-species
-    // quote using counts the user never restated this conversation.
+    // A conversation restarted with a stale mixed-species profile from an earlier inquiry must ask
+    // the species question again, never quote from counts the user never restated.
     it('regression — a fresh "Mi mascota" tap after a restart asks the species question again, never reuses a stale species breakdown', async () => {
       const { service: s1, conversations: c1 } = buildService({
         state: ConversationState.ABANDONED,
@@ -4776,11 +4600,9 @@ describe('AgentService — terminal-state restart', () => {
   });
 });
 
-// Stuck-loop circuit breaker + human escalation
-// "If the agent doesn't have the info about the insurance asked, redirect the chat to a
-// human." Only turns explicitly flagged unclearReply (DISCOVERY's genuinely-stuck
-// fallback, QUOTE_PRESENTED's neutral re-show) count toward the streak — a real
-// follow-up question that just needs another question asked is NOT confusion.
+// Stuck-loop circuit breaker and human escalation
+// Only turns flagged unclearReply count toward the streak: a follow-up question that just needs
+// another question asked is not confusion.
 describe('AgentService — stuck-loop circuit breaker + human escalation', () => {
   it('a single unclear reply increments the counter but does not escalate', async () => {
     const product = PRODUCTS[0];
@@ -4916,13 +4738,9 @@ describe('AgentService — stuck-loop circuit breaker + human escalation', () =>
   });
 });
 
-// Comprehensive end-to-end live-test scenarios
-// Each scenario below chains multiple real service.handleMessage() calls, manually
-// threading each turn's saved context into the next buildService() call — the same
-// convention already used by the mixed-species regression test above (this codebase has
-// no infrastructure for re-using one service instance across turns; conversations.
-// getOrCreate is a fixed, one-time snapshot per buildService() call). Answers, one
-// scenario each, the exact questions raised in a real live-test review:
+// End-to-end live-test scenarios
+// Each scenario chains real handleMessage() calls, threading each turn's saved context into the
+// next buildService(): there is no infrastructure for reusing one service instance across turns.
 describe('AgentService — end-to-end live-test scenarios (comprehensive)', () => {
   // Q: "is it the user asked twice?" — no: DATA_CAPTURE only asks a field while it's
   // genuinely empty. A live "asked twice" report traces to ASR mis-transcribing an

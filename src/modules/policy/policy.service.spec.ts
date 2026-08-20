@@ -337,12 +337,9 @@ describe('PolicyService.generateFinalPdf', () => {
   });
 
   it('regression — uses the premium LOCKED IN at issuance (policy.monthly_premium), not the live catalog price', async () => {
-    // Real bug: generateFinalPdf read product.basePremium straight from the current
-    // PRODUCTS catalog instead of the policy's own stored monthly_premium. The webhook
-    // fires asynchronously (sometimes hours after issuance) — if catalog pricing changes
-    // in that window, or the policy's premium was computed per-pet (a multiplied amount
-    // that no longer equals any single product's basePremium), the final PDF would show
-    // a premium the user was never actually charged.
+    // generateFinalPdf read basePremium from the live catalog instead of the policy's own stored
+    // premium; the webhook can fire hours later, so the final PDF could show a premium the
+    // customer was never charged.
     const pdf = makePdfMock();
     const service = new PolicyService(makeSupabaseMock(), pdf);
     await service.generateFinalPdf({ ...policy, monthly_premium: 43500 });

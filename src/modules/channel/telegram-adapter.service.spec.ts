@@ -27,11 +27,8 @@ function makeCtx(message: Record<string, unknown>) {
 describe('TelegramAdapter.normalize — unsupported media', () => {
   const adapter = new TelegramAdapter(makeConfig());
 
-  // A plain photo is no longer generically "unsupported" — the cosmetic
-  // selfie-KYC step needs to receive one as a valid answer (see AgentService's
-  // awaitingSelfie step). It carries width/height instead of a bare `true`, and
-  // AgentService decides what that means based on conversation state (expected selfie
-  // vs. a stray unrelated photo).
+  // A plain photo is not generically unsupported: the cosmetic selfie step needs it as a valid
+  // answer, so it carries dimensions and AgentService decides what that means by state.
   it('regression — a plain photo sets photo dimensions instead of unsupportedInput, so a cosmetic selfie-KYC step can receive it', async () => {
     const result = await adapter.normalize(makeCtx({ photo: [{ file_id: 'photo-1', width: 100, height: 100 }] }));
     expect(result.photo).toEqual({ width: 100, height: 100 });
@@ -124,12 +121,8 @@ describe('TelegramAdapter — transcribeVoice error handling', () => {
     (adapter as any).bot = { api: { getFile: jest.fn().mockResolvedValue({ file_path: 'voice/file123.oga' }) } };
   }
 
-  // Regression: a non-2xx response from Groq's transcription endpoint (rate limit, bad
-  // audio format, auth failure) was never checked — if the error body happened to be
-  // valid JSON without a `text` field, transcribeVoice silently returned '' as if the
-  // user had said nothing, with NO log at all distinguishing "transcription failed" from
-  // "user was silent". It must still degrade gracefully (empty text, no crash) but the
-  // failure has to be visible to whoever operates the bot.
+  // A non-2xx from the transcription endpoint was never checked, so an error body that happened to
+  // be JSON returned '' as if the user had said nothing. It degrades gracefully but must be logged.
   it('regression — a non-2xx Groq response is logged as an error, not silently swallowed', async () => {
     const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     global.fetch = jest.fn()
@@ -145,12 +138,8 @@ describe('TelegramAdapter — transcribeVoice error handling', () => {
     errorSpy.mockRestore();
   });
 
-  // Regression: transcribeVoice() returned '' immediately when LLM_API_KEY was unset,
-  // with zero logging — indistinguishable from "user sent a silent voice note" in every
-  // log and every downstream conversation. This is the exact live-test symptom "voice
-  // still not identified": whoever operates the bot had no way to tell, from logs alone,
-  // that voice was completely disabled by a missing env var (same var also breaks NLP,
-  // but that path at least logs a warning on failure).
+  // Without the key, transcribeVoice returned '' with zero logging — indistinguishable from a
+  // silent voice note, so nobody operating the bot could tell voice was disabled entirely.
   it('regression — missing LLM_API_KEY is logged as a warning, not silently swallowed', async () => {
     const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const config = {
@@ -304,12 +293,8 @@ describe('TelegramAdapter.sendChoices', () => {
   });
 });
 
-// "is there a way to show an animated successfully check pass
-// inside the chat?" — Telegram's native message reactions render with a small built-in
-// animation and need no hosted asset (GIF/sticker), unlike sendAnimation/sendSticker.
-// A real branded success-checkmark video (src/assets/success-check.mp4)
-// for the selfie-confirmed and payment-confirmed moments — heavier than a reaction, so
-// used only where the user explicitly asked for it.
+// A native message reaction animates without a hosted asset, unlike sendAnimation/sendSticker; the
+// branded success video is heavier, so it is used only at the selfie and payment moments.
 describe('TelegramAdapter.sendAnimation', () => {
   function mockSendableBot() {
     return { api: { sendAnimation: jest.fn().mockResolvedValue(undefined) } };

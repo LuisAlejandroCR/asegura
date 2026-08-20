@@ -165,13 +165,8 @@ describe('QuotingService INVARIANTS', () => {
 describe('QuotingService — budget scoring from RANGO_SALARIAL', () => {
   const service = makeService();
 
-  // Cross-checking against the actual affiliate data
-  // (Usos_Productos_Afiliados_SIN_ID / the synthetic CSV built from its real marginal
-  // distribution): budgetFromSalary's keys ('hasta 2 smlv', 'entre 2 y 4 smlv', ...)
-  // never matched ANY real RANGO_SALARIAL value — the real bands are finer-grained
-  // ("Entre 1 y 1.5 SMLV", "Menor al SMLV", "Entre 2.5 y 3 SMLV", etc., 12 bands total).
-  // The single most common real band alone ("Entre 1 y 1.5 SMLV", ~65% of the 465k
-  // non-empty rows in Base 2) silently got NO budget scoring boost at all.
+  // budgetFromSalary's keys never matched any real RANGO_SALARIAL band: the real ones are
+  // finer-grained, so the most common band (~65% of rows) got no budget boost at all.
   it.each([
     'Menor al SMLV', 'Entre 1 y 1.5 SMLV', 'Entre 1.5 y 2 SMLV', 'Entre 2 y 2.5 SMLV',
     'Entre 2.5 y 3 SMLV', 'Entre 3 y 4 SMLV', 'Entre 4 y 6 SMLV', 'Entre 6 y 8 SMLV',
@@ -208,13 +203,8 @@ describe('QuotingService — budget scoring from RANGO_SALARIAL', () => {
   });
 });
 
-// Beneficiaries reason text
-// Real observed bug: "Te lo recomiendo porque: Cubre a 1 personas." — ungrammatical
-// (singular "1" with plural "personas"), and Groq's own JSON schema shows
-// "beneficiaries": 1 as an EXAMPLE value in the prompt, so the LLM often defaults to 1
-// even when the user's message carries no real signal about family size at all. Showing
-// this reason for beneficiaries=1 makes every quote look "personalized" with a
-// trivially-true, non-distinguishing fact, undermining the actual personalization pitch.
+// Groq's schema shows "beneficiaries": 1 as its own example, so the LLM defaults to 1 with no
+// real signal — a reason built on that reads personalized while being trivially true.
 
 describe('QuotingService — "Cubre a N personas" reason text', () => {
   const service = makeService();
@@ -235,11 +225,8 @@ describe('QuotingService — "Cubre a N personas" reason text', () => {
 describe('QuotingService — category cross-sell map (locked-in current behavior)', () => {
   const service = makeService();
 
-  // isRelatedCategory(a, b) reads as "category `a` is also relevant when the signal is `b`",
-  // and is asymmetric on purpose: vida<->accidentes cross-sell both ways; asistencia is
-  // relevant to a vida signal but not the reverse; mascotas cross-sells through
-  // mentionsPersonalCoverage in agent.service.ts, not this map. The businessPriority
-  // tie-breaker decides the contested last top-3 slot, so asistencia wins it over accidentes.
+  // isRelatedCategory(a, b) reads "category a is relevant when the signal is b" and is
+  // asymmetric on purpose; businessPriority decides the contested last top-3 slot.
   it('an accidentes signal does NOT surface vida products — 3 direct accidentes matches already fill the top-3 cap', () => {
     const scores = service.score({ productCategory: 'accidentes' });
     expect(scores).toHaveLength(3);
@@ -251,12 +238,8 @@ describe('QuotingService — category cross-sell map (locked-in current behavior
     expect(scores.some((s) => PRODUCTS.find((p) => p.id === s.productId)?.category === 'vida')).toBe(false);
   });
 
-  // A vida signal has exactly 2 direct vida products (vida, vida-ahorro), leaving one
-  // top-3 slot contested among the related accidentes/asistencia candidates. Prioritized
-  // asistencia products (asistencias-multiples, exequial, asistencias-medicas) and the
-  // prioritized accidentes-exequial all score higher than the two non-prioritized
-  // accidentes products — an asistencia product wins the slot by catalog order among the
-  // prioritized ties.
+  // A vida signal has only two direct vida products, so one top-3 slot is contested: the
+  // prioritized asistencia candidates outscore the two non-prioritized accidentes ones.
   it('a vida signal now surfaces a prioritized asistencia product in the contested last top-3 slot, not accidentes', () => {
     const scores = service.score({ productCategory: 'vida' });
     expect(scores).toHaveLength(3);
@@ -321,12 +304,8 @@ describe('QuotingService.bestQuote — never substitutes an explicit category ch
 describe('QuotingService INVARIANT — every NLP-reachable category yields a recommendation', () => {
   const service = makeService();
 
-  // Regression: 'hogar' is a fully-wired NLP category (schema, extraction, cross-sell
-  // keywords, and even the DISCOVERY prompt literally ask about "tu hogar") but the real
-  // Colsubsidio catalog has zero products categorized 'hogar' — a user who explicitly
-  // asked for home insurance hit a structural dead end with no product ever offered. This
-  // invariant guards the whole class of bug: any category the NLP layer can emit must be
-  // reachable to at least one real product, directly or via a cross-sell relationship.
+  // Every category the NLP can emit must reach a real product: 'hogar' was wired into the
+  // schema and the prompt while the catalog had none — a structural dead end for the user.
   it('every non-null productCategory the NLP schema can emit returns at least one product', () => {
     const categories: NonNullable<AffiliateSignals['productCategory']>[] = [
       'vida', 'hogar', 'accidentes', 'asistencia', 'mascotas',
@@ -338,11 +317,8 @@ describe('QuotingService INVARIANT — every NLP-reachable category yields a rec
   });
 });
 
-// Business feedback: 7 products are now prioritized for sale (direct-sell,
-// require only basic cédula/nombre/correo) — vida, asistencias-multiples, exequial,
-// accidentes-exequial, asistencias-medicas, medicina-prepagada-gatos,
-// medicina-prepagada-perros. When multiple same-category products otherwise tie, a
-// prioritized product must outrank a non-prioritized one.
+// Seven products are prioritized for direct sale (only cédula, nombre and correo). When
+// same-category products otherwise tie, a prioritized one must outrank a non-prioritized one.
 describe('QuotingService — business-priority boost', () => {
   const service = makeService();
   const prioritizedIds = [
@@ -381,14 +357,9 @@ describe('QuotingService — conditional underwriting flag', () => {
   });
 });
 
-// Hyper-personalization tier — ported from a teammate's Python prototype
-// (feature/motor-python-hiperpersonalizacion, analytics/reglas_negocio.py), reworked to
-// use only signals the live conversation actually collects. The branch's age/pensioner
-// tier (exequial for 55+) could NOT be ported: AffiliateSignals.edad is declared in the
-// type but never populated anywhere live — the NLP schema only ever extracts a PET's age
-// (petAge / pets[].age), never a human affiliate's own age. That tier is deferred to
-// Phase 2, pending a new DISCOVERY question. This block covers only the two tiers that
-// use fields already populated today: beneficiaries (dependents proxy) and rangoSalarial.
+// Hyper-personalization tiers, limited to signals the live conversation actually collects.
+// The age tier could not be ported: AffiliateSignals.edad is declared but never populated —
+// the NLP schema only extracts a pet's age, never the affiliate's own.
 describe('QuotingService — hyper-personalization tier (dependents/income)', () => {
   const service = makeService();
 
@@ -400,13 +371,8 @@ describe('QuotingService — hyper-personalization tier (dependents/income)', ()
     expect(vidaAhorro.reasons.some((r) => r.includes('ahorrar') || r.includes('Ahorro'))).toBe(true);
   });
 
-  // Regression: rangoSalarial is declared in AffiliateSignals but is NEVER populated by
-  // the live NLP schema (InsuranceIntent has no rangoSalarial field at all — confirmed by
-  // grep across groq-nlp.service.ts and nlp/types.ts) — it only ever existed as an offline
-  // CSV-calibration signal. The one live, user-stated income signal is `budget` (an
-  // explicit peso amount), already used for the "dentro de tu presupuesto" boost above.
-  // The tier bonus must react to the SAME effective budget, or it can never fire in
-  // production regardless of what a real user says.
+  // rangoSalarial is declared but never populated live; the only user-stated income signal is
+  // `budget`. The tier must react to the same effective budget or it can never fire.
   it('dependents + high explicit budget (no rangoSalarial) also upgrades vida-ahorro above vida', () => {
     const scores = service.score({ productCategory: 'vida', beneficiaries: 3, budget: 100_000 });
     const vida = scores.find((s) => s.productId === 'vida')!;
@@ -439,11 +405,8 @@ describe('QuotingService — hyper-personalization tier (dependents/income)', ()
   });
 
   it('no dependents + low income leaves accidentes-premium without the tier boost', () => {
-    // rangoSalarial deliberately omitted here (rather than a real low band like "Menor
-    // al SMLV"): any recognized band also clears vida's own low basePremium (12000) and
-    // pulls it into a contested top-3 slot via the bidirectional accidentes<->vida
-    // category relation, which would make this comparison depend on unrelated tie-break
-    // order instead of the tier boost being tested.
+    // rangoSalarial omitted on purpose: any recognized band also clears vida's low basePremium
+    // and drags it into a contested slot, so the result would hinge on tie-break order.
     const withBoost = service.score({ productCategory: 'accidentes', beneficiaries: 1, rangoSalarial: 'Entre 6 y 8 SMLV' })
       .find((s) => s.productId === 'accidentes-premium')!.matchScore;
     const withoutBoost = service.score({ productCategory: 'accidentes', beneficiaries: 1 })
@@ -526,13 +489,8 @@ describe('QuotingService — hyper-personalization tier (dependents/income)', ()
   });
 });
 
-// "why this product" reason ordering
-// Reasons used to surface in PUSH order: the exact-category branch pushed NO reason at
-// all, the related-category branch pushed a raw slug (`Categoría: vida`), and the
-// persuasive tier sentences were pushed LAST — so `formatQuote`'s `reasons[0]`
-// (agent.service.ts) almost always displayed the least compelling line, or the slug
-// itself, verbatim, to the user. This weight-ranks and sorts the SAME reasons at return
-// time; matchScore arithmetic is untouched (see the pinned-literals invariant below).
+// Reasons are weight-ranked at return time so reasons[0] is the most compelling line and never
+// a raw category slug; matchScore arithmetic is untouched (see the pinned-literals invariant).
 describe('QuotingService — weight-ranked "why this product" reasons (Step 1)', () => {
   const service = makeService();
 
@@ -597,12 +555,8 @@ describe('QuotingService — weight-ranked "why this product" reasons (Step 1)',
   });
 });
 
-// Step 2: `dependents` wakes the dormant tiers with a trustworthy signal
-// `beneficiaries` is untrustworthy by design (Groq's schema shows "beneficiaries": 1 as
-// its OWN example, so the LLM often defaults to 1 with no real signal). `dependents` is
-// only ever set by a real DISCOVERY question (Step 3) — when present, it takes
-// precedence; when absent (undefined), behavior is byte-for-byte the old
-// beneficiaries-only fallback, so every pre-existing test/signal set is unaffected.
+// `dependents` comes only from a real DISCOVERY question, so it takes precedence over
+// `beneficiaries`; absent, behavior is the old beneficiaries-only fallback.
 describe('QuotingService — dependents field precedence (Step 2)', () => {
   const service = makeService();
 
@@ -625,12 +579,8 @@ describe('QuotingService — dependents field precedence (Step 2)', () => {
   });
 });
 
-// Urgency wakes non-underwriting products
-// Already inferred by the NLP layer from words like "urgente"/"ya" (InsuranceIntent.
-// urgency), but never previously read here. requiresUnderwriting products (vida,
-// medicina-prepagada-*) genuinely take longer to activate (age/illness info required
-// before the policy can be issued — see AgentService's DATA_CAPTURE flow), so someone
-// who needs protection NOW is honestly better served by a direct-sell product.
+// requiresUnderwriting products genuinely take longer to activate, so an urgent signal must
+// favor a direct-sell product.
 describe('QuotingService — urgency wakes non-underwriting products (Matriz 2)', () => {
   const service = makeService();
 

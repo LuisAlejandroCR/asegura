@@ -15,11 +15,8 @@ function makeConfig(overrides: Record<string, string> = {}) {
   return { get: jest.fn((key: string) => values[key] ?? undefined) } as any;
 }
 
-// Resolves a dotted path (e.g. "transaction.id") against the event's `data` object —
-// mirrors Wompi's real webhook signature algorithm (docs.wompi.co/docs/colombia/eventos/),
-// which explicitly states the `properties` set and order "pueden variar en el tiempo y en
-// cada evento" (can vary over time and per event) and must be read dynamically, never
-// hardcoded to a fixed field list.
+// Resolves a dotted path against the event's data object, mirroring Wompi's real algorithm: the
+// docs state the properties set and order can vary per event, so it must be read dynamically.
 function resolvePath(data: unknown, path: string): string {
   const value = path.split('.').reduce((acc: any, key) => acc?.[key], data);
   return value === undefined || value === null ? '' : String(value);
@@ -143,12 +140,9 @@ describe('WompiService — validateWebhookSignature', () => {
 });
 
 describe('WompiService — validateWebhookSignature reads properties dynamically', () => {
-  // Real bug found during audit: the code hardcoded the concatenation order to
-  // transaction.id + transaction.status + transaction.amount_in_cents. Wompi's own docs
-  // warn this set/order "pueden variar en el tiempo y en cada evento" — if a live webhook
-  // ever sent a different order or an extra field, every signature check would silently
-  // fail and NO real payment would ever be confirmed. The event's own signature.properties
-  // must be the source of truth, not an assumption baked into the code.
+  // The code hardcoded the concatenation order, which the docs warn can change: a different order
+  // or an extra field would fail every signature check and no real payment would ever confirm.
+  // The event's own signature.properties is the source of truth.
 
   it('validates correctly when properties are given in a different order', () => {
     const service = new WompiService(makeConfig());

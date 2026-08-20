@@ -9,13 +9,7 @@ Hackathon Colsubsidio × 30X · Julio 2026
 
 ## El problema
 
-Comprar un seguro en Colsubsidio hoy exige hablar con un asesor: horarios restringidos, esperas, experiencias inconsistentes. El modelo no escala. Asegura lo reemplaza.
-
----
-
-## ¿Qué hace?
-
-Asegura es un agente que conversa en español (texto y voz), identifica la necesidad real del afiliado con base en su perfil, y cierra la venta dentro del chat:
+Comprar un seguro en Colsubsidio hoy exige hablar con un asesor: horarios restringidos, esperas, experiencias inconsistentes. El modelo no escala. Asegura lo reemplaza con un agente que conversa en español — texto o voz —, identifica la necesidad real del afiliado con base en su perfil y cierra la venta dentro del chat.
 
 | Criterio | Cómo lo resuelve Asegura |
 |----------|--------------------------|
@@ -85,8 +79,8 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 | Deploy | Railway (API) + Vercel (pitch web) |
 | Dashboard | Metabase |
 | Chat web (AseguraWeb) | Página propia con recorrido por etapas, cotización animada y pago — `apps/web/texto.html` |
-| Voz en tiempo real | LiveKit Agents (AseguraWeb, en construcción — ver `apps/web/voz.html`) |
-| Tests | 1004 (unit + fuzz + invariant) |
+| Voz en tiempo real | LiveKit Agents + ElevenLabs — `apps/web/voz.html` |
+| Tests | 1267 en 46 suites (unit + fuzz + invariantes) |
 
 ---
 
@@ -109,19 +103,9 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 
 ---
 
-## Verificación de póliza
+## Verificación y privacidad
 
-El PDF de cada póliza incluye un código QR que enlaza a su registro de auditoría — escaneable desde cualquier celular.
-
-**Roadmap:** registro inmutable en Celo Mainnet para una capa adicional de auditoría pública
-
----
-
-## Privacidad
-
-La autorización de tratamiento de datos se solicita antes de consultar cualquier perfil (Ley 1581 de 2012). Sin autorización, el flujo no continúa.
-
-**Nota sobre `Usos_Productos_Afiliados_SIMULADO.csv`:** es un dataset **sintético** generado para el hackathon — no contiene datos reales de afiliados de Colsubsidio. Se usa únicamente para probar la personalización del agente (segmento familiar, rango salarial, etc.) con un volumen de datos realista.
+El PDF de cada póliza incluye un QR que enlaza a su registro de auditoría, escaneable desde cualquier celular; el registro inmutable en Celo Mainnet queda como roadmap. La autorización de tratamiento de datos se pide antes de consultar cualquier perfil (Ley 1581 de 2012) y sin ella el flujo no continúa. `Usos_Productos_Afiliados_SIMULADO.csv` es un dataset **sintético**: no contiene datos reales de afiliados, solo el volumen necesario para probar la personalización.
 
 ---
 

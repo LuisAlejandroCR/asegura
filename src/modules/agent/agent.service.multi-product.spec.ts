@@ -1,12 +1,6 @@
-// agent.service.multi-product.spec.ts: the backend half of buying 2+ different products
-// in one purchase — one combined Wompi payment, one policy row + PDF per product (see
-// CreatePaymentLinkFlow and PolicyService.findAllByWompiLinkId).
-// ("restore the flow"), nothing in the live agent conversation sets
-// context.selectedProductIds automatically anymore — a quote in progress is never
-// interrupted by a mention of a different category (see deferCrossSell in
-// agent.service.ts). These tests cover the DATA_CAPTURE/payment machinery directly by
-// constructing a context with selectedProductIds already set, so it keeps working
-// correctly if that field is ever populated some other way.
+// agent.service.multi-product.spec.ts: buying 2+ products in one purchase — one combined Wompi
+// payment, one policy row and PDF per product. Nothing in the live conversation sets
+// selectedProductIds today, so these tests construct the context and drive the payment machinery.
 import { ConversationState } from './types';
 import { ProductCatalog } from '../quoting/product-catalog.service';
 import { makeMessage, makeIntent, buildService } from './agent.service.test-helpers';
@@ -41,11 +35,8 @@ describe('AgentService — multi-product purchase: pet details still collected w
 });
 
 describe('AgentService — multi-product purchase: DATA_CAPTURE issues one policy per product', () => {
-  // "sí" now issues the policies immediately (unchanged) but asks the
-  // payment method (Tarjeta Colsubsidio vs. link de pago) before generating the Wompi
-  // link — see the payment-method-choice describe block in agent.service.spec.ts. The
-  // combined-amount payment link itself is created on the FOLLOW-UP turn once that
-  // question is answered.
+  // Confirming issues the policies immediately but asks the payment method first; the combined
+  // payment link is created on the follow-up turn, once that question is answered.
   it('confirming with 2 selected products issues 2 policies and asks how to pay (link not generated yet)', async () => {
     const vidaProduct = PRODUCTS.find(p => p.category === 'vida')!;
     const petProduct = PRODUCTS.find(p => p.id === 'asistencia-veterinaria')!;

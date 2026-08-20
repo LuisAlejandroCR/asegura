@@ -83,13 +83,9 @@ describe('env.validation — Wompi cross-field requirement', () => {
 });
 
 describe('env.validation — Telegram webhook mode requirement', () => {
-  // Regression: main.ts calls config.getOrThrow('TELEGRAM_WEBHOOK_SECRET') when
-  // PUBLIC_URL is set (webhook mode) — that throw happens deep inside the unawaited
-  // bootstrap() call with no .catch(), so a Railway deploy with PUBLIC_URL +
-  // TELEGRAM_BOT_TOKEN set but TELEGRAM_WEBHOOK_SECRET forgotten crashes silently before
-  // the app ever binds to a port. This must fail fast at startup with a clear message
-  // instead. (Renamed from HOST to PUBLIC_URL — too generic a name, easy to confuse with
-  // a bind-address convention used elsewhere.)
+  // main.ts calls getOrThrow for the webhook secret when PUBLIC_URL is set, deep inside an
+  // unawaited bootstrap with no .catch() — so a deploy missing it crashes before binding a port.
+  // This must fail fast at startup with a clear message instead.
   it('exits when PUBLIC_URL is set but TELEGRAM_WEBHOOK_SECRET is missing', () => {
     const { exitSpy, restore } = withMockedExit();
     validate(baseConfig({ PUBLIC_URL: 'https://asegura-production.up.railway.app' }));

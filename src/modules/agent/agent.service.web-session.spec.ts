@@ -1,9 +1,6 @@
-// agent.service.web-session.spec.ts: AgentService.handleWebMessage — the AseguraWeb
-// (texto.html/voz.html) entry point. Unlike handleMessage (Telegram/WhatsApp, dispatches
-// through an IChannelAdapter), this returns the reply as a WebReply object the
-// web-session.controller.ts sends back as JSON. Reuses the same computeReply core, so a
-// web-originated message must land on the EXACT SAME conversation as the chat it was
-// linked from — never a separate "web channel" row.
+// agent.service.web-session.spec.ts: handleWebMessage, the AseguraWeb entry point, returns a
+// WebReply as JSON instead of dispatching through a channel adapter. It reuses the same
+// computeReply core and must land on the conversation it was linked from, never a separate row.
 
 import { buildService, makeConversation } from './agent.service.test-helpers';
 import { ConversationState } from './types';

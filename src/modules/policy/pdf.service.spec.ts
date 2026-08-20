@@ -65,15 +65,9 @@ describe('PdfService — petCount pricing display', () => {
     expect(lines.total).toBeNull();
   });
 
-  // PolicyService.issue() stores monthly_premium as the
-  // ALREADY-multiplied total locked in at issuance (computeTotalPremium(product,
-  // petCount) — see policy.service.spec.ts's "uses the premium LOCKED IN at issuance"
-  // regression test), and generateFinalPdf forwards that same total straight through.
-  // But this function's old contract treated its input as a PER-UNIT price and
-  // multiplied it AGAIN — so any real multi-pet policy's printed certificate showed a
-  // fabricated, doubly-multiplied total (e.g. $43.500 real charge printed as $130.500).
-  // The input here is the final locked-in TOTAL; the per-pet line is derived by
-  // dividing back down, and the total line is the total unchanged.
+  // The input is the final locked-in TOTAL, not a per-unit price: treating it as per-unit
+  // multiplied it again, so a multi-pet certificate printed a total the customer never paid.
+  // The per-pet line is derived by dividing back down.
   it('regression — treats the input as the already-computed TOTAL, not a per-unit price to multiply again', () => {
     const lines = buildPremiumLines(43500, 3);
     expect(lines.primary).toContain('por mascota');

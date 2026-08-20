@@ -1,9 +1,6 @@
-// agent.service.web-modality.spec.ts: plan-17 §11 — once WEB_APP_URL is configured, the
-// agent asks "¿hablar o escribir?" before the F01 category buttons, and sends a signed
-// AseguraWeb link once the user answers. Gated entirely behind WEB_APP_URL — with it
-// unset (every existing spec's default), behavior must stay byte-for-byte identical to
-// before this feature (see agent.service.spec.ts / agent.service.multi-product.spec.ts,
-// unmodified by this file).
+// agent.service.web-modality.spec.ts: with WEB_APP_URL configured, the agent asks "¿hablar o
+// escribir?" before the F01 buttons and sends a signed AseguraWeb link. Unset, behavior must stay
+// byte-for-byte identical to before the feature.
 
 import { buildService } from './agent.service.test-helpers';
 import { ConversationState } from './types';
@@ -99,11 +96,9 @@ describe('AUTHORIZATION → DISCOVERY entry — WEB_APP_URL configured', () => {
     expect(sentText).not.toContain('texto.html');
   });
 
-  // The question itself is "¿hablar o escribir?", so people answer
-  // by naming BOTH ("escribir, no hablar" / "escribir mejor que hablar"). Voice won on a
-  // bare mention, so the choice was recorded inverted. The damage surfaces at the very END:
-  // webModality builds Wompi's redirect_url, so someone who asked to write got the voice
-  // page opened on them right after paying — the last screen of the whole flow.
+  // The question names both options, so people answer naming both. Voice won on a bare mention, so
+  // the choice was recorded inverted — and webModality builds Wompi's redirect_url, so the damage
+  // surfaced on the last screen of the flow, right after paying.
   it.each([
     ['quiero escribir, no hablar'],
     ['prefiero escribir que hablar'],

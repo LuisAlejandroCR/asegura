@@ -83,13 +83,9 @@ describe('pickPersistentFields', () => {
     expect(PERSISTENT_FIELDS).not.toContain('awaitingAffiliateId');
   });
 
-  // Tapping "Mi mascota" on a FRESH
-  // restarted conversation jumped straight to a stale one-species quote with zero
-  // re-confirmation — petType (narrowed to 'perro' by an earlier, unrelated inquiry) and
-  // petSpeciesCounts silently satisfied every gate in handleDiscovery's mixto flow.
-  // Unlike dependents/budget/cedula (facts about the PERSON), these describe THIS
-  // SPECIFIC inquiry's resolution — same reasoning as productCategory above, a fresh
-  // mascota inquiry may legitimately differ and must always re-ask.
+  // petType and petSpeciesCounts describe THIS inquiry's resolution, not a fact about the person
+  // like dependents or cédula: kept across a restart they satisfied every gate of the mixto flow
+  // and quoted one species with no re-confirmation.
   it('deliberately excludes petType, petSpeciesCounts, and pets — a fresh mascota inquiry must re-confirm species/counts, never silently reuse stale ones', () => {
     expect(PERSISTENT_FIELDS).not.toContain('petType');
     expect(PERSISTENT_FIELDS).not.toContain('petSpeciesCounts');

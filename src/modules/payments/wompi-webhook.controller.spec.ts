@@ -142,11 +142,9 @@ describe('WompiWebhookController — idempotency', () => {
 });
 
 describe('WompiWebhookController — malformed payload', () => {
-  // Regression: extractTransactionData used to destructure event.data.transaction.* with
-  // no existence check — an unexpected Wompi event shape (a ping/test event, or a bug on
-  // Wompi's side) would throw a raw TypeError instead of a clean, loggable "ignored"
-  // response. Signature validation alone can't catch this since it's mocked/independent
-  // of payload shape (and even a genuinely-signed event could still be a shape we don't expect).
+  // extractTransactionData destructured the transaction with no existence check, so an unexpected
+  // event shape threw a raw TypeError instead of a clean ignored response — and a signed event can
+  // still carry a shape we do not expect.
   it('returns ignored/malformed_payload when data.transaction is missing entirely', async () => {
     const { controller, policyService } = buildController();
     const malformed = {
@@ -221,12 +219,8 @@ describe('WompiWebhookController — APPROVED payment', () => {
 });
 
 describe('WompiWebhookController — post-purchase cross-sell', () => {
-  // The mid-quote cross-sell interruption was removed from AgentService — a purchase now
-  // always completes (payment + PDF) before anything else is offered. This is where that
-  // "something else" gets offered: once the policy is issued, the agent follows up with
-  // either the SPECIFIC category the user showed interest in earlier (context.pendingCrossSell,
-  // set by deferCrossSell) or a generic "want something else?" prompt, then transitions to
-  // DISCOVERY so the very next message starts a genuinely new, separate purchase.
+  // A purchase always completes before anything else is offered: this is where the deferred
+  // category (or a generic prompt) comes back, then the conversation returns to DISCOVERY.
   it('offers the specific deferred category and pre-seeds it in the new DISCOVERY context', async () => {
     const { controller, telegram, conversations } = buildController();
     conversations.findById.mockResolvedValue(makeConversation({ context: { pendingCrossSell: 'vida' } }));
@@ -238,12 +232,8 @@ describe('WompiWebhookController — post-purchase cross-sell', () => {
     );
   });
 
-  // Conversations that had already completed a real, Wompi-approved
-  // purchase ended up with conversations.state = 'abandoned' after the customer later
-  // declined to buy anything more — neither policyId/policyIds (purchase-specific, reset
-  // for the next one) nor awaitingCrossSellResponse (a one-shot flag) survive long enough
-  // to tell a LATER abandonIntent check "this person already bought something". This durable
-  // flag must be set once, permanently, on every real payment approval.
+  // Neither policyId nor the one-shot cross-sell flag survives long enough to tell a later
+  // abandonIntent check that this person already bought: the durable flag is set here, on approval.
   it('sets hasCompletedPurchase: true in the new post-purchase DISCOVERY context', async () => {
     const { controller, conversations } = buildController();
     conversations.findById.mockResolvedValue(makeConversation({ context: {} }));
