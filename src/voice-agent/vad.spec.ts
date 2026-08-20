@@ -199,3 +199,25 @@ describe('proveedor del modelo', () => {
     expect(usaGroqLlm({ VOICE_LLM: 'groq' })).toBe(true);
   });
 });
+
+// Un "ujum" duraba más de los 500 ms del default y cortaba al agente a media frase, porque
+// `minWords` viene en 0: cualquier sonido cuenta como interrupción.
+describe('respaldos verbales', () => {
+  it('exige dos palabras para interrumpir, no un sonido', async () => {
+    const proc = { userData: {} } as JobProcess<{ vad?: VAD }>;
+    await agent.prewarm!(proc);
+
+    const session = new voice.AgentSession({ vad: proc.userData.vad, turnHandling: TURN_HANDLING });
+
+    expect(session.sessionOptions.turnHandling.interruption.minWords).toBeGreaterThanOrEqual(2);
+  }, 30000);
+
+  it('sigue reanudando cuando la interrupción resultó falsa', async () => {
+    const proc = { userData: {} } as JobProcess<{ vad?: VAD }>;
+    await agent.prewarm!(proc);
+
+    const session = new voice.AgentSession({ vad: proc.userData.vad, turnHandling: TURN_HANDLING });
+
+    expect(session.sessionOptions.turnHandling.interruption.resumeFalseInterruption).toBe(true);
+  }, 30000);
+});

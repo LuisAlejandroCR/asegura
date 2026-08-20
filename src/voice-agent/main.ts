@@ -105,9 +105,13 @@ export function describeDisconnect(reason: number | undefined): string {
 // las tools, no en la transcripción.
 export const MAX_ITEMS_HISTORIAL = 20;
 
+// `minWords` viene en 0, así que cualquier sonido de más de medio segundo corta al agente:
+// un "ujum" o un "ajá" lo dejaban con la frase a medias. Con dos palabras, el respaldo verbal
+// deja de interrumpir y una objeción de verdad sigue entrando.
 export const TURN_HANDLING = {
   turnDetection: 'vad',
   preemptiveGeneration: { enabled: false },
+  interruption: { minWords: 2 },
 } as const;
 
 export default defineAgent<VoiceProcessData>({
@@ -145,6 +149,17 @@ export function usaGroqLlm(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 function construirLlm() {
+  // Groq y la pasarela se agotaron el mismo día, cada una por su lado. Con una base URL
+  // compatible con OpenAI —Google AI Studio, Cerebras, OpenRouter— cambiar de proveedor deja de
+  // ser un cambio de código y pasa a ser una variable.
+  const baseURL = process.env.VOICE_LLM_BASE_URL;
+  if (baseURL) {
+    return new openai.LLM({
+      model: process.env.VOICE_LLM_MODEL || 'gemini-2.5-flash',
+      apiKey: requireEnv('VOICE_LLM_API_KEY'),
+      baseURL,
+    });
+  }
   if (usaGroqLlm()) {
     return openai.LLM.withGroq({
       model: process.env.LLM_MODEL || 'openai/gpt-oss-120b',
