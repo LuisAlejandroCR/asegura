@@ -1,9 +1,10 @@
 // main.ts: AseguraWeb voice worker — a SEPARATE always-on process from the NestJS backend.
 // LiveKit workers register and receive job dispatches; they never answer HTTP. Runs as its
 // own Railway service via railway.voice.json. STT/LLM on Groq, TTS on ElevenLabs.
-import { type JobContext, ServerOptions, cli, defineAgent, voice } from '@livekit/agents';
+import { type JobContext, type JobProcess, type VAD, ServerOptions, cli, defineAgent, voice } from '@livekit/agents';
 import * as openai from '@livekit/agents-plugin-openai';
 import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
+import * as silero from '@livekit/agents-plugin-silero';
 import * as fs from 'fs';
 import dotenv from 'dotenv';
 import { VOICE_GREETING, createVoiceAgent } from './agent';
@@ -44,8 +45,15 @@ export function describeRequiredEnv(env: NodeJS.ProcessEnv = process.env): {
   return { ok: REQUIRED_ENV.every((name) => !!env[name]), report: lines.join('\n') };
 }
 
-export default defineAgent({
-  entry: async (ctx: JobContext) => {
+type VoiceProcessData = { vad?: VAD };
+
+export default defineAgent<VoiceProcessData>({
+  // Groq Whisper is batch, not streaming: without a VAD nothing decides where a user turn
+  // ends, so no audio is ever sent to transcribe and the caller waits forever.
+  prewarm: async (proc: JobProcess<VoiceProcessData>) => {
+    proc.userData.vad = await silero.VAD.load();
+  },
+  entry: async (ctx: JobContext<VoiceProcessData>) => {
     try {
       return await runSession(ctx);
     } catch (err) {
@@ -56,8 +64,9 @@ export default defineAgent({
   },
 });
 
-async function runSession(ctx: JobContext): Promise<void> {
+async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
     const session = new voice.AgentSession({
+      vad: ctx.proc.userData.vad ?? (await silero.VAD.load()),
       stt: openai.STT.withGroq({
         model: 'whisper-large-v3-turbo',
         apiKey: requireEnv('LLM_API_KEY'),

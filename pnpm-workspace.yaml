@@ -1,9 +1,15 @@
 packages:
   - 'apps/*'
 
+# Declared here for pnpm 10+ and in package.json's "pnpm" field for pnpm 9: each version
+# reads only one of the two, and a version that reads neither recomputes settings that no
+# longer match the lockfile, which fails the build with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH.
+ignoredOptionalDependencies:
+  # ~2 GB across the worker's processes for a turn-detection model. VAD comes from
+  # @livekit/agents-plugin-silero instead: 31 MB, and it ships its own linux binary.
+  - '@livekit/local-inference-*'
+
 allowBuilds:
-  # false: we don't use LiveKit's local-inference (VAD/turn-detection) — cloud STT/LLM/TTS
-  # only (Groq + ElevenLabs, see src/voice-agent/). No reason to run its native build script.
   '@livekit/local-inference': false
   '@nestjs/core': true
   esbuild: true

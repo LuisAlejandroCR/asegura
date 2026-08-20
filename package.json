@@ -20,6 +20,7 @@
     "@livekit/agents": "^1.6.2",
     "@livekit/agents-plugin-elevenlabs": "^1.6.2",
     "@livekit/agents-plugin-openai": "^1.6.2",
+    "@livekit/agents-plugin-silero": "^1.6.4",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^3.0.0",
     "@nestjs/core": "^10.0.0",
