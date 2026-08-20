@@ -689,7 +689,10 @@ const webToken = new URLSearchParams(location.search).get('token');
 
     room.on(RoomEvent.DataReceived, alRecibirDatos);
 
-    room.on(RoomEvent.Disconnected, () => {
+    room.on(RoomEvent.Disconnected, (motivo) => {
+      // Sin esto, una llamada cortada por el servidor — identidad duplicada, token vencido,
+      // señal perdida — se ve igual que un usuario colgando.
+      console.warn('Llamada terminada, motivo LiveKit:', motivo);
       clearInterval(cronometro);
       cronometro = null;
       cancelarEsperaAgente();

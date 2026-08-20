@@ -7,9 +7,9 @@ import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
 import * as silero from '@livekit/agents-plugin-silero';
 import * as fs from 'fs';
 import dotenv from 'dotenv';
-import { VOICE_GREETING, createVoiceAgent } from './agent';
+import { greetingFor, createVoiceAgent } from './agent';
 import { VoiceSessionState } from './session-state';
-import { buildVoiceDeps } from './deps';
+import { buildVoiceDeps, buildConversationLoader } from './deps';
 
 dotenv.config();
 
@@ -123,12 +123,13 @@ async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
     // conversation. A standalone voz.html visit has a random identity and can only quote.
     const participant = await ctx.waitForParticipant();
     const state = new VoiceSessionState(participant.identity);
+    state.merge(await buildConversationLoader()(participant.identity));
 
     await session.start({ agent: createVoiceAgent(state, buildVoiceDeps()), room: ctx.room });
 
-    // say(), not generateReply(): the Ley 1581 notice has to come out word for word. The
-    // consent gate itself lives in the agent instructions — this worker holds no state.
-    session.say(VOICE_GREETING);
+    // say(), not generateReply(): the Ley 1581 notice has to come out word for word. Which
+    // greeting depends on whether the chat already holds this person's consent.
+    session.say(greetingFor(state.context));
 }
 
 // A key and a voice id that exist still buy nothing: a free plan answers 402 for library

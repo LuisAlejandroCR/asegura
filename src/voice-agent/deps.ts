@@ -10,6 +10,8 @@ import { PolicyService } from '../modules/policy/policy.service';
 import { PdfService } from '../modules/policy/pdf.service';
 import { WompiService } from '../modules/payments/wompi.service';
 import { ToolDeps } from '../modules/agent/tools';
+import { ConversationService } from '../modules/agent/conversation.service';
+import { ConversationContext } from '../modules/agent/types';
 
 // ConfigService reads process.env when no module is attached, which is all this needs.
 const config = new ConfigService();
@@ -33,4 +35,22 @@ export function buildVoiceDeps(): ToolDeps {
   if (wompi.isEnabled) deps.payments = wompi;
 
   return deps;
+}
+
+// The LiveKit identity is the conversationId the chat link was minted for, so the call can
+// start from what the chat already collected — consent above all, which is otherwise asked
+// twice for the same person.
+export function buildConversationLoader(): (id: string) => Promise<ConversationContext> {
+  if (!config.get<string>('SUPABASE_URL') || !config.get<string>('SUPABASE_SERVICE_ROLE_KEY')) {
+    return async () => ({});
+  }
+  const conversations = new ConversationService(new SupabaseService(config));
+  return async (id: string) => {
+    try {
+      const conversation = await conversations.findById(id);
+      return conversation?.context ?? {};
+    } catch {
+      return {};
+    }
+  };
 }

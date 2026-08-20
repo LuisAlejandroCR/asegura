@@ -3,7 +3,7 @@
 // main.ts (that file requires live LIVEKIT_*/GROQ/ElevenLabs env vars at import time by
 // design — see its own header — so it's a script, not a unit under test).
 
-import { VOICE_GREETING, createVoiceAgent } from './agent';
+import { VOICE_GREETING, VOICE_GREETING_AUTHORIZED, createVoiceAgent, greetingFor } from './agent';
 import { VoiceSessionState } from './session-state';
 
 describe('createVoiceAgent', () => {
@@ -41,6 +41,19 @@ describe('Ley 1581 consent on the voice channel', () => {
     expect(instructions).toContain('hasta que autorice no preguntes nada personal ni uses otra herramienta');
   });
 
+  // Consent lives in the conversation row, so a call opened from the chat spent its first
+  // turn re-collecting an answer the person had already given.
+  it('skips the consent question when the chat already holds it', () => {
+    expect(greetingFor({ autorizado: true })).toBe(VOICE_GREETING_AUTHORIZED);
+    expect(VOICE_GREETING_AUTHORIZED).not.toMatch(/¿.*autorizas.*\?/i);
+    expect(VOICE_GREETING_AUTHORIZED).not.toMatch(/https?:\/\/|[*_[\]`]/);
+  });
+
+  it('still asks when nothing says the person authorized', () => {
+    expect(greetingFor({})).toBe(VOICE_GREETING);
+    expect(greetingFor({ autorizado: false })).toBe(VOICE_GREETING);
+  });
+
   // The prompt is now the polite half. The binding half is that the shared tools refuse
   // without context.autorizado, which is asserted in modules/agent/tools/tools.spec.ts.
   it('carries the whole flow, not just cotizar — this is what audit 3.4 was about', () => {
@@ -48,5 +61,27 @@ describe('Ley 1581 consent on the voice channel', () => {
     for (const name of ['autorizar', 'consultar_afiliado', 'cotizar', 'seleccionar_producto', 'capturar_datos', 'registrar_mascotas', 'preguntas_aseguramiento', 'registrar_lead', 'escalar_a_humano', 'emitir_poliza', 'generar_link_pago']) {
       expect(agent.toolCtx.hasTool(name)).toBe(true);
     }
+  });
+});
+
+// A call is not a form: the model asked for several things in one breath and re-asked what
+// it already knew, so a minute of talking captured three fields.
+describe('turn discipline on a call', () => {
+  const instructions = () =>
+    String(createVoiceAgent(new VoiceSessionState('conv-1')).instructions)
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+
+  it('demands one question per turn and forbids bundling', () => {
+    expect(instructions()).toContain('una sola pregunta por turno');
+    expect(instructions()).toContain('nunca pidas dos datos a la vez');
+  });
+
+  it('tells the model not to re-ask what it already knows', () => {
+    expect(instructions()).toContain('si ya sabes algo, no lo vuelvas a preguntar');
+  });
+
+  it('asks for cedula, nombre and correo one per turn instead of in one list', () => {
+    expect(instructions()).toContain('uno por turno');
   });
 });
