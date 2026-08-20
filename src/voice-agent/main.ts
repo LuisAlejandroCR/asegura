@@ -1,7 +1,7 @@
 // main.ts: AseguraWeb voice worker — a SEPARATE always-on process from the NestJS backend.
 // LiveKit workers register and receive job dispatches; they never answer HTTP. Runs as its
 // own Railway service via railway.voice.json. STT/LLM on Groq, TTS on ElevenLabs.
-import { type JobContext, type JobProcess, type VAD, ServerOptions, cli, defineAgent, voice } from '@livekit/agents';
+import { type JobContext, type JobProcess, type VAD, ServerOptions, cli, defineAgent, inference, tts as ttsLib, voice } from '@livekit/agents';
 import * as openai from '@livekit/agents-plugin-openai';
 import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
 import * as silero from '@livekit/agents-plugin-silero';
@@ -21,12 +21,26 @@ function requireEnv(name: string): string {
   return value;
 }
 
+// ElevenLabs cobra su propia cuota —10.000 caracteres al mes en el gratuito, que una demo
+// agota a mitad de camino— y su voz española exige plan pago. La pasarela de LiveKit sintetiza
+// contra las credenciales que el worker ya necesita para existir, así que va primero y
+// ElevenLabs queda de respaldo: si la primaria falla, el adaptador pasa a la otra sola.
+export function usaElevenLabs(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.VOICE_TTS === 'elevenlabs';
+}
+
+export function hayRespaldoElevenLabs(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !usaElevenLabs(env) && !!env.ELEVENLABS_API_KEY && !!env.ELEVENLABS_VOICE_ID;
+}
+
 // Checked at startup, not inside entry(): a key missing there lets the worker register and
 // then fail per call with LiveKit's opaque "error in entry function" — no name, no stack.
-const REQUIRED_ENV = [
-  'LLM_API_KEY', 'ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID',
-  'LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET',
-] as const;
+const REQUIRED_BASE = ['LLM_API_KEY', 'LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'] as const;
+const REQUIRED_ELEVENLABS = ['ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID'] as const;
+
+function requiredEnvNames(env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  return usaElevenLabs(env) ? [...REQUIRED_BASE, ...REQUIRED_ELEVENLABS] : REQUIRED_BASE;
+}
 
 // Reports the state of EVERY required variable, not just the first missing one. Failing on
 // the first says nothing about the other five, which turns "it is set" versus "the worker
@@ -36,13 +50,14 @@ export function describeRequiredEnv(env: NodeJS.ProcessEnv = process.env): {
   ok: boolean;
   report: string;
 } {
-  const lines = REQUIRED_ENV.map((name) => {
+  const names = requiredEnvNames(env);
+  const lines = names.map((name) => {
     const value = env[name];
     if (value === undefined) return `  ${name}: MISSING (not set on this service)`;
     if (!value) return `  ${name}: EMPTY (set, but with no value)`;
     return `  ${name}: ok (${value.length} chars)`;
   });
-  return { ok: REQUIRED_ENV.every((name) => !!env[name]), report: lines.join('\n') };
+  return { ok: names.every((name) => !!env[name]), report: lines.join('\n') };
 }
 
 type VoiceProcessData = { vad?: VAD };
@@ -105,6 +120,28 @@ export default defineAgent<VoiceProcessData>({
   },
 });
 
+function construirElevenLabs() {
+  return new elevenlabs.TTS({
+    apiKey: requireEnv('ELEVENLABS_API_KEY'),
+    voiceId: requireEnv('ELEVENLABS_VOICE_ID'),
+    model: 'eleven_multilingual_v2',
+    language: 'es',
+  });
+}
+
+function construirTts() {
+  if (usaElevenLabs()) return construirElevenLabs();
+
+  const pasarela = new inference.TTS({
+    model: process.env.VOICE_TTS_MODEL || 'cartesia/sonic-2',
+    ...(process.env.VOICE_TTS_VOICE ? { voice: process.env.VOICE_TTS_VOICE } : {}),
+    language: 'es',
+  });
+  if (!hayRespaldoElevenLabs()) return pasarela;
+
+  return new ttsLib.FallbackAdapter({ ttsInstances: [pasarela, construirElevenLabs()] });
+}
+
 async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
     const session = new voice.AgentSession({
       vad: ctx.proc.userData.vad ?? (await silero.VAD.load()),
@@ -118,12 +155,7 @@ async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
         model: process.env.LLM_MODEL || 'openai/gpt-oss-120b',
         apiKey: requireEnv('LLM_API_KEY'),
       }),
-      tts: new elevenlabs.TTS({
-        apiKey: requireEnv('ELEVENLABS_API_KEY'),
-        voiceId: requireEnv('ELEVENLABS_VOICE_ID'),
-        model: 'eleven_multilingual_v2',
-        language: 'es',
-      }),
+      tts: construirTts(),
     });
 
     session.on(voice.AgentSessionEventTypes.Error, (ev) => {
@@ -205,12 +237,14 @@ if (require.main === module) {
       // fd 2 closed: the throw still names the first offender.
     }
   }
-  for (const name of REQUIRED_ENV) requireEnv(name);
+  for (const name of requiredEnvNames()) requireEnv(name);
   void startWorker();
 }
 
 async function startWorker(): Promise<void> {
-  const tts = await checkTtsAccess();
+  // Solo ElevenLabs cobra aparte y puede quedarse sin cuota a mitad de mes; la pasarela de
+  // LiveKit usa las credenciales que ya se verificaron por nombre.
+  const tts = usaElevenLabs() ? await checkTtsAccess() : { ok: true, fatal: false, detail: 'livekit' };
   if (!tts.ok) {
     fs.writeSync(2, `voice-agent tts check: ${tts.detail}\n`);
     if (tts.fatal) process.exit(1);

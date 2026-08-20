@@ -3,7 +3,7 @@
 // end-of-turn executor this install excludes. Both shipped once and only showed on a live call.
 import type { JobProcess } from '@livekit/agents';
 import { VAD, initializeLogger, voice } from '@livekit/agents';
-import agent, { TURN_HANDLING, checkTtsAccess, describeDisconnect, describeSessionError } from './main';
+import agent, { TURN_HANDLING, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, hayRespaldoElevenLabs, usaElevenLabs } from './main';
 
 // AgentSession logs from its field initializers; outside cli.runApp nothing has set the logger up.
 beforeAll(() => initializeLogger({ pretty: false, level: 'silent' }));
@@ -116,5 +116,51 @@ describe('motivo de desconexión', () => {
   it('no se calla cuando no viene motivo ni cuando es uno que no conoce', () => {
     expect(describeDisconnect(undefined)).toBe('sin motivo reportado');
     expect(describeDisconnect(99)).toContain('99');
+  });
+});
+
+// El plan gratuito de ElevenLabs son 10.000 caracteres al mes: una demo los agota y el worker
+// entra en bucle de reinicio. La pasarela de LiveKit sintetiza con las credenciales que el
+// worker ya exige, así que no añade una cuota más que se pueda acabar sola.
+describe('proveedor de voz', () => {
+  it('usa la pasarela de LiveKit salvo que se pida ElevenLabs', () => {
+    expect(usaElevenLabs({})).toBe(false);
+    expect(usaElevenLabs({ VOICE_TTS: 'elevenlabs' })).toBe(true);
+  });
+
+  it('no exige las claves de ElevenLabs cuando no se usa', () => {
+    const env = {
+      LLM_API_KEY: 'k', LIVEKIT_URL: 'wss://x', LIVEKIT_API_KEY: 'k', LIVEKIT_API_SECRET: 's',
+    };
+
+    expect(describeRequiredEnv(env).ok).toBe(true);
+    expect(describeRequiredEnv(env).report).not.toContain('ELEVENLABS');
+  });
+
+  it('las sigue exigiendo cuando sí se usa', () => {
+    const env = {
+      VOICE_TTS: 'elevenlabs',
+      LLM_API_KEY: 'k', LIVEKIT_URL: 'wss://x', LIVEKIT_API_KEY: 'k', LIVEKIT_API_SECRET: 's',
+    };
+
+    expect(describeRequiredEnv(env).ok).toBe(false);
+    expect(describeRequiredEnv(env).report).toContain('ELEVENLABS_API_KEY: MISSING');
+  });
+});
+
+// El usuario pidió ElevenLabs de respaldo, no de reemplazo: si la pasarela falla a mitad de
+// llamada, el adaptador cambia solo en vez de dejar la llamada muda.
+describe('respaldo de voz', () => {
+  it('hay respaldo cuando las claves de ElevenLabs están y no es la primaria', () => {
+    expect(hayRespaldoElevenLabs({ ELEVENLABS_API_KEY: 'k', ELEVENLABS_VOICE_ID: 'v' })).toBe(true);
+  });
+
+  it('no hay respaldo sin claves', () => {
+    expect(hayRespaldoElevenLabs({})).toBe(false);
+    expect(hayRespaldoElevenLabs({ ELEVENLABS_API_KEY: 'k' })).toBe(false);
+  });
+
+  it('ElevenLabs no es su propio respaldo cuando ya es la primaria', () => {
+    expect(hayRespaldoElevenLabs({ VOICE_TTS: 'elevenlabs', ELEVENLABS_API_KEY: 'k', ELEVENLABS_VOICE_ID: 'v' })).toBe(false);
   });
 });
