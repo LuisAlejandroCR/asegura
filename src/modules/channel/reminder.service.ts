@@ -16,8 +16,8 @@ const REMINDER_TEXT = '¿Sigues ahí? Aquí estoy cuando quieras continuar 😊'
 const CLOSE_DELAY_MS = 180_000;
 
 // A real Wompi link stays payable for 30 minutes, so the generic 4-minute close abandoned
-// conversations mid-payment. 60s nudge + 33 min = past Wompi's own expiry with a buffer.
-const PAYMENT_CLOSE_DELAY_MS = 33 * 60 * 1000;
+// conversations mid-payment. Past Wompi's own expiry with a buffer.
+const PAYMENT_CLOSE_DELAY_MS = 7 * 60 * 1000;
 // The close has to be visible to the user, not just an analytics label written to the DB.
 const TIMEOUT_CLOSE_TEXT = 'Como no he sabido de ti en un rato, cierro esta conversación por ahora. Cuando quieras continuar, aquí estoy — 24/7, sin esperas 😊';
 
@@ -42,15 +42,27 @@ export class ReminderService {
   // still-payable Wompi link is never abandoned mid-payment.
   schedule(conversationId: string, userId: string, channel: 'telegram' | 'whatsapp', hasPendingPayment = false): void {
     this.cancel(conversationId);
+
+    // Con un link de pago abierto el silencio no es abandono: la persona está en el checkout,
+    // fuera del chat. Preguntarle "¿sigues ahí?" a los 60 segundos la interrumpe pagando, así
+    // que ahí solo queda el cierre, ya vencido el link.
+    if (hasPendingPayment) {
+      const closeTimer = setTimeout(() => {
+        this.closeTimers.delete(conversationId);
+        void this.closeIfStillStalled(conversationId, userId, channel);
+      }, PAYMENT_CLOSE_DELAY_MS);
+      this.closeTimers.set(conversationId, closeTimer);
+      return;
+    }
+
     const nudgeTimer = setTimeout(() => {
       this.nudgeTimers.delete(conversationId);
       void this.channels.get(channel).sendText(userId, REMINDER_TEXT);
 
-      const closeDelay = hasPendingPayment ? PAYMENT_CLOSE_DELAY_MS : CLOSE_DELAY_MS;
       const closeTimer = setTimeout(() => {
         this.closeTimers.delete(conversationId);
         void this.closeIfStillStalled(conversationId, userId, channel);
-      }, closeDelay);
+      }, CLOSE_DELAY_MS);
       this.closeTimers.set(conversationId, closeTimer);
     }, REMINDER_DELAY_MS);
     this.nudgeTimers.set(conversationId, nudgeTimer);

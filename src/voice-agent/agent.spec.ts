@@ -136,3 +136,16 @@ describe('herramientas por fase', () => {
     expect(nombres({ autorizado: true, quoteProductId: 'x' })).toContain('escalar_a_humano');
   });
 });
+
+// El agente ofrecía otro seguro a mitad de la venta, así que la persona terminaba sin ninguno.
+describe('una venta a la vez', () => {
+  const instructions = () =>
+    String(createVoiceAgent(new VoiceSessionState('conv-1')).instructions)
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+
+  it('prohíbe ofrecer otro seguro antes de emitir y cobrar el actual', () => {
+    expect(instructions()).toContain('una venta a la vez');
+    expect(instructions()).toContain('emitida y pagada');
+  });
+});

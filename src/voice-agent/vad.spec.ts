@@ -2,8 +2,8 @@
 // transcribe and answers nothing, and a session with no turn detection asks for a local
 // end-of-turn executor this install excludes. Both shipped once and only showed on a live call.
 import type { JobProcess } from '@livekit/agents';
-import { VAD, initializeLogger, voice } from '@livekit/agents';
-import agent, { TURN_HANDLING, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, hayRespaldoElevenLabs, usaElevenLabs } from './main';
+import { VAD, initializeLogger, llm, voice } from '@livekit/agents';
+import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, hayRespaldoElevenLabs, usaElevenLabs } from './main';
 
 // AgentSession logs from its field initializers; outside cli.runApp nothing has set the logger up.
 beforeAll(() => initializeLogger({ pretty: false, level: 'silent' }));
@@ -162,5 +162,31 @@ describe('respaldo de voz', () => {
 
   it('ElevenLabs no es su propio respaldo cuando ya es la primaria', () => {
     expect(hayRespaldoElevenLabs({ VOICE_TTS: 'elevenlabs', ELEVENLABS_API_KEY: 'k', ELEVENLABS_VOICE_ID: 'v' })).toBe(false);
+  });
+});
+
+// El historial viaja entero en cada petición: en una llamada de ocho minutos el turno pasó de
+// 1.844 a 3.711 tokens y el techo de 8.000 dejó de alcanzar para dos turnos por minuto.
+describe('historial acotado', () => {
+  it('recorta a un tope fijo en vez de crecer con la llamada', () => {
+    const ctx = llm.ChatContext.empty();
+    for (let i = 0; i < MAX_ITEMS_HISTORIAL + 15; i++) {
+      ctx.addMessage({ role: i % 2 === 0 ? 'user' : 'assistant', content: `turno ${i}` });
+    }
+
+    expect(ctx.items.length).toBeGreaterThan(MAX_ITEMS_HISTORIAL);
+    expect(ctx.copy().truncate(MAX_ITEMS_HISTORIAL).items.length).toBeLessThanOrEqual(MAX_ITEMS_HISTORIAL);
+  });
+
+  it('conserva los turnos más recientes, que son los que la venta necesita', () => {
+    const ctx = llm.ChatContext.empty();
+    for (let i = 0; i < MAX_ITEMS_HISTORIAL + 5; i++) {
+      ctx.addMessage({ role: i % 2 === 0 ? 'user' : 'assistant', content: `turno ${i}` });
+    }
+
+    const recortado = JSON.stringify(ctx.copy().truncate(MAX_ITEMS_HISTORIAL).items);
+
+    expect(recortado).toContain(`turno ${MAX_ITEMS_HISTORIAL + 4}`);
+    expect(recortado).not.toContain('turno 0');
   });
 });

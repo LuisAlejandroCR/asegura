@@ -199,24 +199,24 @@ describe('ReminderService', () => {
       await jest.advanceTimersByTimeAsync(60_000 + 180_000); // the old, regular close point
 
       expect(conversations.saveState).not.toHaveBeenCalled();
-      // Only the 60s nudge — no close message yet.
-      expect(telegram.sendText).toHaveBeenCalledTimes(1);
+      // Ni el aviso: con el checkout abierto la persona está pagando, no ausente.
+      expect(telegram.sendText).not.toHaveBeenCalled();
     });
 
-    it('auto-closes at 34 minutes total (60s nudge + 33min grace) when hasPendingPayment is true', async () => {
+    it('auto-closes once the link expired, and that is the only message it sends', async () => {
       const { registry, telegram } = makeChannels();
       const conversations = makeConversations({ state: ConversationState.PAYMENT, context: { checkoutUrl: 'https://checkout.wompi.co/l/test' } });
       const service = new ReminderService(registry, conversations);
 
       service.schedule('conv-1', 'user-1', 'telegram', true);
-      await jest.advanceTimersByTimeAsync(60_000 + 33 * 60_000);
+      await jest.advanceTimersByTimeAsync(33 * 60_000);
 
       expect(conversations.saveState).toHaveBeenCalledWith(
         'conv-1',
         ConversationState.ABANDONED,
         expect.anything(),
       );
-      expect(telegram.sendText).toHaveBeenCalledTimes(2);
+      expect(telegram.sendText).toHaveBeenCalledTimes(1);
     });
 
     it('hasPendingPayment defaults to false — unchanged 4-minute behavior when omitted', async () => {

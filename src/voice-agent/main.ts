@@ -98,6 +98,12 @@ export function describeDisconnect(reason: number | undefined): string {
 // Preemptive generation defaults to on with maxRetries 3, so one turn can send four full
 // requests — instructions plus eleven tool schemas, ~1.1k tokens each — and Groq's free tier
 // allows 8k tokens per minute. Off, a turn costs one request instead of four.
+// El historial entra entero en cada petición, así que una llamada larga se encarece sola: en
+// una de ocho minutos los turnos pasaron de 1.844 a 3.711 tokens y el techo de 8.000 dejó de
+// alcanzar para dos turnos por minuto. Lo que la venta necesita recordar vive en el estado y en
+// las tools, no en la transcripción.
+export const MAX_ITEMS_HISTORIAL = 20;
+
 export const TURN_HANDLING = {
   turnDetection: 'vad',
   preemptiveGeneration: { enabled: false },
@@ -186,6 +192,12 @@ async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
 
     ctx.room.on('participantDisconnected', (p: { identity?: string; disconnectReason?: number }) => {
       console.error('[asegura-voice] se fue el participante: ' + describeDisconnect(p.disconnectReason));
+    });
+
+    session.on(voice.AgentSessionEventTypes.ConversationItemAdded, () => {
+      const historial = agent.chatCtx;
+      if (historial.items.length <= MAX_ITEMS_HISTORIAL) return;
+      void agent.updateChatCtx(historial.copy().truncate(MAX_ITEMS_HISTORIAL));
     });
 
     await session.start({ agent, room: ctx.room });
