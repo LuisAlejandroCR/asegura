@@ -47,10 +47,32 @@ export function describeRequiredEnv(env: NodeJS.ProcessEnv = process.env): {
 
 type VoiceProcessData = { vad?: VAD };
 
+// The retry loop logs the provider error as a structured field the container log drops, so a
+// quota wall reads as "failed to generate LLM completion" with no status and no limit.
+export function describeSessionError(error: unknown): string {
+  const wrapped = (error as { error?: unknown })?.error;
+  const cause = (wrapped instanceof Error ? wrapped : error) as Error & {
+    statusCode?: number;
+    body?: { message?: string } | null;
+  };
+  const parts = [(error as { type?: string })?.type ?? 'error'];
+  if (cause?.statusCode !== undefined) parts.push('status=' + cause.statusCode);
+  if (cause?.body?.message) parts.push(cause.body.message);
+  else if (cause?.message) parts.push(cause.message);
+  return parts.join(' ');
+}
+
 // Left unset, AgentSession builds an InferenceTurnDetector and asks for the local end-of-turn
 // executor on every turn — excluded from the install, so it fails and end-of-turn degrades to a
 // positive default. The Silero VAD is the only turn boundary this worker has.
-export const TURN_HANDLING = { turnDetection: 'vad' } as const;
+//
+// Preemptive generation defaults to on with maxRetries 3, so one turn can send four full
+// requests — instructions plus eleven tool schemas, ~1.1k tokens each — and Groq's free tier
+// allows 8k tokens per minute. Off, a turn costs one request instead of four.
+export const TURN_HANDLING = {
+  turnDetection: 'vad',
+  preemptiveGeneration: { enabled: false },
+} as const;
 
 export default defineAgent<VoiceProcessData>({
   // Groq Whisper is batch, not streaming: without a VAD nothing decides where a user turn
@@ -88,6 +110,10 @@ async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
         model: 'eleven_multilingual_v2',
         language: 'es',
       }),
+    });
+
+    session.on(voice.AgentSessionEventTypes.Error, (ev) => {
+      console.error('[asegura-voice] ' + describeSessionError(ev.error));
     });
 
     await ctx.connect();
