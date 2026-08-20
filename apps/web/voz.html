@@ -740,6 +740,17 @@ const webToken = new URLSearchParams(location.search).get('token');
     if (room) { room.disconnect(); room = null; }
     else { setEstado('terminado'); }
     if (hoja.open) hoja.close();
+    // Colgar solo cerraba la llamada: el chat seguía esperando a alguien que ya se fue, y solo
+    // se enteraba cuando vencía un temporizador de minutos. keepalive para que el aviso salga
+    // aunque la pestaña se cierre enseguida.
+    if (webToken) {
+      apiFetch('/voice/end', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webToken }),
+        keepalive: true,
+      }).catch(() => {});
+    }
   });
 })();
 </script>

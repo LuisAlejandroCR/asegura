@@ -81,6 +81,21 @@ export class ReminderService {
     }
   }
 
+  // La persona pulsó "Terminar" en AseguraWeb: no es silencio, es una decisión, así que el chat
+  // se entera en el momento en vez de esperar a que venza un temporizador.
+  async closeNow(conversationId: string, texto: string): Promise<void> {
+    this.cancel(conversationId);
+    const conv = await this.conversations.findById(conversationId);
+    if (!conv || TERMINAL_STATES.has(conv.state)) return;
+
+    await this.channels.get(conv.channel as 'telegram' | 'whatsapp').sendText(conv.user_id, texto)
+      .catch((err) => this.logger.warn(`closeNow sendText failed: ${err}`));
+    await this.conversations.saveState(conversationId, ConversationState.ABANDONED, {
+      ...conv.context,
+      abandonReason: 'web_session_ended',
+    }).catch((err) => this.logger.warn(`closeNow saveState failed: ${err}`));
+  }
+
   private async closeIfStillStalled(conversationId: string, userId: string, channel: 'telegram' | 'whatsapp'): Promise<void> {
     const conv = await this.conversations.findById(conversationId);
     if (!conv || TERMINAL_STATES.has(conv.state)) return;

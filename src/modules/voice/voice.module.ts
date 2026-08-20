@@ -5,8 +5,10 @@ import { Module } from '@nestjs/common';
 import { LiveKitTokenService } from './livekit-token.service';
 import { VoiceController } from './voice.controller';
 import { WebSessionTokenService } from '../agent/web-session-token.service';
+import { ChannelModule } from '../channel/channel.module';
 
 @Module({
+  imports: [ChannelModule],
   controllers: [VoiceController],
   providers: [LiveKitTokenService, WebSessionTokenService],
   exports: [LiveKitTokenService, WebSessionTokenService],

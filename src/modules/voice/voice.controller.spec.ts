@@ -6,6 +6,7 @@
 import { VoiceController } from './voice.controller';
 
 function makeDeps(overrides: { verify?: any; createSession?: any } = {}) {
+  const reminders = { closeNow: jest.fn(async () => undefined) };
   const liveKit = {
     createSession: jest.fn(overrides.createSession ?? (async (identity?: string) => ({
       url: 'wss://asegura.livekit.cloud', token: 'jwt.token.here', roomName: 'asegura-room', identity,
@@ -14,8 +15,8 @@ function makeDeps(overrides: { verify?: any; createSession?: any } = {}) {
   const webSessionTokens = {
     verify: jest.fn(overrides.verify ?? (() => null)),
   };
-  const controller = new VoiceController(liveKit as any, webSessionTokens as any);
-  return { controller, liveKit, webSessionTokens };
+  const controller = new VoiceController(liveKit as any, webSessionTokens as any, reminders as any);
+  return { controller, liveKit, webSessionTokens, reminders };
 }
 
 describe('VoiceController.createSession — webToken linkage', () => {
@@ -44,5 +45,26 @@ describe('VoiceController.createSession — webToken linkage', () => {
   it('throws ServiceUnavailableException when LiveKit itself is not configured (unchanged behavior)', async () => {
     const { controller } = makeDeps({ createSession: async () => null });
     await expect(controller.createSession({})).rejects.toThrow('Voice is not configured');
+  });
+});
+
+// "Terminar" solo colgaba la llamada: el chat seguía creyendo que la persona estaba en
+// AseguraWeb hasta que vencía un temporizador de minutos.
+describe('VoiceController.endSession — cerrar el chat al terminar en la web', () => {
+  it('cierra la conversación que firma el token', async () => {
+    const { controller, reminders } = makeDeps({ verify: () => ({ conversationId: 'conv-42' }) });
+
+    const resultado = await controller.endSession({ webToken: 'good-token' });
+
+    expect(resultado).toEqual({ closed: true });
+    expect(reminders.closeNow).toHaveBeenCalledWith('conv-42', expect.stringContaining('AseguraWeb'));
+  });
+
+  it('sin token válido no cierra nada y responde igual', async () => {
+    const { controller, reminders } = makeDeps({ verify: () => null });
+
+    expect(await controller.endSession({ webToken: 'bad-token' })).toEqual({ closed: false });
+    expect(await controller.endSession({})).toEqual({ closed: false });
+    expect(reminders.closeNow).not.toHaveBeenCalled();
   });
 });

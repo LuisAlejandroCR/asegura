@@ -87,7 +87,7 @@ interface ConversationContext {
   medicalInfo?: string;
   // Set only when ReminderService auto-closes after silence, never by a plain "no".
   // 'insufficient_info': quiet before there was anything to quote. 'no_response': quiet after.
-  abandonReason?: 'insufficient_info' | 'no_response';
+  abandonReason?: 'insufficient_info' | 'no_response' | 'web_session_ended';
   // Set only on a fresh AUTHORIZATION "sí", so a returning buyer is never re-interrogated.
   discoveryFilter?: boolean;
   // One-shot: the next message answers it, then it clears — an unrecognized reply falls

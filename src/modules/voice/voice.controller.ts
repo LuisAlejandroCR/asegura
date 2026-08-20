@@ -4,6 +4,7 @@
 import { Body, Controller, Post, ServiceUnavailableException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { LiveKitTokenService, VoiceSession } from './livekit-token.service';
+import { ReminderService } from '../channel/reminder.service';
 import { WebSessionTokenService } from '../agent/web-session-token.service';
 
 interface CreateSessionBody {
@@ -17,6 +18,7 @@ export class VoiceController {
   constructor(
     private readonly liveKit: LiveKitTokenService,
     private readonly webSessionTokens: WebSessionTokenService,
+    private readonly reminders: ReminderService,
   ) {}
 
   // Each call opens a LiveKit room and bills ElevenLabs and Groq; a real user needs one
@@ -32,5 +34,21 @@ export class VoiceController {
       throw new ServiceUnavailableException('Voice is not configured (LIVEKIT_* missing)');
     }
     return session;
+  }
+
+  // "Terminar" en AseguraWeb solo colgaba la llamada: el chat seguía creyendo que la persona
+  // estaba allá y solo se enteraba cuando vencía un temporizador. Sin token válido no hay
+  // conversación que cerrar, y responder 200 igual evita que el navegador muestre un error
+  // por algo que ya terminó.
+  @Post('end')
+  async endSession(@Body() body: CreateSessionBody): Promise<{ closed: boolean }> {
+    const payload = body.webToken ? this.webSessionTokens.verify(body.webToken) : null;
+    if (!payload) return { closed: false };
+
+    await this.reminders.closeNow(
+      payload.conversationId,
+      'Cerramos la sesión de AseguraWeb. Si quieres seguir, escríbeme aquí y retomamos donde íbamos 😊',
+    );
+    return { closed: true };
   }
 }
