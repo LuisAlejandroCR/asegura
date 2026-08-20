@@ -3,7 +3,7 @@
 // end-of-turn executor this install excludes. Both shipped once and only showed on a live call.
 import type { JobProcess } from '@livekit/agents';
 import { VAD, initializeLogger, llm, voice } from '@livekit/agents';
-import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, hayRespaldoElevenLabs, usaElevenLabs } from './main';
+import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, hayRespaldoElevenLabs, usaElevenLabs, usaGroqLlm } from './main';
 
 // AgentSession logs from its field initializers; outside cli.runApp nothing has set the logger up.
 beforeAll(() => initializeLogger({ pretty: false, level: 'silent' }));
@@ -188,5 +188,14 @@ describe('historial acotado', () => {
 
     expect(recortado).toContain(`turno ${MAX_ITEMS_HISTORIAL + 4}`);
     expect(recortado).not.toContain('turno 0');
+  });
+});
+
+// El gratuito de Groq son 8.000 tokens por minuto y 200.000 al día: el día entero se consumió a
+// media mañana probando. La pasarela acepta las mismas herramientas, así que Groq queda de escape.
+describe('proveedor del modelo', () => {
+  it('usa la pasarela salvo que se pida Groq', () => {
+    expect(usaGroqLlm({})).toBe(false);
+    expect(usaGroqLlm({ VOICE_LLM: 'groq' })).toBe(true);
   });
 });

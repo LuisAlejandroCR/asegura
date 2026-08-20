@@ -59,6 +59,22 @@ describe('AUTHORIZATION → DISCOVERY entry — WEB_APP_URL configured', () => {
     expect(sentText).toContain('voz.html');
   });
 
+  // El aviso de "¿sigues ahí?" salía 60 s después de mandar el link, o sea mientras la persona
+  // estaba hablando en AseguraWeb: el traspaso es una ausencia buscada, igual que el checkout.
+  it('no programa el aviso cuando acaba de pasar a AseguraWeb', async () => {
+    const { service, telegram, conversations, config, reminders } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { awaitingWebModalityChoice: true },
+    });
+    withWebAppUrl(config);
+    conversations.getOrCreate.mockResolvedValue({ id: 'conv-1', user_id: 'u1', channel: 'telegram', state: ConversationState.DISCOVERY, context: { awaitingWebModalityChoice: true } });
+    telegram.normalize.mockResolvedValue({ userId: 'u1', channel: 'telegram', channelId: '1', text: 'quiero hablar', timestamp: new Date() });
+
+    await service.handleMessage({});
+
+    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1', 'telegram', true);
+  });
+
   it('"escribir" sends the texto.html link', async () => {
     const { service, telegram, conversations, config } = buildService({
       state: ConversationState.DISCOVERY,

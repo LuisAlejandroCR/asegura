@@ -38,15 +38,15 @@ export class ReminderService {
     private readonly conversations: ConversationService,
   ) {}
 
-  // Keyed by conversation id, not user id. hasPendingPayment switches to the long window so a
-  // still-payable Wompi link is never abandoned mid-payment.
-  schedule(conversationId: string, userId: string, channel: 'telegram' | 'whatsapp', hasPendingPayment = false): void {
+  // Keyed by conversation id, not user id. awayOnAnotherSurface — un checkout de Wompi abierto o
+  // AseguraWeb — significa que la persona salió del chat a propósito: ni aviso ni cierre corto.
+  schedule(conversationId: string, userId: string, channel: 'telegram' | 'whatsapp', awayOnAnotherSurface = false): void {
     this.cancel(conversationId);
 
     // Con un link de pago abierto el silencio no es abandono: la persona está en el checkout,
     // fuera del chat. Preguntarle "¿sigues ahí?" a los 60 segundos la interrumpe pagando, así
     // que ahí solo queda el cierre, ya vencido el link.
-    if (hasPendingPayment) {
+    if (awayOnAnotherSurface) {
       const closeTimer = setTimeout(() => {
         this.closeTimers.delete(conversationId);
         void this.closeIfStillStalled(conversationId, userId, channel);

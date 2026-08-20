@@ -81,6 +81,9 @@ interface ProcessResult {
   // A reply keyboard of tappable shortcuts. A tap arrives as an ordinary text message on the
   // same webhook; free text and voice stay fully valid, no button is ever mandatory (rule #10).
   choices?: string[];
+  // This turn handed the person to AseguraWeb, so the silence that follows is them talking or
+  // typing over there — nudging the chat interrupts the very page it just opened.
+  handoffToWeb?: boolean;
   // Set when a reply means "the agent genuinely didn't understand", never for a normal
   // acknowledgment or a polite decline. Consecutive occurrences escalate to a human.
   unclearReply?: boolean;
@@ -304,9 +307,11 @@ export class AgentService {
     // Arm the "come back to chat" reminder — skipped once the conversation is actually over.
     const finalState = result.nextState ?? conv.state;
     if (!AgentService.TERMINAL_STATES.has(finalState)) {
-      // An unconfirmed Wompi link must not auto-abandon on the regular window.
+      // Un link de pago abierto o un traspaso a AseguraWeb significan que la persona salió del
+      // chat a propósito: ahí el aviso interrumpe, no rescata.
       const finalContext = result.context ?? conv.context;
-      this.reminders.schedule(conv.id, msg.userId, conv.channel as 'telegram' | 'whatsapp', !!finalContext?.checkoutUrl);
+      const enOtraPantalla = !!finalContext?.checkoutUrl || result.handoffToWeb === true;
+      this.reminders.schedule(conv.id, msg.userId, conv.channel as 'telegram' | 'whatsapp', enOtraPantalla);
     }
 
     return { conv, result };
@@ -809,6 +814,7 @@ export class AgentService {
       // webModality persists: createPaymentLinkFlow reads it later to set Wompi's redirect_url, so
       // checkout returns the browser to the same AseguraWeb page.
       context: { ...context, awaitingWebModalityChoice: undefined, webModality: modality },
+      handoffToWeb: true,
     };
   }
 

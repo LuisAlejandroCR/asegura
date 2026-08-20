@@ -1,6 +1,7 @@
 // main.ts: AseguraWeb voice worker — a SEPARATE always-on process from the NestJS backend.
 // LiveKit workers register and receive job dispatches; they never answer HTTP. Runs as its
-// own Railway service via railway.voice.json. STT/LLM on Groq, TTS on ElevenLabs.
+// own Railway service via railway.voice.json. STT on Groq; LLM y TTS por la pasarela de
+// LiveKit, con Groq y ElevenLabs como escape por variable de entorno.
 import { type JobContext, type JobProcess, type VAD, ServerOptions, cli, defineAgent, inference, tts as ttsLib, voice } from '@livekit/agents';
 import * as openai from '@livekit/agents-plugin-openai';
 import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
@@ -135,12 +136,32 @@ function construirElevenLabs() {
   });
 }
 
+// El plan gratuito de Groq no da para una demo: 8.000 tokens por minuto y 200.000 al día, que
+// una llamada larga agota — probado, con el día entero consumido a media mañana. La pasarela
+// acepta las mismas herramientas (verificado: Gemini y GPT-4.1-mini llaman `cotizar` en menos de
+// un segundo), así que Groq queda de escape con VOICE_LLM=groq.
+export function usaGroqLlm(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.VOICE_LLM === 'groq';
+}
+
+function construirLlm() {
+  if (usaGroqLlm()) {
+    return openai.LLM.withGroq({
+      model: process.env.LLM_MODEL || 'openai/gpt-oss-120b',
+      apiKey: requireEnv('LLM_API_KEY'),
+    });
+  }
+  return new inference.LLM({ model: process.env.VOICE_LLM_MODEL || 'google/gemini-2.5-flash' });
+}
+
 function construirTts() {
   if (usaElevenLabs()) return construirElevenLabs();
 
+  // La voz por defecto de Cartesia lee español con acento inglés. Aitana es española nativa y
+  // sale por la pasarela, así que no gasta la cuota de la cuenta propia de ElevenLabs.
   const pasarela = new inference.TTS({
-    model: process.env.VOICE_TTS_MODEL || 'cartesia/sonic-2',
-    ...(process.env.VOICE_TTS_VOICE ? { voice: process.env.VOICE_TTS_VOICE } : {}),
+    model: process.env.VOICE_TTS_MODEL || 'elevenlabs/eleven_multilingual_v2',
+    voice: process.env.VOICE_TTS_VOICE || 'AxFLn9byyiDbMn5fmyqu',
     language: 'es',
   });
   if (!hayRespaldoElevenLabs()) return pasarela;
@@ -157,10 +178,7 @@ async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
         apiKey: requireEnv('LLM_API_KEY'),
         language: 'es',
       }),
-      llm: openai.LLM.withGroq({
-        model: process.env.LLM_MODEL || 'openai/gpt-oss-120b',
-        apiKey: requireEnv('LLM_API_KEY'),
-      }),
+      llm: construirLlm(),
       tts: construirTts(),
     });
 
