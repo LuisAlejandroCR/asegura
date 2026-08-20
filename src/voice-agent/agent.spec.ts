@@ -3,13 +3,14 @@
 // main.ts (that file requires live LIVEKIT_*/GROQ/ElevenLabs env vars at import time by
 // design — see its own header — so it's a script, not a unit under test).
 
-import { VOICE_GREETING, VOICE_GREETING_AUTHORIZED, createVoiceAgent, greetingFor } from './agent';
+import { VOICE_GREETING, VOICE_GREETING_AUTHORIZED, createVoiceAgent, greetingFor, faseDe, herramientasDeFase } from './agent';
 import { VoiceSessionState } from './session-state';
 
 describe('createVoiceAgent', () => {
-  it('registers the cotizar tool', () => {
-    const agent = createVoiceAgent(new VoiceSessionState('conv-1'));
-    expect(agent.toolCtx.hasTool('cotizar')).toBe(true);
+  it('registers the cotizar tool once the person authorized', () => {
+    const state = new VoiceSessionState('conv-1');
+    state.merge({ autorizado: true });
+    expect(createVoiceAgent(state).toolCtx.hasTool('cotizar')).toBe(true);
   });
 
   it('instructions tell the model to never state a price without calling cotizar', () => {
@@ -56,10 +57,17 @@ describe('Ley 1581 consent on the voice channel', () => {
 
   // The prompt is now the polite half. The binding half is that the shared tools refuse
   // without context.autorizado, which is asserted in modules/agent/tools/tools.spec.ts.
+  // Las fases reparten las herramientas para no mandar los once esquemas en cada turno; lo que
+  // no puede perderse es que el canal siga llegando a todas, que es lo que cerró el 3.4.
   it('carries the whole flow, not just cotizar — this is what audit 3.4 was about', () => {
-    const agent = createVoiceAgent(new VoiceSessionState('conv-1'));
+    const alcanzables = new Set<string>();
+    for (const context of [{}, { autorizado: true }, { autorizado: true, quoteProductId: 'x' }]) {
+      const state = new VoiceSessionState('conv-1');
+      state.merge(context);
+      for (const t of herramientasDeFase(state)) alcanzables.add((t as { name: string }).name);
+    }
     for (const name of ['autorizar', 'consultar_afiliado', 'cotizar', 'seleccionar_producto', 'capturar_datos', 'registrar_mascotas', 'preguntas_aseguramiento', 'registrar_lead', 'escalar_a_humano', 'emitir_poliza', 'generar_link_pago']) {
-      expect(agent.toolCtx.hasTool(name)).toBe(true);
+      expect(alcanzables).toContain(name);
     }
   });
 });
@@ -83,5 +91,48 @@ describe('turn discipline on a call', () => {
 
   it('asks for cedula, nombre and correo one per turn instead of in one list', () => {
     expect(instructions()).toContain('uno por turno');
+  });
+});
+
+// Los esquemas de las herramientas son ~1.000 de los ~1.075 tokens fijos por petición, contra
+// 8.000 por minuto en el plan gratuito: mandar las once en cada turno es lo que agota la cuota.
+describe('herramientas por fase', () => {
+  const nombres = (context: Record<string, unknown>) => {
+    const state = new VoiceSessionState('conv-1');
+    state.merge(context);
+    return herramientasDeFase(state).map((t) => (t as { name: string }).name);
+  };
+
+  it('sin autorizar solo expone autorizar y escalar', () => {
+    expect(faseDe({})).toBe('consentimiento');
+    expect(nombres({})).toEqual(['autorizar', 'escalar_a_humano']);
+  });
+
+  it('autorizada y sin cotización, expone descubrimiento sin emitir ni cobrar', () => {
+    expect(faseDe({ autorizado: true })).toBe('descubrimiento');
+    const tools = nombres({ autorizado: true });
+    expect(tools).toContain('cotizar');
+    expect(tools).not.toContain('emitir_poliza');
+    expect(tools).not.toContain('generar_link_pago');
+  });
+
+  it('con producto elegido expone el cierre completo', () => {
+    expect(faseDe({ autorizado: true, quoteProductId: 'vida-pan-american' })).toBe('cierre');
+    const tools = nombres({ autorizado: true, quoteProductId: 'vida-pan-american' });
+    expect(tools).toContain('emitir_poliza');
+    expect(tools).toContain('generar_link_pago');
+    expect(tools).toContain('capturar_datos');
+  });
+
+  it('ninguna fase manda las once, que es lo que costaba la cuota', () => {
+    expect(nombres({}).length).toBeLessThan(11);
+    expect(nombres({ autorizado: true }).length).toBeLessThan(11);
+    expect(nombres({ autorizado: true, quoteProductId: 'x' }).length).toBeLessThan(11);
+  });
+
+  it('escalar a un humano existe en todas las fases', () => {
+    expect(nombres({})).toContain('escalar_a_humano');
+    expect(nombres({ autorizado: true })).toContain('escalar_a_humano');
+    expect(nombres({ autorizado: true, quoteProductId: 'x' })).toContain('escalar_a_humano');
   });
 });

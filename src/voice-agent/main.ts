@@ -7,7 +7,7 @@ import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
 import * as silero from '@livekit/agents-plugin-silero';
 import * as fs from 'fs';
 import dotenv from 'dotenv';
-import { greetingFor, createVoiceAgent } from './agent';
+import { greetingFor, createVoiceAgent, faseDe, herramientasDeFase } from './agent';
 import { VoiceSessionState } from './session-state';
 import { buildVoiceDeps, buildConversationLoader } from './deps';
 
@@ -125,7 +125,20 @@ async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
     const state = new VoiceSessionState(participant.identity);
     state.merge(await buildConversationLoader()(participant.identity));
 
-    await session.start({ agent: createVoiceAgent(state, buildVoiceDeps()), room: ctx.room });
+    const deps = buildVoiceDeps();
+    const agent = createVoiceAgent(state, deps);
+
+    // Sin esto la llamada se queda con las herramientas de la fase inicial: se autoriza y no
+    // hay con qué cotizar. El evento llega justo cuando una herramienta cambió el estado.
+    let fase = faseDe(state.context);
+    session.on(voice.AgentSessionEventTypes.FunctionToolsExecuted, () => {
+      const siguiente = faseDe(state.context);
+      if (siguiente === fase) return;
+      fase = siguiente;
+      void agent.updateTools(herramientasDeFase(state, deps, siguiente));
+    });
+
+    await session.start({ agent, room: ctx.room });
 
     // say(), not generateReply(): the Ley 1581 notice has to come out word for word. Which
     // greeting depends on whether the chat already holds this person's consent.

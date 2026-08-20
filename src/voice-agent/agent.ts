@@ -1,7 +1,7 @@
 // agent.ts: the AseguraWeb voice persona — the instructions plus every capability the text
 // channel has. Kept separate from main.ts so createVoiceAgent() is importable without the
 // LiveKit worker runtime.
-import { voice } from '@livekit/agents';
+import { voice, type llm } from '@livekit/agents';
 import { QuotingService } from '../modules/quoting/quoting.service';
 import { ProductCatalog } from '../modules/quoting/product-catalog.service';
 import { ToolDeps } from '../modules/agent/tools';
@@ -78,27 +78,63 @@ herramientas, usa "escalar_a_humano" con el motivo. No insistas ni improvises un
 Las herramientas mandan sobre ti: si una responde que no puede, dile a la persona lo que
 falta en tus palabras, no inventes un resultado.`;
 
+// Los esquemas de las once herramientas son ~1.000 de los ~1.075 tokens fijos de cada
+// petición, y se reenvían en cada turno contra un techo de 8.000 por minuto. Exponer solo las
+// del paso actual es lo único que baja ese costo sin tocar las reglas: quién puede cotizar,
+// emitir o cobrar lo siguen decidiendo las precondiciones dentro de cada herramienta.
+export type FaseVoz = 'consentimiento' | 'descubrimiento' | 'cierre';
+
+const HERRAMIENTAS_POR_FASE: Record<FaseVoz, readonly string[]> = {
+  consentimiento: ['autorizar', 'escalar_a_humano'],
+  descubrimiento: ['cotizar', 'consultar_afiliado', 'registrar_mascotas', 'registrar_lead', 'escalar_a_humano'],
+  cierre: [
+    'cotizar', 'seleccionar_producto', 'registrar_mascotas', 'capturar_datos',
+    'preguntas_aseguramiento', 'emitir_poliza', 'generar_link_pago', 'escalar_a_humano',
+  ],
+};
+
+export function faseDe(context: ConversationContext): FaseVoz {
+  if (context.autorizado !== true) return 'consentimiento';
+  const eligio = !!context.quoteProductId || !!context.selectedProductIds?.length;
+  return eligio ? 'cierre' : 'descubrimiento';
+}
+
+type MapaHerramientas = Record<string, llm.ToolContextEntry>;
+
+function construirHerramientas(state: VoiceSessionState, deps: ToolDeps): MapaHerramientas {
+  return {
+    autorizar: createAutorizarTool(state),
+    consultar_afiliado: createConsultarAfiliadoTool(deps, state),
+    cotizar: createCotizarTool(deps.quoting, (productId) => {
+      const shown = state.context.shownProductIds ?? [];
+      state.merge({
+        quoteProductId: productId,
+        shownProductIds: shown.includes(productId) ? shown : [...shown, productId],
+      });
+    }, () => state.context),
+    seleccionar_producto: createSeleccionarProductoTool(deps, state),
+    capturar_datos: createCapturarDatosTool(state),
+    registrar_lead: createRegistrarLeadTool(state),
+    escalar_a_humano: createEscalarTool(state),
+    registrar_mascotas: createRegistrarMascotasTool(state),
+    preguntas_aseguramiento: createPreguntasAseguramientoTool(deps, state),
+    emitir_poliza: createEmitirPolizaTool(deps, state),
+    generar_link_pago: createGenerarLinkPagoTool({ ...deps, quoting: deps.quoting }, state),
+  };
+}
+
+export function herramientasDeFase(
+  state: VoiceSessionState,
+  deps: ToolDeps = { quoting, catalog },
+  fase: FaseVoz = faseDe(state.context),
+): llm.ToolContextEntry[] {
+  const todas = construirHerramientas(state, deps);
+  return HERRAMIENTAS_POR_FASE[fase].map((name) => todas[name]);
+}
+
 export function createVoiceAgent(state: VoiceSessionState, deps: ToolDeps = { quoting, catalog }): voice.Agent {
   return voice.Agent.create({
     instructions: INSTRUCTIONS,
-    tools: [
-      createAutorizarTool(state),
-      createConsultarAfiliadoTool(deps, state),
-      createCotizarTool(deps.quoting, (productId) => {
-        const shown = state.context.shownProductIds ?? [];
-        state.merge({
-          quoteProductId: productId,
-          shownProductIds: shown.includes(productId) ? shown : [...shown, productId],
-        });
-      }, () => state.context),
-      createSeleccionarProductoTool(deps, state),
-      createCapturarDatosTool(state),
-      createRegistrarLeadTool(state),
-      createEscalarTool(state),
-      createRegistrarMascotasTool(state),
-      createPreguntasAseguramientoTool(deps, state),
-      createEmitirPolizaTool(deps, state),
-      createGenerarLinkPagoTool({ ...deps, quoting: deps.quoting }, state),
-    ],
+    tools: herramientasDeFase(state, deps),
   });
 }
