@@ -3,7 +3,7 @@
 // end-of-turn executor this install excludes. Both shipped once and only showed on a live call.
 import type { JobProcess } from '@livekit/agents';
 import { VAD, initializeLogger, llm, voice } from '@livekit/agents';
-import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, describirProveedores, hayRespaldoElevenLabs, normalizarBaseUrl, usaElevenLabs, usaGroqLlm } from './main';
+import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, checkLlmAccess, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, describirProveedores, hayRespaldoElevenLabs, normalizarBaseUrl, usaElevenLabs, usaGroqLlm } from './main';
 
 // AgentSession logs from its field initializers; outside cli.runApp nothing has set the logger up.
 beforeAll(() => initializeLogger({ pretty: false, level: 'silent' }));
@@ -101,6 +101,62 @@ describe('voice worker TTS access', () => {
     const result = await checkTtsAccess(fakeFetch(200), { ELEVENLABS_VOICE_ID: 'v', ELEVENLABS_API_KEY: 'k' });
 
     expect(result).toMatchObject({ ok: true, fatal: false });
+  });
+});
+
+// Google devuelve sus fallos envueltos en un array, el SDK busca `error` en la raíz, no lo
+// encuentra y descarta el texto: dos sesiones leyeron "(no body)" como si describiera la
+// respuesta. Este chequeo pide el cuerpo por su cuenta antes de que el worker se registre.
+describe('acceso al modelo de voz', () => {
+  const respuesta = (status: number, body: string) =>
+    (async () =>
+      ({ ok: status === 200, status, text: async () => body }) as unknown as Response) as unknown as typeof fetch;
+
+  const conProveedor = {
+    VOICE_LLM_BASE_URL: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    VOICE_LLM_MODEL: 'gemini-2.5-flash',
+    VOICE_LLM_API_KEY: 'k',
+  };
+
+  it('imprime el mensaje del proveedor, no el "(no body)" del SDK', async () => {
+    const result = await checkLlmAccess(
+      respuesta(400, '[{ "error": { "code": 400, "message": "Please pass a valid API key" } }]'),
+      conProveedor,
+    );
+
+    expect(result).toMatchObject({ ok: false, fatal: true });
+    expect(result.detail).toContain('Please pass a valid API key');
+    expect(result.detail).not.toContain('no body');
+  });
+
+  it('nombra el modelo y la ruta, que es lo que un 404 no distingue', async () => {
+    const result = await checkLlmAccess(respuesta(404, 'not found'), conProveedor);
+
+    expect(result.detail).toContain('gemini-2.5-flash');
+    expect(result.detail).toContain('generativelanguage.googleapis.com/v1beta/openai');
+  });
+
+  // Una cuota se repone sola: matar el worker por un 429 lo deja caído después del minuto malo.
+  it('deja vivo al worker ante una cuota agotada', async () => {
+    const result = await checkLlmAccess(respuesta(429, 'Insufficient balance'), conProveedor);
+
+    expect(result).toMatchObject({ ok: false, fatal: false });
+    expect(result.detail).toContain('Insufficient balance');
+  });
+
+  it('no gasta una petición cuando el modelo sale por la pasarela', async () => {
+    const noDebeLlamarse = (async () => {
+      throw new Error('no debió pedirse nada');
+    }) as unknown as typeof fetch;
+
+    await expect(checkLlmAccess(noDebeLlamarse, {})).resolves.toMatchObject({ ok: true });
+  });
+
+  it('pasa cuando el proveedor contesta', async () => {
+    await expect(checkLlmAccess(respuesta(200, '{}'), conProveedor)).resolves.toMatchObject({
+      ok: true,
+      fatal: false,
+    });
   });
 });
 

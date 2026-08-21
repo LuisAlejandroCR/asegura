@@ -40,6 +40,22 @@ describe('describeRequiredEnv', () => {
     expect(report).not.toContain('ELEVENLABS');
   });
 
+  // Con la base URL puesta y esta clave ausente el worker registraba, y recién moría dentro de
+  // entry() en cada llamada — justo lo que este chequeo existe para evitar.
+  it('exige VOICE_LLM_API_KEY cuando el modelo sale por una base URL propia', () => {
+    const { ok, report } = describeRequiredEnv({ ...full, VOICE_LLM_BASE_URL: 'https://api.z.ai/api/paas/v4' });
+
+    expect(ok).toBe(false);
+    expect(report).toContain('VOICE_LLM_API_KEY: MISSING');
+  });
+
+  it('no la exige cuando el modelo sale por la pasarela de LiveKit', () => {
+    const { ok, report } = describeRequiredEnv(full);
+
+    expect(ok).toBe(true);
+    expect(report).not.toContain('VOICE_LLM_API_KEY');
+  });
+
   it('nunca imprime el valor, solo su longitud', () => {
     const { report } = describeRequiredEnv(full);
     expect(report).not.toContain('gsk_x');

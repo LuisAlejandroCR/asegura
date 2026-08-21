@@ -38,9 +38,14 @@ export function hayRespaldoElevenLabs(env: NodeJS.ProcessEnv = process.env): boo
 // then fail per call with LiveKit's opaque "error in entry function" — no name, no stack.
 const REQUIRED_BASE = ['LLM_API_KEY', 'LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'] as const;
 const REQUIRED_ELEVENLABS = ['ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID'] as const;
+const REQUIRED_LLM_PROPIO = ['VOICE_LLM_API_KEY'] as const;
 
 function requiredEnvNames(env: NodeJS.ProcessEnv = process.env): readonly string[] {
-  return usaElevenLabs(env) ? [...REQUIRED_BASE, ...REQUIRED_ELEVENLABS] : REQUIRED_BASE;
+  return [
+    ...REQUIRED_BASE,
+    ...(env.VOICE_LLM_BASE_URL ? REQUIRED_LLM_PROPIO : []),
+    ...(usaElevenLabs(env) ? REQUIRED_ELEVENLABS : []),
+  ];
 }
 
 // Reports the state of EVERY required variable, not just the first missing one. Failing on
@@ -290,6 +295,42 @@ export async function checkTtsAccess(
   }
 }
 
+// El SDK del modelo busca `error` DENTRO del cuerpo del fallo. Google lo envuelve en un array
+// —`[{"error":{...}}]`— así que no lo encuentra, y como el cuerpo sí era JSON válido tampoco
+// conserva el texto crudo: todo fallo suyo llega como "400 status code (no body)", sea la clave,
+// el modelo o la ruta. Una petición propia es lo único que imprime lo que el proveedor dijo.
+export async function checkLlmAccess(
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ ok: boolean; fatal: boolean; detail: string }> {
+  const baseURL = env.VOICE_LLM_BASE_URL;
+  if (!baseURL) return { ok: true, fatal: false, detail: 'sin proveedor propio' };
+
+  const model = env.VOICE_LLM_MODEL || 'gemini-2.5-flash';
+  const destino = normalizarBaseUrl(baseURL);
+  try {
+    const response = await fetchImpl(`${destino}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.VOICE_LLM_API_KEY ?? ''}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: 'ok' }], max_tokens: 1 }),
+    });
+    if (response.ok) return { ok: true, fatal: false, detail: `${model} responde` };
+
+    const cuerpo = (await response.text().catch(() => '')).replace(/\s+/g, ' ').trim();
+    return {
+      ok: false,
+      // Una cuota agotada se repone sola; una clave, un modelo o una ruta mala no.
+      fatal: [400, 401, 403, 404].includes(response.status),
+      detail: `${model} vía ${destino} -> ${response.status} ${cuerpo.slice(0, 300) || '(cuerpo vacío)'}`,
+    };
+  } catch (err) {
+    return { ok: false, fatal: false, detail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 // Only start the worker when this file runs directly, never as a side effect of an import.
 if (require.main === module) {
   // Fail here, by name, instead of registering a worker that dies on every call.
@@ -315,6 +356,13 @@ async function startWorker(): Promise<void> {
     fs.writeSync(2, `voice-agent tts check: ${tts.detail}\n`);
     if (tts.fatal) process.exit(1);
   }
+
+  const modelo = await checkLlmAccess();
+  if (!modelo.ok) {
+    fs.writeSync(2, `voice-agent llm check: ${modelo.detail}\n`);
+    if (modelo.fatal) process.exit(1);
+  }
+
   fs.writeSync(1, `voice-agent ${describirProveedores()}
 `);
   cli.runApp(
