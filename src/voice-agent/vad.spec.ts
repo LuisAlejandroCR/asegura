@@ -299,6 +299,15 @@ describe('base URL del proveedor', () => {
     expect(dicho).not.toContain('secreta-no-imprimir');
   });
 
+  // Google retiró `gemini-2.5-flash` para cuentas nuevas y responde 404: como el default vive en
+  // tres sitios, el worker de Railway entró en bucle de reinicio sin que la variable local cambiara.
+  it('el modelo por defecto del proveedor propio es el medido, no uno retirado', () => {
+    const soloBase = { VOICE_LLM_BASE_URL: 'https://x.dev/v1beta/openai' };
+
+    expect(describirProveedores(soloBase)).toContain('gemini-3.1-flash-lite');
+    expect(describirProveedores(soloBase)).not.toContain('gemini-2.5-flash');
+  });
+
   it('nombra la pasarela y Groq cuando son los que están puestos', () => {
     expect(describirProveedores({})).toContain('pasarela');
     expect(describirProveedores({ VOICE_LLM: 'groq' })).toContain('Groq');
