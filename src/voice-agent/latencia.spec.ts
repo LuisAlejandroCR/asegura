@@ -33,14 +33,14 @@ describe('reparto del silencio de un turno', () => {
     expect(acc.registrar(llm('s1', 700))).toBeUndefined();
   });
 
-  it('reparte el total entre las cuatro etapas, en orden', () => {
+  it('no suma la transcripción aparte: viene dentro del fin de turno', () => {
     const acc = new AcumuladorDeTurno();
     acc.registrar(eou('s1', 600, 400));
     acc.registrar(llm('s1', 700));
 
     const linea = acc.registrar(tts('s1', 500));
 
-    expect(linea).toBe('turno: 2200 ms de silencio = fin de habla 600 + transcripción 400 + modelo 700 + voz 500');
+    expect(linea).toBe('turno: 1800 ms de silencio = fin de turno 600 (transcripción 400) + modelo 700 + voz 500');
   });
 
   // Dos turnos seguidos no pueden sumarse entre sí: el reparto sería el doble y la etapa
@@ -52,8 +52,8 @@ describe('reparto del silencio de un turno', () => {
     acc.registrar(llm('s2', 100));
     acc.registrar(llm('s1', 700));
 
-    expect(acc.registrar(tts('s2', 100))).toContain('400 ms de silencio');
-    expect(acc.registrar(tts('s1', 500))).toContain('2200 ms de silencio');
+    expect(acc.registrar(tts('s2', 100))).toContain('300 ms de silencio');
+    expect(acc.registrar(tts('s1', 500))).toContain('1800 ms de silencio');
   });
 
   // El TTS reintenta y vuelve a emitir métrica: el primer byte que la persona oye es el

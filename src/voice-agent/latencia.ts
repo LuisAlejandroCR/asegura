@@ -49,9 +49,11 @@ function estaCompleto(turno: Turno): boolean {
     && turno.modelo !== undefined && turno.voz !== undefined;
 }
 
+// La transcripción NO se suma aparte: LiveKit mide las dos desde que la persona dejó de hablar,
+// así que el retardo del transcript ya está dentro del fin de turno. Sumarlas daba el doble.
 function describir(turno: Turno): string {
-  const total = Math.round(turno.finDeHabla! + turno.transcripcion! + turno.modelo! + turno.voz!);
-  return `turno: ${total} ms de silencio = fin de habla ${Math.round(turno.finDeHabla!)}` +
-    ` + transcripción ${Math.round(turno.transcripcion!)}` +
+  const total = Math.round(turno.finDeHabla! + turno.modelo! + turno.voz!);
+  return `turno: ${total} ms de silencio = fin de turno ${Math.round(turno.finDeHabla!)}` +
+    ` (transcripción ${Math.round(turno.transcripcion!)})` +
     ` + modelo ${Math.round(turno.modelo!)} + voz ${Math.round(turno.voz!)}`;
 }

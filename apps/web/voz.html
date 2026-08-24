@@ -530,6 +530,13 @@ const webToken = new URLSearchParams(location.search).get('token');
       btnVolver.hidden = false;
       btnVolver.textContent = 'Volver ahora';
       btnVolver.onclick = () => { clearInterval(iv); location.href = snapshot.returnUrl; };
+    } else if (urlDelChat) {
+      // Un botón desactivado que dice 'ya puedes cerrar' no cierra nada: la persona quedaba
+      // mirando la única acción de la pantalla, apagada.
+      btnVolver.hidden = false;
+      btnVolver.disabled = false;
+      btnVolver.textContent = 'Volver al chat';
+      btnVolver.onclick = () => volverAlChat();
     } else {
       btnVolver.hidden = false;
       btnVolver.textContent = 'Ya puedes cerrar esta pestaña';
