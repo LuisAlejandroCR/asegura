@@ -3,7 +3,7 @@
 // main.ts (that file requires live LIVEKIT_*/GROQ/ElevenLabs env vars at import time by
 // design — see its own header — so it's a script, not a unit under test).
 
-import { VOICE_GREETING, VOICE_GREETING_AUTHORIZED, createVoiceAgent, greetingFor, faseDe, herramientasDeFase } from './agent';
+import { VOICE_GREETING, VOICE_GREETING_AUTHORIZED, createVoiceAgent, greetingFor, faseDe, fichaDeVenta, herramientasDeFase } from './agent';
 import { VoiceSessionState } from './session-state';
 
 describe('createVoiceAgent', () => {
@@ -147,5 +147,52 @@ describe('una venta a la vez', () => {
   it('prohíbe ofrecer otro seguro antes de emitir y cobrar el actual', () => {
     expect(instructions()).toContain('una venta a la vez');
     expect(instructions()).toContain('emitida y pagada');
+  });
+});
+
+// El historial se recorta a 20 ítems, así que a los pocos minutos el modelo ya no ve la
+// cotización ni la póliza: preguntaba el correo dos veces, olvidaba el pago pendiente y
+// terminaba ofreciendo otro seguro. El estado vive en las tools; esto se lo enseña.
+describe('ficha de la venta en curso', () => {
+  it('no dice nada cuando todavía no hay nada que recordar', () => {
+    expect(fichaDeVenta({ autorizado: true })).toBe('');
+  });
+
+  it('nombra el producto, el precio y lo que falta', () => {
+    const ficha = fichaDeVenta({
+      autorizado: true,
+      quoteSnapshot: {
+        productId: 'vida-pan-american', producto: 'Seguro de vida', aseguradora: 'Pan American Life',
+        precioMensual: 12000, coberturas: [],
+      },
+      quoteProductId: 'vida-pan-american',
+      cedula: '1234567890',
+      nombre: 'Ana Gómez',
+    });
+
+    expect(ficha).toContain('Seguro de vida');
+    expect(ficha).toContain('12000');
+    expect(ficha).toContain('correo');
+  });
+
+  it('avisa que hay una póliza esperando pago, que es lo que se olvidaba', () => {
+    const ficha = fichaDeVenta({
+      autorizado: true,
+      quoteProductId: 'vida-pan-american',
+      policyId: 'pol-1',
+      checkoutUrl: 'https://checkout.wompi.co/l/x',
+    });
+
+    expect(ficha).toContain('pol-1');
+    expect(ficha).toContain('pago');
+  });
+
+  it('no repite como pendiente un dato ya capturado', () => {
+    const ficha = fichaDeVenta({
+      autorizado: true, quoteProductId: 'x',
+      cedula: '1234567890', nombre: 'Ana Gómez', email: 'ana@ejemplo.co',
+    });
+
+    expect(ficha).not.toContain('Falta');
   });
 });

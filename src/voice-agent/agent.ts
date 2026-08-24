@@ -87,6 +87,43 @@ falta en tus palabras, no inventes un resultado.`;
 // petición, y se reenvían en cada turno contra un techo de 8.000 por minuto. Exponer solo las
 // del paso actual es lo único que baja ese costo sin tocar las reglas: quién puede cotizar,
 // emitir o cobrar lo siguen decidiendo las precondiciones dentro de cada herramienta.
+// El historial viaja recortado a 20 ítems, así que la cotización y la póliza salen de la vista
+// del modelo a los pocos minutos: pedía el correo de nuevo, olvidaba el pago pendiente y acababa
+// ofreciendo otro seguro. El estado real vive en las tools; esto se lo pone delante cada turno.
+export function fichaDeVenta(context: ConversationContext): string {
+  const lineas: string[] = [];
+  const cotizacion = context.quoteSnapshot;
+
+  if (cotizacion) {
+    lineas.push(`Producto ya cotizado: ${cotizacion.producto} de ${cotizacion.aseguradora}, ` +
+      `${cotizacion.precioMensual} pesos al mes. No cotices otro ni cambies de producto.`);
+  } else if (context.quoteProductId) {
+    lineas.push(`Producto ya elegido: ${context.quoteProductId}. No cotices otro.`);
+  }
+
+  if (context.policyId) {
+    lineas.push(`Póliza ${context.policyId} YA emitida y esperando el pago. No la vuelvas a emitir.`);
+  }
+  if (context.checkoutUrl) {
+    lineas.push('El link de pago ya existe y le aparece en pantalla. No generes otro.');
+  }
+
+  const faltan = ['cédula', 'nombre', 'correo'].filter((dato, i) =>
+    [context.cedula, context.nombre, context.email][i] === undefined);
+  if (cotizacion && faltan.length) {
+    lineas.push(`Falta por capturar: ${faltan.join(', ')}. Pide uno por turno.`);
+  }
+
+  if (!lineas.length) return '';
+  return 'ESTADO DE LA VENTA EN CURSO (esto manda sobre lo que recuerdes de la ' +
+    'conversación):\n' + lineas.map((l) => `- ${l}`).join('\n');
+}
+
+export function instruccionesCon(context: ConversationContext): string {
+  const ficha = fichaDeVenta(context);
+  return ficha ? `${INSTRUCTIONS}\n\n${ficha}` : INSTRUCTIONS;
+}
+
 export type FaseVoz = 'consentimiento' | 'descubrimiento' | 'cierre';
 
 const HERRAMIENTAS_POR_FASE: Record<FaseVoz, readonly string[]> = {
@@ -141,7 +178,7 @@ export function herramientasDeFase(
 
 export function createVoiceAgent(state: VoiceSessionState, deps: ToolDeps = { quoting, catalog }): voice.Agent {
   return voice.Agent.create({
-    instructions: INSTRUCTIONS,
+    instructions: instruccionesCon(state.context),
     tools: herramientasDeFase(state, deps),
   });
 }

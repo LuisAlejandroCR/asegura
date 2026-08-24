@@ -8,7 +8,7 @@ import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
 import * as silero from '@livekit/agents-plugin-silero';
 import * as fs from 'fs';
 import dotenv from 'dotenv';
-import { greetingFor, createVoiceAgent, faseDe, herramientasDeFase } from './agent';
+import { greetingFor, createVoiceAgent, faseDe, herramientasDeFase, instruccionesCon } from './agent';
 import { VoiceSessionState } from './session-state';
 import { buildVoiceDeps, buildConversationLoader, buildConversationSaver } from './deps';
 import { AcumuladorDeTurno } from './latencia';
@@ -272,7 +272,16 @@ async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
     // Sin esto la llamada se queda con las herramientas de la fase inicial: se autoriza y no
     // hay con qué cotizar. El evento llega justo cuando una herramienta cambió el estado.
     let fase = faseDe(state.context);
+    let instrucciones = instruccionesCon(state.context);
     session.on(voice.AgentSessionEventTypes.FunctionToolsExecuted, () => {
+      // El recorte del historial deja fuera la cotización y la póliza a los pocos minutos, así
+      // que la venta en curso viaja en las instrucciones, que el recorte sí conserva.
+      const siguientesInstrucciones = instruccionesCon(state.context);
+      if (siguientesInstrucciones !== instrucciones) {
+        instrucciones = siguientesInstrucciones;
+        void agent.updateInstructions(siguientesInstrucciones);
+      }
+
       const siguiente = faseDe(state.context);
       if (siguiente === fase) return;
       fase = siguiente;
