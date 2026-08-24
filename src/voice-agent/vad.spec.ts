@@ -118,6 +118,27 @@ describe('acceso al modelo de voz', () => {
     VOICE_LLM_API_KEY: 'k',
   };
 
+  // El 429 de Google gasta 180 caracteres en dos URLs de documentación antes de decir QUÉ cuota
+  // se agotó, así que el corte del log dejaba fuera justo el dato que decide qué modelo usar.
+  it('conserva el nombre de la cuota agotada, no las URLs de la documentación', async () => {
+    const cuerpoReal = '[{ "error": { "code": 429, "message": "You exceeded your current quota, ' +
+      'please check your plan and billing details. For more information on this error, head to: ' +
+      'https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: ' +
+      'https://ai.dev/rate-limit. * Quota exceeded for metric: generate_requests_per_model_per_day, ' +
+      'limit: 20", "status": "RESOURCE_EXHAUSTED" } }]';
+
+    const result = await checkLlmAccess(respuesta(429, cuerpoReal), conProveedor);
+
+    expect(result.detail).toContain('generate_requests_per_model_per_day');
+    expect(result.detail).toContain('limit: 20');
+    expect(result.detail).not.toContain('https://ai.google.dev');
+  });
+
+  it('una cuota agotada no es fatal: se repone sola', async () => {
+    const result = await checkLlmAccess(respuesta(429, 'quota'), conProveedor);
+    expect(result).toMatchObject({ ok: false, fatal: false });
+  });
+
   it('imprime el mensaje del proveedor, no el "(no body)" del SDK', async () => {
     const result = await checkLlmAccess(
       respuesta(400, '[{ "error": { "code": 400, "message": "Please pass a valid API key" } }]'),
