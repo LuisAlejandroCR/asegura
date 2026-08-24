@@ -544,11 +544,15 @@ const webToken = new URLSearchParams(location.search).get('token');
   let linkPago = null;
   let hojaYaMostrada = false;
   let sondeoTimer = null;
+  // El navegador interno de Telegram no expone forma de cerrarse; sí devuelve a la app al
+  // seguir un enlace t.me. Sin él, 'Terminar' colgaba la llamada y dejaba la página abierta.
+  let urlDelChat = null;
 
   function aplicarSnapshot(snapshot) {
     if (snapshot.progress) renderProgress(progressEl, snapshot.progress);
 
     if (snapshot.checkoutUrl) linkPago = snapshot.checkoutUrl;
+    if (snapshot.chatUrl) urlDelChat = snapshot.chatUrl;
 
     const paymentish = snapshot.state === 'payment' || snapshot.state === 'policy_issued' || snapshot.state === 'completed';
     if (snapshot.state === 'policy_issued' || snapshot.state === 'completed') {
@@ -806,7 +810,17 @@ const webToken = new URLSearchParams(location.search).get('token');
         keepalive: true,
       }).catch(() => {});
     }
+    volverAlChat();
   });
+
+  // Un solo toque: si sabemos dónde vive el chat, la página se va sola; si no, al menos deja
+  // de pedir que se cierre sin decir cómo.
+  function volverAlChat() {
+    const miniApp = window.Telegram && window.Telegram.WebApp;
+    if (miniApp && typeof miniApp.close === 'function') { miniApp.close(); return; }
+    if (urlDelChat) { location.href = urlDelChat; return; }
+    setEstado('terminado', 'Conversación terminada. Ya puedes cerrar esta pestaña.');
+  }
 })();
 </script>
 </body>

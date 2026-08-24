@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { AgentService, WebReply } from './agent.service';
 import { ConversationService } from './conversation.service';
 import { WebSessionTokenService } from './web-session-token.service';
+import { TelegramAdapter } from '../channel/telegram-adapter.service';
 import { progressFor } from './conversation-state.machine';
 import { ConversationContext } from './types';
 
@@ -21,6 +22,9 @@ interface WebSessionSnapshot {
   // WhatsApp only: its in-app browser escalates to the system browser, so after checkout
   // the page needs an explicit way back. Telegram's in-app browser IS the chat.
   returnUrl?: string;
+  // Where the chat lives, for the "Terminar" button. Telegram's in-app browser exposes no way
+  // to close itself, but it does hand a t.me link back to the app.
+  chatUrl?: string;
 }
 
 interface PostMessageBody {
@@ -35,6 +39,7 @@ export class WebSessionController {
     private readonly conversations: ConversationService,
     private readonly agent: AgentService,
     private readonly config: ConfigService,
+    private readonly telegram: TelegramAdapter,
   ) {}
 
   // Read-only: restores a refreshed page without advancing the conversation.
@@ -58,11 +63,22 @@ export class WebSessionController {
       checkoutUrl: conv.context.checkoutUrl,
       cotizacion: conv.context.quoteSnapshot,
       returnUrl: this.buildReturnUrl(conv.channel),
+      chatUrl: this.buildChatUrl(conv.channel),
     };
+  }
+
+  private buildChatUrl(channel: string): string | undefined {
+    if (channel === 'whatsapp') return this.buildWhatsAppUrl();
+    const username = this.telegram.botUsername;
+    return username ? `https://t.me/${username}` : undefined;
   }
 
   private buildReturnUrl(channel: string): string | undefined {
     if (channel !== 'whatsapp') return undefined;
+    return this.buildWhatsAppUrl();
+  }
+
+  private buildWhatsAppUrl(): string | undefined {
     const waNumber = this.config.get<string>('TWILIO_WHATSAPP_NUMBER');
     if (!waNumber) return undefined;
     const digitsOnly = waNumber.replace(/^whatsapp:/, '').replace(/\D/g, '');

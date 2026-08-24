@@ -36,6 +36,16 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
     return this.bot;
   }
 
+  // grammy throws when botInfo is read before init(), and a page asking where the chat lives
+  // is not a reason to fail a request.
+  get botUsername(): string | undefined {
+    try {
+      return this.bot?.botInfo?.username;
+    } catch {
+      return undefined;
+    }
+  }
+
   // Longer voice notes aren't worth a Whisper call — a quick insurance answer never is.
   private static readonly MAX_VOICE_DURATION_SECONDS = 60;
 

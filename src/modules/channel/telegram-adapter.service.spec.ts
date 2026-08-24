@@ -391,3 +391,23 @@ describe('TelegramAdapter.reactToMessage', () => {
     await expect(adapter.reactToMessage('222', 4242, '✅')).resolves.toBeUndefined();
   });
 });
+
+// AseguraWeb necesita el enlace al chat para poder cerrarse sola; grammy lanza al leer botInfo
+// antes de init(), y eso no puede tumbar una petición HTTP.
+describe('TelegramAdapter.botUsername', () => {
+  it('es undefined cuando el bot está apagado', () => {
+    const adapter = new TelegramAdapter(makeConfig());
+    expect(adapter.botUsername).toBeUndefined();
+  });
+
+  it('es undefined cuando el bot existe pero aún no se inicializó', () => {
+    const adapter = new TelegramAdapter(makeConfig({ TELEGRAM_BOT_TOKEN: '123:fake-token' }));
+    expect(adapter.botUsername).toBeUndefined();
+  });
+
+  it('devuelve el usuario cuando grammy ya lo tiene', () => {
+    const adapter = new TelegramAdapter(makeConfig({ TELEGRAM_BOT_TOKEN: '123:fake-token' }));
+    (adapter.instance as unknown as { botInfo: { username: string } }).botInfo = { username: 'AseguraBot' };
+    expect(adapter.botUsername).toBe('AseguraBot');
+  });
+});

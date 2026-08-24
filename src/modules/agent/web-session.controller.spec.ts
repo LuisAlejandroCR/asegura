@@ -7,7 +7,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { WebSessionController } from './web-session.controller';
 import { ConversationState } from './types';
 
-function makeDeps(overrides: { verify?: any; channel?: string; configValues?: Record<string, string>; context?: Record<string, unknown> } = {}) {
+function makeDeps(overrides: { verify?: any; channel?: string; configValues?: Record<string, string>; context?: Record<string, unknown>; botUsername?: string } = {}) {
   const tokens = {
     verify: jest.fn(overrides.verify ?? (() => ({ conversationId: 'conv-1' }))),
   };
@@ -31,8 +31,9 @@ function makeDeps(overrides: { verify?: any; channel?: string; configValues?: Re
   const config = {
     get: jest.fn((key: string) => (overrides.configValues ?? {})[key]),
   };
-  const controller = new WebSessionController(tokens as any, conversations as any, agent as any, config as any);
-  return { controller, tokens, conversations, agent, config };
+  const telegram = { botUsername: overrides.botUsername };
+  const controller = new WebSessionController(tokens as any, conversations as any, agent as any, config as any, telegram as any);
+  return { controller, tokens, conversations, agent, config, telegram };
 }
 
 // El link de pago que la llamada de voz generó vivía dentro del worker: la persona oía "te lo
@@ -116,6 +117,40 @@ describe('WebSessionController — GET :token', () => {
 
   it('returnUrl is undefined for WhatsApp when TWILIO_WHATSAPP_NUMBER is unset — never crash on a misconfiguration', async () => {
     const { controller } = makeDeps({ channel: 'whatsapp' });
+    const snapshot = await controller.getSession('good-token');
+    expect(snapshot.returnUrl).toBeUndefined();
+  });
+});
+
+// "Terminar" colgaba la llamada y dejaba la página abierta: la persona tenía que tocar el botón
+// y después la X. El navegador interno de Telegram no expone forma de cerrarse, pero sí atiende
+// un enlace t.me — el mismo mecanismo que ya devuelve a WhatsApp.
+describe('WebSessionController — por dónde se sale de AseguraWeb', () => {
+  it('da el enlace al chat de Telegram con el usuario real del bot', async () => {
+    const { controller } = makeDeps({ channel: 'telegram', botUsername: 'AseguraBot' });
+    const snapshot = await controller.getSession('good-token');
+    expect(snapshot.chatUrl).toBe('https://t.me/AseguraBot');
+  });
+
+  it('en WhatsApp reusa el mismo wa.me del retorno', async () => {
+    const { controller } = makeDeps({
+      channel: 'whatsapp',
+      configValues: { TWILIO_WHATSAPP_NUMBER: 'whatsapp:+14155238886' },
+    });
+    const snapshot = await controller.getSession('good-token');
+    expect(snapshot.chatUrl).toBe('https://wa.me/14155238886');
+  });
+
+  // Sin nombre de usuario no hay enlace que inventar: la página muestra "ya puedes cerrar"
+  // en vez de mandar a la persona a una URL que no existe.
+  it('sin usuario del bot no hay enlace', async () => {
+    const { controller } = makeDeps({ channel: 'telegram' });
+    const snapshot = await controller.getSession('good-token');
+    expect(snapshot.chatUrl).toBeUndefined();
+  });
+
+  it('el retorno automático de post-checkout sigue siendo solo de WhatsApp', async () => {
+    const { controller } = makeDeps({ channel: 'telegram', botUsername: 'AseguraBot' });
     const snapshot = await controller.getSession('good-token');
     expect(snapshot.returnUrl).toBeUndefined();
   });
