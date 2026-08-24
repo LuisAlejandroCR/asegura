@@ -114,11 +114,29 @@ export const MAX_ITEMS_HISTORIAL = 20;
 // `minWords` viene en 0, así que cualquier sonido de más de medio segundo corta al agente:
 // un "ujum" o un "ajá" lo dejaban con la frase a medias. Con dos palabras, el respaldo verbal
 // deja de interrumpir y una objeción de verdad sigue entrando.
-export const TURN_HANDLING = {
-  turnDetection: 'vad',
-  preemptiveGeneration: { enabled: false },
-  interruption: { minWords: 2 },
-} as const;
+// Sin el detector semántico de fin de turno —excluido del install por 2 GB— el único juez de que
+// la persona terminó es el silencio, y los 550 ms del VAD son una pausa para pensar: el agente
+// arrancaba encima de quien todavía estaba hablando. En modo VAD esto vale max(silencio, minDelay),
+// así que sube la espera sin tocar el VAD, y se ajusta en vivo por variable.
+export const ENDPOINTING_MIN_MS = 900;
+const ENDPOINTING_MIN_PISO = 300;
+const ENDPOINTING_MIN_TECHO = 3000;
+
+export function turnHandlingCon(env: NodeJS.ProcessEnv = process.env) {
+  const pedido = Number(env.VOICE_ENDPOINTING_MIN_MS);
+  const minDelay = Number.isFinite(pedido) && env.VOICE_ENDPOINTING_MIN_MS
+    ? Math.min(Math.max(pedido, ENDPOINTING_MIN_PISO), ENDPOINTING_MIN_TECHO)
+    : ENDPOINTING_MIN_MS;
+
+  return {
+    turnDetection: 'vad',
+    preemptiveGeneration: { enabled: false },
+    interruption: { minWords: 2 },
+    endpointing: { minDelay },
+  } as const;
+}
+
+export const TURN_HANDLING = turnHandlingCon();
 
 export default defineAgent<VoiceProcessData>({
   // Groq Whisper is batch, not streaming: without a VAD nothing decides where a user turn
@@ -214,7 +232,7 @@ function construirTts() {
 async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
     const session = new voice.AgentSession({
       vad: ctx.proc.userData.vad ?? (await silero.VAD.load()),
-      turnHandling: TURN_HANDLING,
+      turnHandling: turnHandlingCon(),
       stt: openai.STT.withGroq({
         model: 'whisper-large-v3-turbo',
         apiKey: requireEnv('LLM_API_KEY'),

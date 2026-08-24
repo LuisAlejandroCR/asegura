@@ -3,7 +3,7 @@
 // end-of-turn executor this install excludes. Both shipped once and only showed on a live call.
 import type { JobProcess } from '@livekit/agents';
 import { VAD, initializeLogger, llm, voice } from '@livekit/agents';
-import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, checkLlmAccess, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, describirProveedores, hayRespaldoElevenLabs, normalizarBaseUrl, usaElevenLabs, usaGroqLlm } from './main';
+import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, turnHandlingCon, checkLlmAccess, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, describirProveedores, hayRespaldoElevenLabs, normalizarBaseUrl, usaElevenLabs, usaGroqLlm } from './main';
 
 // AgentSession logs from its field initializers; outside cli.runApp nothing has set the logger up.
 beforeAll(() => initializeLogger({ pretty: false, level: 'silent' }));
@@ -301,6 +301,32 @@ describe('respaldos verbales', () => {
 
 // La barra final convierte la ruta en `openai//chat/completions`, que Google responde con un 404
 // sin cuerpo: idéntico a un modelo inexistente o a una ruta equivocada.
+// Sin el detector semántico —excluido del install por 2 GB— el único juez de que la persona
+// terminó de hablar es el silencio, y 550 ms es una pausa para pensar: el agente arrancaba encima.
+describe('cuándo se da por terminado el turno', () => {
+  it('espera más que la pausa de quien piensa a mitad de frase', () => {
+    expect(turnHandlingCon({}).endpointing.minDelay).toBe(900);
+  });
+
+  it('se puede ajustar sin tocar código, que es lo que hace falta en vivo', () => {
+    expect(turnHandlingCon({ VOICE_ENDPOINTING_MIN_MS: '1200' }).endpointing.minDelay).toBe(1200);
+  });
+
+  it('un valor absurdo no deja la llamada muda ni la vuelve un intercomunicador', () => {
+    expect(turnHandlingCon({ VOICE_ENDPOINTING_MIN_MS: 'ochocientos' }).endpointing.minDelay).toBe(900);
+    expect(turnHandlingCon({ VOICE_ENDPOINTING_MIN_MS: '99999' }).endpointing.minDelay).toBe(3000);
+    expect(turnHandlingCon({ VOICE_ENDPOINTING_MIN_MS: '0' }).endpointing.minDelay).toBe(300);
+  });
+
+  it('conserva lo que ya estaba: VAD, sin generación preventiva y dos palabras para interrumpir', () => {
+    const handling = turnHandlingCon({});
+
+    expect(handling.turnDetection).toBe('vad');
+    expect(handling.preemptiveGeneration.enabled).toBe(false);
+    expect(handling.interruption.minWords).toBe(2);
+  });
+});
+
 describe('base URL del proveedor', () => {
   it('quita la barra final para no duplicarla al pegar la ruta', () => {
     expect(normalizarBaseUrl('https://x.dev/v1beta/openai/')).toBe('https://x.dev/v1beta/openai');
