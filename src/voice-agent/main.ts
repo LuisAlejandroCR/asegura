@@ -12,6 +12,7 @@ import { greetingFor, createVoiceAgent, faseDe, herramientasDeFase, instruccione
 import { VoiceSessionState } from './session-state';
 import { buildVoiceDeps, buildConversationLoader, buildConversationSaver } from './deps';
 import { AcumuladorDeTurno } from './latencia';
+import { describirHerramientasEjecutadas } from './herramientas-log';
 
 dotenv.config();
 
@@ -273,7 +274,10 @@ async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
     // hay con qué cotizar. El evento llega justo cuando una herramienta cambió el estado.
     let fase = faseDe(state.context);
     let instrucciones = instruccionesCon(state.context);
-    session.on(voice.AgentSessionEventTypes.FunctionToolsExecuted, () => {
+    session.on(voice.AgentSessionEventTypes.FunctionToolsExecuted, (ev) => {
+      const corridas = describirHerramientasEjecutadas(ev.functionCalls, ev.functionCallOutputs);
+      if (corridas) console.log('[asegura-voice] ' + corridas);
+
       // El recorte del historial deja fuera la cotización y la póliza a los pocos minutos, así
       // que la venta en curso viaja en las instrucciones, que el recorte sí conserva.
       const siguientesInstrucciones = instruccionesCon(state.context);
