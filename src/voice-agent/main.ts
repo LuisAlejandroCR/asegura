@@ -11,6 +11,7 @@ import dotenv from 'dotenv';
 import { greetingFor, createVoiceAgent, faseDe, herramientasDeFase } from './agent';
 import { VoiceSessionState } from './session-state';
 import { buildVoiceDeps, buildConversationLoader, buildConversationSaver } from './deps';
+import { AcumuladorDeTurno } from './latencia';
 
 dotenv.config();
 
@@ -227,6 +228,14 @@ async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
       console.error('[asegura-voice] ' + describeSessionError(ev.error));
     });
 
+    // Una sola línea por turno con las cuatro etapas del silencio: cuál se arregla no se
+    // decide leyendo el código, sino viendo cuál de las cuatro se lleva el tiempo.
+    const latencia = new AcumuladorDeTurno();
+    session.on(voice.AgentSessionEventTypes.MetricsCollected, (ev) => {
+      const linea = latencia.registrar(ev.metrics);
+      if (linea) console.log('[asegura-voice] ' + linea);
+    });
+
     await ctx.connect();
 
     // The identity the token was minted with IS the conversationId (voice.controller.ts
@@ -302,6 +311,12 @@ export async function checkTtsAccess(
 // —`[{"error":{...}}]`— así que no lo encuentra, y como el cuerpo sí era JSON válido tampoco
 // conserva el texto crudo: todo fallo suyo llega como "400 status code (no body)", sea la clave,
 // el modelo o la ruta. Una petición propia es lo único que imprime lo que el proveedor dijo.
+// El 429 de Google gasta 180 caracteres en dos URLs de documentación antes de nombrar la cuota
+// agotada, que es el dato que decide si el modelo sirve para una demo.
+export function resumirCuerpoDeError(cuerpo: string): string {
+  return cuerpo.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
+}
+
 export async function checkLlmAccess(
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
@@ -322,7 +337,7 @@ export async function checkLlmAccess(
     });
     if (response.ok) return { ok: true, fatal: false, detail: `${model} responde` };
 
-    const cuerpo = (await response.text().catch(() => '')).replace(/\s+/g, ' ').trim();
+    const cuerpo = resumirCuerpoDeError(await response.text().catch(() => ''));
     return {
       ok: false,
       // Una cuota agotada se repone sola; una clave, un modelo o una ruta mala no.
