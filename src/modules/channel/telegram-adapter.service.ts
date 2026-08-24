@@ -210,7 +210,12 @@ export class TelegramAdapter implements IChannelAdapter, OnApplicationBootstrap 
     this.logger.log(`Webhook set to ${url}`);
   }
 
+  // grammy corta a los 10 s y por defecto RECHAZA la promesa: una nota de voz —Whisper, modelo
+  // y PDF— se pasa de ahí, y ese rechazo mataba el proceso. Contestar y seguir procesando es lo
+  // que Telegram espera; el margen es el suyo, no el nuestro.
   webhookCallback(): (req: any, res: any, next?: any) => any {
-    return this.bot ? webhookCallback(this.bot, 'express') : (_req: any, _res: any) => {};
+    return this.bot
+      ? webhookCallback(this.bot, 'express', { onTimeout: 'return', timeoutMilliseconds: 55_000 })
+      : (_req: any, _res: any) => {};
   }
 }
