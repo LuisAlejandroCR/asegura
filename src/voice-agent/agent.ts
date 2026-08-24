@@ -70,7 +70,8 @@ es — cédula de ciudadanía, cédula de extranjería o PEP — y pásalo en "d
 lo tengas, el nombre; después el correo — uno por turno, guardando cada uno con
 "capturar_datos". Si la herramienta dice que un dato no es válido, vuelve a pedir ESE dato. Después léele un resumen
 corto (producto, precio y sus datos) y pide confirmación. Solo entonces llama "emitir_poliza",
-y después "generar_link_pago". El link se lo dejas en el chat: nunca leas una URL en voz alta.
+y después "generar_link_pago". El botón de pago le aparece en pantalla: nunca leas una URL en voz
+alta ni le digas que se lo dejaste en el chat.
 
 Una venta a la vez: no ofrezcas ni menciones otro seguro hasta que la póliza en curso esté
 emitida y pagada. Si la persona nombra otra necesidad mientras tanto, dile que la retomas al
@@ -109,11 +110,13 @@ function construirHerramientas(state: VoiceSessionState, deps: ToolDeps): MapaHe
   return {
     autorizar: createAutorizarTool(state),
     consultar_afiliado: createConsultarAfiliadoTool(deps, state),
-    cotizar: createCotizarTool(deps.quoting, (productId) => {
+    cotizar: createCotizarTool(deps.quoting, (cotizacion) => {
       const shown = state.context.shownProductIds ?? [];
+      const productId = cotizacion.productId;
       state.merge({
         quoteProductId: productId,
         shownProductIds: shown.includes(productId) ? shown : [...shown, productId],
+        quoteSnapshot: cotizacion,
       });
     }, () => state.context),
     seleccionar_producto: createSeleccionarProductoTool(deps, state),

@@ -99,8 +99,8 @@ export function createGenerarLinkPagoTool(deps: Pick<ToolDeps, 'payments' | 'quo
   return tool({
     name: 'generar_link_pago',
     description:
-      'Crea el link de pago de la póliza ya emitida. Dile a la persona que se lo dejas en el chat; ' +
-      'nunca leas la URL en voz alta.',
+      'Crea el link de pago de la póliza ya emitida. Dile a la persona que el botón de pago le ' +
+      'aparece en pantalla; nunca leas la URL en voz alta.',
     parameters: z.object({}),
     execute: async () => {
       const result = await generarLinkPagoLogic(deps, state.context, { policyId: state.context.policyId ?? '' });

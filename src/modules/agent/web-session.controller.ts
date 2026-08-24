@@ -7,12 +7,17 @@ import { AgentService, WebReply } from './agent.service';
 import { ConversationService } from './conversation.service';
 import { WebSessionTokenService } from './web-session-token.service';
 import { progressFor } from './conversation-state.machine';
+import { ConversationContext } from './types';
 
 interface WebSessionSnapshot {
   state: string;
   progress: { step: number; totalSteps: number; label: string };
   transcript: Array<{ role: 'user' | 'agent'; text: string }>;
   channel: string;
+  // La llamada de voz cierra la venta fuera de esta página: sin estos dos campos, el link que
+  // el agente dice haber dejado no existe en ninguna pantalla.
+  checkoutUrl?: string;
+  cotizacion?: ConversationContext['quoteSnapshot'];
   // WhatsApp only: its in-app browser escalates to the system browser, so after checkout
   // the page needs an explicit way back. Telegram's in-app browser IS the chat.
   returnUrl?: string;
@@ -50,6 +55,8 @@ export class WebSessionController {
       progress: progressFor(conv.state as any),
       transcript: conv.context.lastMessages ?? [],
       channel: conv.channel,
+      checkoutUrl: conv.context.checkoutUrl,
+      cotizacion: conv.context.quoteSnapshot,
       returnUrl: this.buildReturnUrl(conv.channel),
     };
   }

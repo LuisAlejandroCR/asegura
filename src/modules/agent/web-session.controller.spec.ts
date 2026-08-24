@@ -7,7 +7,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { WebSessionController } from './web-session.controller';
 import { ConversationState } from './types';
 
-function makeDeps(overrides: { verify?: any; channel?: string; configValues?: Record<string, string> } = {}) {
+function makeDeps(overrides: { verify?: any; channel?: string; configValues?: Record<string, string>; context?: Record<string, unknown> } = {}) {
   const tokens = {
     verify: jest.fn(overrides.verify ?? (() => ({ conversationId: 'conv-1' }))),
   };
@@ -17,7 +17,7 @@ function makeDeps(overrides: { verify?: any; channel?: string; configValues?: Re
       user_id: 'u1',
       channel: overrides.channel ?? 'telegram',
       state: ConversationState.DISCOVERY,
-      context: { lastMessages: [{ role: 'agent', text: 'hola' }] },
+      context: overrides.context ?? { lastMessages: [{ role: 'agent', text: 'hola' }] },
     }),
   };
   const agent = {
@@ -34,6 +34,43 @@ function makeDeps(overrides: { verify?: any; channel?: string; configValues?: Re
   const controller = new WebSessionController(tokens as any, conversations as any, agent as any, config as any);
   return { controller, tokens, conversations, agent, config };
 }
+
+// El link de pago que la llamada de voz generó vivía dentro del worker: la persona oía "te lo
+// dejé en el chat" y no aparecía en ninguna parte. AseguraWeb lo lee de aquí.
+describe('WebSessionController — el pago que la voz dejó listo', () => {
+  it('publica el link de pago y la cotización que la herramienta produjo', async () => {
+    const { controller } = makeDeps({
+      context: {
+        checkoutUrl: 'https://checkout.wompi.co/l/test_abc',
+        quoteSnapshot: {
+          productId: 'vida-pan-american',
+          producto: 'Seguro de vida',
+          aseguradora: 'Pan American Life',
+          precioMensual: 12000,
+          coberturas: ['Protección por fallecimiento'],
+          razon: 'Tienes dos hijos que dependen de ti',
+        },
+      },
+    });
+
+    const snapshot = await controller.getSession('good-token');
+
+    expect(snapshot.checkoutUrl).toBe('https://checkout.wompi.co/l/test_abc');
+    expect(snapshot.cotizacion?.precioMensual).toBe(12000);
+    expect(snapshot.cotizacion?.producto).toBe('Seguro de vida');
+  });
+
+  // Un precio que no salió de la herramienta es un precio inventado: sin cotización guardada
+  // la hoja no se pinta, en vez de rellenarse con el catálogo por su cuenta.
+  it('no inventa una cotización cuando la llamada no dejó ninguna', async () => {
+    const { controller } = makeDeps({ context: { checkoutUrl: 'https://checkout.wompi.co/l/x' } });
+
+    const snapshot = await controller.getSession('good-token');
+
+    expect(snapshot.checkoutUrl).toBe('https://checkout.wompi.co/l/x');
+    expect(snapshot.cotizacion).toBeUndefined();
+  });
+});
 
 describe('WebSessionController — GET :token', () => {
   it('rejects an invalid/expired token with 401, never touching ConversationService', async () => {

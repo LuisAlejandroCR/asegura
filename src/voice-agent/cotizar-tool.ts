@@ -4,7 +4,7 @@
 import { tool } from '@livekit/agents';
 import { z } from 'zod';
 import { QuotingService } from '../modules/quoting/quoting.service';
-import { CATEGORIES, CotizarArgs, cotizarLogic as sharedCotizar } from '../modules/agent/tools';
+import { CATEGORIES, CotizacionEncontrada, CotizarArgs, cotizarLogic as sharedCotizar } from '../modules/agent/tools';
 
 export interface CotizarResult {
   encontrado: boolean;
@@ -45,7 +45,7 @@ export function cotizarLogic(quoting: QuotingService, args: CotizarArgs): Cotiza
 
 export function createCotizarTool(
   quoting: QuotingService,
-  onQuoted?: (productId: string) => void,
+  onQuoted?: (cotizacion: CotizacionEncontrada) => void,
   // Read at call time, so a purchase made mid-call is already visible to the guard.
   contextOf?: () => import('../modules/agent/types').ConversationContext,
 ) {
@@ -59,8 +59,9 @@ export function createCotizarTool(
     execute: async (args) => {
       const result = sharedCotizar(quoting, args as CotizarArgs, contextOf?.());
       if (!result.ok) return { encontrado: false, motivo: result.motivo };
-      // Remembered so emitirPoliza prices the same product the person just heard.
-      onQuoted?.(result.cotizacion.productId);
+      // Remembered so emitirPoliza prices the same product the person just heard, and so
+      // AseguraWeb paints the sheet with this number instead of one of its own.
+      onQuoted?.(result.cotizacion);
       return cotizarLogic(quoting, args as CotizarArgs);
     },
   });

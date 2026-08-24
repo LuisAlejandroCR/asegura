@@ -538,13 +538,61 @@ const webToken = new URLSearchParams(location.search).get('token');
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   }
 
+  // La llamada de voz cierra la venta en el worker, que escribe en la conversación. Sin
+  // volver a leerla, esta página se quedaba en el paso 1 de 6 toda la llamada y el link de
+  // pago que el agente decía haber dejado no aparecía en ninguna pantalla.
+  let linkPago = null;
+  let hojaYaMostrada = false;
+  let sondeoTimer = null;
+
+  function aplicarSnapshot(snapshot) {
+    if (snapshot.progress) renderProgress(progressEl, snapshot.progress);
+
+    if (snapshot.checkoutUrl) linkPago = snapshot.checkoutUrl;
+
+    const paymentish = snapshot.state === 'payment' || snapshot.state === 'policy_issued' || snapshot.state === 'completed';
+    if (snapshot.state === 'policy_issued' || snapshot.state === 'completed') {
+      detenerSondeo();
+      showPostCheckout(snapshot);
+      return;
+    }
+
+    // La hoja se pinta solo con la cotización que la herramienta produjo (regla #5): sin
+    // ella no hay precio que mostrar, y no se inventa uno.
+    const puedeMostrarHoja = linkPago && snapshot.cotizacion && !hojaYaMostrada
+      && cuerpo.dataset.estado !== 'pagando' && !postCheckout.classList.contains('activo');
+    if (puedeMostrarHoja) {
+      hojaYaMostrada = true;
+      abrirResumen(snapshot.cotizacion);
+      return;
+    }
+
+    if (paymentish && !linkPago) showPostCheckout(snapshot);
+  }
+
+  const leerSesion = async () => {
+    if (!webToken) return;
+    try {
+      const res = await apiFetch(`/web-session/${webToken}`);
+      if (!res.ok) return;
+      aplicarSnapshot(await res.json());
+    } catch { /* red intermitente: reintenta en el próximo tick */ }
+  };
+
+  function detenerSondeo() {
+    if (sondeoTimer) { clearInterval(sondeoTimer); sondeoTimer = null; }
+  }
+
+  function iniciarSondeo() {
+    if (!webToken || sondeoTimer) return;
+    sondeoTimer = setInterval(leerSesion, 3000);
+  }
+
   if (webToken) {
     apiFetch(`/web-session/${webToken}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`web-session respondió ${res.status}`))))
       .then((snapshot) => {
-        renderProgress(progressEl, snapshot.progress);
-        const paymentish = snapshot.state === 'payment' || snapshot.state === 'policy_issued' || snapshot.state === 'completed';
-        if (paymentish) showPostCheckout(snapshot);
+        aplicarSnapshot(snapshot);
       })
       .catch((err) => {
         console.warn('No se pudo cargar la sesión real, quedando en modo demo:', err);
@@ -696,12 +744,16 @@ const webToken = new URLSearchParams(location.search).get('token');
       clearInterval(cronometro);
       cronometro = null;
       cancelarEsperaAgente();
-      setEstado('terminado');
+      // Una última lectura antes de parar: el link puede haberse generado en el turno final.
+      detenerSondeo();
+      void leerSesion();
+      if (cuerpo.dataset.estado !== 'pagando') setEstado('terminado');
     });
 
     try {
       await room.connect(sesion.url, sesion.token);
       await room.localParticipant.setMicrophoneEnabled(true);
+      iniciarSondeo();
     } catch (err) {
       // WhatsApp's in-app browser can simply refuse microphone access — see mic-test.html.
       cancelarEsperaAgente();
@@ -730,13 +782,16 @@ const webToken = new URLSearchParams(location.search).get('token');
   hoja.addEventListener('cancel', cerrarResumen);
 
   btnPagar.addEventListener('click', () => {
+    // Real Wompi Payment Link with redirect_url: payment is confirmed ONLY by the signed
+    // webhook, never by the redirect. Sin este salto el botón cerraba la hoja y no cobraba.
+    if (!linkPago) return;
     setEstado('pagando');
     hoja.close();
-    // Real Wompi Payment Link with redirect_url: payment is confirmed ONLY by the signed
-    // webhook, never by the redirect.
+    location.href = linkPago;
   });
 
   btnFin.addEventListener('click', () => {
+    detenerSondeo();
     if (room) { room.disconnect(); room = null; }
     else { setEstado('terminado'); }
     if (hoja.open) hoja.close();

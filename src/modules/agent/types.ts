@@ -65,6 +65,16 @@ interface ConversationContext {
   // Never reset, unlike policyIds: what a later "¿qué cubre mi póliza?" reads from.
   purchasedProductIds?: string[];
   checkoutUrl?: string;
+  // Lo que `cotizar` devolvió, tal cual: AseguraWeb pinta la hoja de resumen con esto y nunca
+  // recalcula un precio por su cuenta.
+  quoteSnapshot?: {
+    productId: string;
+    producto: string;
+    aseguradora: string;
+    precioMensual: number;
+    coberturas: string[];
+    razon?: string;
+  };
   // The next message is expected to be a contact share, not an answer to a question.
   awaitingPhoneVerification?: boolean;
   // Phone from Telegram's native request_contact — Telegram already verified the number

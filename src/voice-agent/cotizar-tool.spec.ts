@@ -5,7 +5,7 @@
 
 import { QuotingService } from '../modules/quoting/quoting.service';
 import { ProductCatalog } from '../modules/quoting/product-catalog.service';
-import { cotizarLogic, cotizarParams } from './cotizar-tool';
+import { cotizarLogic, cotizarParams, createCotizarTool } from './cotizar-tool';
 
 describe('cotizarLogic', () => {
   const quoting = new QuotingService(new ProductCatalog());
@@ -61,5 +61,24 @@ describe('cotizarParams schema', () => {
   it('rejects a category the real catalog does not sell — no silent coercion to null', () => {
     const parsed = cotizarParams.safeParse({ productCategory: 'vehicular' });
     expect(parsed.success).toBe(false);
+  });
+});
+
+// La hoja de resumen de AseguraWeb se pinta con lo que la herramienta devolvió, nunca con un
+// precio recalculado: para eso la cotización tiene que quedar guardada en el contexto.
+describe('lo que la llamada recuerda de la cotización', () => {
+  it('avisa con la cotización completa, no solo con el id', async () => {
+    const quoting = new QuotingService(new ProductCatalog());
+    const avisos: Array<{ productId: string; precioMensual: number; producto: string }> = [];
+    const tool = createCotizarTool(quoting, (cotizacion) => avisos.push(cotizacion)) as unknown as {
+      execute: (args: Record<string, unknown>) => Promise<{ encontrado: boolean; precioMensual?: number }>;
+    };
+
+    const resultado = await tool.execute({ productCategory: 'vida', dependents: 2 });
+
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0].productId).toBeTruthy();
+    expect(avisos[0].producto).toBe((resultado as { producto?: string }).producto);
+    expect(avisos[0].precioMensual).toBe(resultado.precioMensual);
   });
 });
