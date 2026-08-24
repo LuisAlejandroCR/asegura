@@ -3,11 +3,18 @@
 // step 1 and the payment link died inside the process.
 import { ConversationContext, ConversationState } from '../modules/agent/types';
 
+// Solo cuenta la venta en curso. `hasCompletedPurchase`, la cédula y el correo sobreviven a la
+// compra anterior a propósito, así que leerlos como progreso ponía a quien vuelve en el último
+// paso desde el saludo, con la llamada apenas empezando.
 export function estadoDeVoz(context: ConversationContext): ConversationState {
-  if (context.hasCompletedPurchase) return ConversationState.POLICY_ISSUED;
   if (context.policyId || context.policyIds?.length || context.checkoutUrl) return ConversationState.PAYMENT;
-  if (context.cedula || context.nombre || context.email) return ConversationState.DATA_CAPTURE;
-  if (context.quoteProductId || context.selectedProductIds?.length) return ConversationState.QUOTE_PRESENTED;
+
+  const hayCotizacion = !!context.quoteProductId || !!context.selectedProductIds?.length;
+  if (hayCotizacion) {
+    const tieneDatos = !!context.cedula || !!context.nombre || !!context.email;
+    return tieneDatos ? ConversationState.DATA_CAPTURE : ConversationState.QUOTE_PRESENTED;
+  }
+
   if (context.autorizado) return ConversationState.DISCOVERY;
   return ConversationState.GREETING;
 }

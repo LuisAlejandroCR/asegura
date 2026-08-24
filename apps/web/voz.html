@@ -497,7 +497,9 @@ const webToken = new URLSearchParams(location.search).get('token');
     footerEl.style.display = 'none';
     postCheckout.classList.add('activo');
 
-    const done = snapshot.state === 'policy_issued' || snapshot.state === 'completed';
+    // El webhook guarda DISCOVERY tras cobrar —el chat sigue con el cross-sell—, así que
+    // esperar 'policy_issued' aquí dejaba la pantalla girando para siempre.
+    const done = snapshot.compraConfirmada === true;
     if (!done) {
       if (!pollTimer) {
         let attempts = 0;
@@ -508,7 +510,7 @@ const webToken = new URLSearchParams(location.search).get('token');
             const res = await apiFetch(`/web-session/${webToken}`);
             if (!res.ok) return;
             const fresh = await res.json();
-            if (fresh.state === 'policy_issued' || fresh.state === 'completed') showPostCheckout(fresh);
+            if (fresh.compraConfirmada) showPostCheckout(fresh);
           } catch { /* red intermitente: reintenta en el próximo tick */ }
         }, 3000);
       }
@@ -554,6 +556,9 @@ const webToken = new URLSearchParams(location.search).get('token');
   // El navegador interno de Telegram no expone forma de cerrarse; sí devuelve a la app al
   // seguir un enlace t.me. Sin él, 'Terminar' colgaba la llamada y dejaba la página abierta.
   let urlDelChat = null;
+  // Wompi cuelga sus propios parámetros del redirect_url, así que un `id` en la URL significa
+  // que esta carga viene del checkout y no de abrir el link del chat.
+  const vueltaDePago = new URLSearchParams(location.search).has('id');
 
   function aplicarSnapshot(snapshot) {
     if (snapshot.progress) renderProgress(progressEl, snapshot.progress);
@@ -561,8 +566,10 @@ const webToken = new URLSearchParams(location.search).get('token');
     if (snapshot.checkoutUrl) linkPago = snapshot.checkoutUrl;
     if (snapshot.chatUrl) urlDelChat = snapshot.chatUrl;
 
-    const paymentish = snapshot.state === 'payment' || snapshot.state === 'policy_issued' || snapshot.state === 'completed';
-    if (snapshot.state === 'policy_issued' || snapshot.state === 'completed') {
+    // Solo el pago confirmado tapa la pantalla. Antes bastaba con que hubiera póliza emitida,
+    // y como la llamada sigue —falta el correo, falta pagar— la persona veía '¡Listo!' mientras
+    // el agente le seguía preguntando.
+    if (snapshot.compraConfirmada && (linkPago || vueltaDePago)) {
       detenerSondeo();
       showPostCheckout(snapshot);
       return;
@@ -578,7 +585,6 @@ const webToken = new URLSearchParams(location.search).get('token');
       return;
     }
 
-    if (paymentish && !linkPago) showPostCheckout(snapshot);
   }
 
   const leerSesion = async () => {

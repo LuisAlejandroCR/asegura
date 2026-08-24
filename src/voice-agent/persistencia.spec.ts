@@ -17,11 +17,23 @@ describe('estado derivado del contexto de la llamada', () => {
       .toBe(ConversationState.PAYMENT);
   });
 
-  // La póliza se emite ANTES de cobrarse, así que tenerla no puede marcar el último paso:
-  // solo el pago confirmado por el webhook lo hace.
-  it('reserva el último paso para la compra confirmada', () => {
-    expect(estadoDeVoz({ autorizado: true, policyId: 'pol-1', hasCompletedPurchase: true }))
-      .toBe(ConversationState.POLICY_ISSUED);
+  // `hasCompletedPurchase` no se borra nunca —es lo que distingue "ya compró" de "nunca
+  // compró"—, así que usarlo como estado ponía a todo cliente que regresa en la pantalla de
+  // "¡Listo!" desde el saludo, con la llamada todavía corriendo.
+  it('una compra vieja no adelanta la venta de hoy', () => {
+    expect(estadoDeVoz({ autorizado: true, hasCompletedPurchase: true }))
+      .toBe(ConversationState.DISCOVERY);
+    expect(estadoDeVoz({ autorizado: true, hasCompletedPurchase: true, quoteProductId: 'vida-pan-american' }))
+      .toBe(ConversationState.QUOTE_PRESENTED);
+    expect(estadoDeVoz({ autorizado: true, hasCompletedPurchase: true, policyId: 'pol-1' }))
+      .toBe(ConversationState.PAYMENT);
+  });
+
+  // La cédula y el correo tampoco se borran entre compras: solos no significan que haya una
+  // venta avanzada, solo que esta persona ya estuvo aquí.
+  it('los datos guardados de antes no cuentan como paso sin una cotización viva', () => {
+    expect(estadoDeVoz({ autorizado: true, cedula: '123', nombre: 'Ana', email: 'a@b.co' }))
+      .toBe(ConversationState.DISCOVERY);
   });
 });
 

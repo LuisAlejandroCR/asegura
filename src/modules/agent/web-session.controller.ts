@@ -25,6 +25,9 @@ interface WebSessionSnapshot {
   // Where the chat lives, for the "Terminar" button. Telegram's in-app browser exposes no way
   // to close itself, but it does hand a t.me link back to the app.
   chatUrl?: string;
+  // El webhook guarda DISCOVERY tras cobrar para que el chat siga con el cross-sell, así que el
+  // estado de la fila no distingue una compra pagada de una que empieza.
+  compraConfirmada: boolean;
 }
 
 interface PostMessageBody {
@@ -64,6 +67,7 @@ export class WebSessionController {
       cotizacion: conv.context.quoteSnapshot,
       returnUrl: this.buildReturnUrl(conv.channel),
       chatUrl: this.buildChatUrl(conv.channel),
+      compraConfirmada: conv.context.hasCompletedPurchase === true,
     };
   }
 

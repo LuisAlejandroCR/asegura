@@ -125,6 +125,22 @@ describe('WebSessionController — GET :token', () => {
 // "Terminar" colgaba la llamada y dejaba la página abierta: la persona tenía que tocar el botón
 // y después la X. El navegador interno de Telegram no expone forma de cerrarse, pero sí atiende
 // un enlace t.me — el mismo mecanismo que ya devuelve a WhatsApp.
+// El webhook de Wompi guarda DISCOVERY después de cobrar, porque el chat sigue con el
+// cross-sell: el estado de la fila no sirve para saber si ESTA compra se pagó.
+describe('WebSessionController — cuándo la compra está pagada', () => {
+  it('lo dice explícitamente, sin que la página lo deduzca del estado', async () => {
+    const { controller } = makeDeps({ context: { hasCompletedPurchase: true } });
+    const snapshot = await controller.getSession('good-token');
+    expect(snapshot.compraConfirmada).toBe(true);
+  });
+
+  it('es falso mientras solo hay póliza emitida y link de pago', async () => {
+    const { controller } = makeDeps({ context: { policyId: 'pol-1', checkoutUrl: 'https://x' } });
+    const snapshot = await controller.getSession('good-token');
+    expect(snapshot.compraConfirmada).toBe(false);
+  });
+});
+
 describe('WebSessionController — por dónde se sale de AseguraWeb', () => {
   it('da el enlace al chat de Telegram con el usuario real del bot', async () => {
     const { controller } = makeDeps({ channel: 'telegram', botUsername: 'AseguraBot' });
