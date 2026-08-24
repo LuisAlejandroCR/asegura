@@ -11,7 +11,8 @@ import { PdfService } from '../modules/policy/pdf.service';
 import { WompiService } from '../modules/payments/wompi.service';
 import { ToolDeps } from '../modules/agent/tools';
 import { ConversationService } from '../modules/agent/conversation.service';
-import { ConversationContext } from '../modules/agent/types';
+import { ConversationContext, ConversationState } from '../modules/agent/types';
+import { crearGuardador, GuardadorDeVoz } from './persistencia';
 
 // ConfigService reads process.env when no module is attached, which is all this needs.
 const config = new ConfigService();
@@ -53,4 +54,17 @@ export function buildConversationLoader(): (id: string) => Promise<ConversationC
       return {};
     }
   };
+}
+
+// Sin esto la llamada era de solo lectura: cotizaba, emitía y cobraba, y la fila seguía como
+// antes de descolgar. La escritura va por fuera del turno — un fallo de Supabase no puede
+// dejar a la persona esperando en el teléfono.
+export function buildConversationSaver(): GuardadorDeVoz {
+  if (!config.get<string>('SUPABASE_URL') || !config.get<string>('SUPABASE_SERVICE_ROLE_KEY')) {
+    return async () => {};
+  }
+  const conversations = new ConversationService(new SupabaseService(config));
+  return crearGuardador(async (id: string, estado: ConversationState, context: ConversationContext) => {
+    await conversations.saveState(id, estado, context);
+  });
 }

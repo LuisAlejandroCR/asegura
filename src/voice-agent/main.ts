@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import dotenv from 'dotenv';
 import { greetingFor, createVoiceAgent, faseDe, herramientasDeFase } from './agent';
 import { VoiceSessionState } from './session-state';
-import { buildVoiceDeps, buildConversationLoader } from './deps';
+import { buildVoiceDeps, buildConversationLoader, buildConversationSaver } from './deps';
 
 dotenv.config();
 
@@ -163,7 +163,7 @@ export function normalizarBaseUrl(url: string): string {
 // existe. La clave nunca se imprime.
 export function describirProveedores(env: NodeJS.ProcessEnv = process.env): string {
   const modelo = env.VOICE_LLM_BASE_URL
-    ? `${env.VOICE_LLM_MODEL || 'gemini-2.5-flash'} vía ${normalizarBaseUrl(env.VOICE_LLM_BASE_URL)}`
+    ? `${env.VOICE_LLM_MODEL || 'gemini-3.1-flash-lite'} vía ${normalizarBaseUrl(env.VOICE_LLM_BASE_URL)}`
     : usaGroqLlm(env)
       ? `${env.LLM_MODEL || 'openai/gpt-oss-120b'} vía Groq`
       : `${env.VOICE_LLM_MODEL || 'google/gemini-2.5-flash'} vía la pasarela de LiveKit`;
@@ -181,7 +181,7 @@ function construirLlm() {
   const baseURL = process.env.VOICE_LLM_BASE_URL;
   if (baseURL) {
     return new openai.LLM({
-      model: process.env.VOICE_LLM_MODEL || 'gemini-2.5-flash',
+      model: process.env.VOICE_LLM_MODEL || 'gemini-3.1-flash-lite',
       apiKey: requireEnv('VOICE_LLM_API_KEY'),
       baseURL: normalizarBaseUrl(baseURL),
     });
@@ -233,8 +233,11 @@ async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
     // passes it), so a call opened from a chat link can close the sale against that same
     // conversation. A standalone voz.html visit has a random identity and can only quote.
     const participant = await ctx.waitForParticipant();
-    const state = new VoiceSessionState(participant.identity);
-    state.merge(await buildConversationLoader()(participant.identity));
+    const guardar = buildConversationSaver();
+    const state = new VoiceSessionState(participant.identity, (context) => {
+      void guardar(participant.identity, context);
+    });
+    state.hidratar(await buildConversationLoader()(participant.identity));
 
     const deps = buildVoiceDeps();
     const agent = createVoiceAgent(state, deps);
@@ -306,7 +309,7 @@ export async function checkLlmAccess(
   const baseURL = env.VOICE_LLM_BASE_URL;
   if (!baseURL) return { ok: true, fatal: false, detail: 'sin proveedor propio' };
 
-  const model = env.VOICE_LLM_MODEL || 'gemini-2.5-flash';
+  const model = env.VOICE_LLM_MODEL || 'gemini-3.1-flash-lite';
   const destino = normalizarBaseUrl(baseURL);
   try {
     const response = await fetchImpl(`${destino}/chat/completions`, {

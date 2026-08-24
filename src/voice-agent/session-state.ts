@@ -6,8 +6,11 @@ import { ConversationContext } from '../modules/agent/types';
 
 export class VoiceSessionState {
   // The LiveKit identity is the conversationId the chat link was minted for, or undefined
-  // for a standalone voz.html visit.
-  constructor(readonly conversationId?: string) {}
+  // for a standalone voz.html visit. Every merge is announced so the row can follow the call.
+  constructor(
+    readonly conversationId?: string,
+    private readonly alCambiar?: (context: ConversationContext) => void,
+  ) {}
 
   private ctx: ConversationContext = {};
 
@@ -16,6 +19,13 @@ export class VoiceSessionState {
   }
 
   merge(patch: ConversationContext): void {
+    this.ctx = { ...this.ctx, ...patch };
+    this.alCambiar?.(this.ctx);
+  }
+
+  // What the chat already knew, on the way in. Announcing it would write the row back over
+  // itself before the person has said a word.
+  hidratar(patch: ConversationContext): void {
     this.ctx = { ...this.ctx, ...patch };
   }
 }
