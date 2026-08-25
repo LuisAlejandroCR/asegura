@@ -127,7 +127,7 @@ export class AgentService {
     private readonly reminders: ReminderService,
     private readonly affiliateLookup: AffiliateLookupService,
     private readonly config: ConfigService,
-    // A web-session reply needs a fetchable download link, the same reason Twilio does.
+    // A web-session reply needs a fetchable download link; a browser takes no chat attachment.
     private readonly documentCache: DocumentCacheService = new DocumentCacheService(),
     // Mints the texto.html/voz.html links offered at DISCOVERY entry.
     private readonly webSessionTokens: WebSessionTokenService = new WebSessionTokenService(config),

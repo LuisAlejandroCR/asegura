@@ -1,6 +1,6 @@
-// downloads.controller.ts: serves the ephemeral buffers DocumentCacheService holds — the
-// only way Twilio's WhatsApp API can fetch a document this app generates in memory (its
-// API takes a URL, never an upload). Unauthenticated: the random token is the credential.
+// downloads.controller.ts: serves the ephemeral buffers DocumentCacheService holds — how
+// an AseguraWeb session reaches a PDF this app generates in memory, since a browser cannot
+// receive a chat attachment. Unauthenticated: the random token is the credential.
 import { Controller, Get, Param, NotFoundException, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { DocumentCacheService } from './document-cache.service';

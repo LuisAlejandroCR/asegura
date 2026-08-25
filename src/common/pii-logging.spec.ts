@@ -48,7 +48,7 @@ describe('no logger call carries user content', () => {
   it('allows logging how much was said, just not what', () => {
     expect(offendingLogs('this.logger.log(`Message from ${msg.userId} (${msg.text.length} chars)`);'))
       .toEqual([]);
-    expect(offendingLogs('this.logger.error(`Twilio send failed: ${res.status} ${await res.text()}`);'))
+    expect(offendingLogs('this.logger.error(`Meta send failed: ${res.status} ${await res.text()}`);'))
       .toEqual([]);
   });
 

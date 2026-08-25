@@ -7,7 +7,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { HealthController } from './health/health.controller';
 import { WebSessionController } from './modules/agent/web-session.controller';
 import { TelegramWebhookController } from './modules/channel/telegram-webhook.controller';
-import { TwilioWebhookController } from './modules/channel/twilio-webhook.controller';
+import { MetaWebhookController } from './modules/channel/meta-webhook.controller';
 import { WompiWebhookController } from './modules/payments/wompi-webhook.controller';
 import { VoiceController } from './modules/voice/voice.controller';
 
@@ -94,7 +94,7 @@ describe('global rate limiting', () => {
   it.each([
     ['wompi webhook', WompiWebhookController, 'handleWebhook'],
     ['telegram webhook', TelegramWebhookController, 'handle'],
-    ['twilio webhook', TwilioWebhookController, 'handle'],
+    ['meta whatsapp webhook', MetaWebhookController, 'handle'],
     ['health', HealthController, 'check'],
   ])('never throttles %s', async (_name, classRef, method) => {
     const attempts = GLOBAL_LIMIT * 3;

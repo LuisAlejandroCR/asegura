@@ -3,7 +3,7 @@
 
 import { Module } from '@nestjs/common';
 import { ChannelModule } from '../channel/channel.module';
-import { TwilioWebhookController } from '../channel/twilio-webhook.controller';
+import { MetaWebhookController } from '../channel/meta-webhook.controller';
 import { NlpModule } from '../nlp/nlp.module';
 import { DatabaseModule } from '../../database/database.module';
 import { QuotingModule } from '../quoting/quoting.module';
@@ -24,9 +24,9 @@ import { WompiService } from '../payments/wompi.service';
 
 @Module({
   imports: [ChannelModule, NlpModule, DatabaseModule, QuotingModule, PolicyModule, PaymentsModule, ConversationModule],
-  // TwilioWebhookController and WebSessionController live here, not in ChannelModule: both
+  // MetaWebhookController and WebSessionController live here, not in ChannelModule: both
   // need AgentService directly, and ChannelModule can't import AgentModule back (cycle).
-  controllers: [TwilioWebhookController, WebSessionController, WebLinkController],
+  controllers: [MetaWebhookController, WebSessionController, WebLinkController],
   providers: [
     AgentService,
     WebSessionTokenService,

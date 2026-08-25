@@ -100,10 +100,10 @@ describe('WebSessionController — GET :token', () => {
     expect(snapshot.channel).toBe('whatsapp');
   });
 
-  it('returnUrl is a real wa.me link for WhatsApp when TWILIO_WHATSAPP_NUMBER is configured', async () => {
+  it('returnUrl is a real wa.me link for WhatsApp when WHATSAPP_DISPLAY_NUMBER is configured', async () => {
     const { controller } = makeDeps({
       channel: 'whatsapp',
-      configValues: { TWILIO_WHATSAPP_NUMBER: 'whatsapp:+14155238886' },
+      configValues: { WHATSAPP_DISPLAY_NUMBER: '+14155238886' },
     });
     const snapshot = await controller.getSession('good-token');
     expect(snapshot.returnUrl).toBe('https://wa.me/14155238886');
@@ -115,7 +115,7 @@ describe('WebSessionController — GET :token', () => {
     expect(snapshot.returnUrl).toBeUndefined();
   });
 
-  it('returnUrl is undefined for WhatsApp when TWILIO_WHATSAPP_NUMBER is unset — never crash on a misconfiguration', async () => {
+  it('returnUrl is undefined for WhatsApp when WHATSAPP_DISPLAY_NUMBER is unset — never crash on a misconfiguration', async () => {
     const { controller } = makeDeps({ channel: 'whatsapp' });
     const snapshot = await controller.getSession('good-token');
     expect(snapshot.returnUrl).toBeUndefined();
@@ -151,7 +151,7 @@ describe('WebSessionController — por dónde se sale de AseguraWeb', () => {
   it('en WhatsApp reusa el mismo wa.me del retorno', async () => {
     const { controller } = makeDeps({
       channel: 'whatsapp',
-      configValues: { TWILIO_WHATSAPP_NUMBER: 'whatsapp:+14155238886' },
+      configValues: { WHATSAPP_DISPLAY_NUMBER: '+14155238886' },
     });
     const snapshot = await controller.getSession('good-token');
     expect(snapshot.chatUrl).toBe('https://wa.me/14155238886');

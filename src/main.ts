@@ -12,7 +12,10 @@ import { AgentService } from './modules/agent/agent.service';
 import { TelegramAdapter } from './modules/channel/telegram-adapter.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // rawBody: Meta signs the exact bytes it sent, escaping non-ASCII as \uXXXX, so the
+  // parsed body cannot be re-serialized into the same digest. Without this every WhatsApp
+  // message with a tilde would fail signature verification.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 

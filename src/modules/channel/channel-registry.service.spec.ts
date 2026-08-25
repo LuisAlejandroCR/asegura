@@ -4,7 +4,7 @@
 import { ChannelRegistry } from './channel-registry.service';
 
 describe('ChannelRegistry', () => {
-  it('resolves "whatsapp" to the Twilio adapter', () => {
+  it('resolves "whatsapp" to the Meta adapter', () => {
     const telegram = {} as any;
     const whatsapp = {} as any;
     const registry = new ChannelRegistry(telegram, whatsapp);

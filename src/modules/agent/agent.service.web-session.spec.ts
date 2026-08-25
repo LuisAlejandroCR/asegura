@@ -21,7 +21,7 @@ describe('AgentService.handleWebMessage — conversation resolution', () => {
     expect(conversations.getOrCreate).toHaveBeenCalledWith('u1', 'telegram');
   });
 
-  it('attaches a synthetic contact on every message — same pattern as WhatsApp\'s WaId (twilio-whatsapp-adapter.service.ts)', async () => {
+  it('attaches a synthetic contact on every message — same pattern as WhatsApp (meta-whatsapp-adapter.service.ts)', async () => {
     // No browser equivalent of Telegram's request_contact button exists, so a web session
     // proves phone possession the same way WhatsApp does: the channel adapter attaches
     // `contact` unconditionally, and AgentService's EXISTING phoneVerified gate (built for

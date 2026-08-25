@@ -3,13 +3,13 @@
 import { Injectable } from '@nestjs/common';
 import { IChannelAdapter } from './types';
 import { TelegramAdapter } from './telegram-adapter.service';
-import { TwilioWhatsAppAdapter } from './twilio-whatsapp-adapter.service';
+import { MetaWhatsAppAdapter } from './meta-whatsapp-adapter.service';
 
 @Injectable()
 export class ChannelRegistry {
   constructor(
     private readonly telegram: TelegramAdapter,
-    private readonly whatsapp: TwilioWhatsAppAdapter,
+    private readonly whatsapp: MetaWhatsAppAdapter,
   ) {}
 
   get(channel: 'telegram' | 'whatsapp'): IChannelAdapter {
