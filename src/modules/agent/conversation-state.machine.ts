@@ -65,7 +65,21 @@ const WEB_FLOW_LABELS: Record<ConversationState, string> = {
   [ConversationState.REJECTED]: '¡Listo!',
 };
 
-export function progressFor(state: ConversationState): { step: number; totalSteps: number; label: string } {
+// Hasta dónde llegó de verdad, leído del contexto. Un cierre por inactividad no borra lo
+// avanzado, y la barra tampoco debería: quien ya tenía link de pago estaba en el paso 5.
+function pasoAlcanzado(context?: ConversationContext): number {
+  if (!context) return 1;
+  if (context.policyId || context.policyIds?.length) return 6;
+  if (context.checkoutUrl) return 5;
+  if (context.cedula) return 4;
+  if (context.quoteProductId || context.selectedProductIds?.length) return 3;
+  return 1;
+}
+
+export function progressFor(
+  state: ConversationState,
+  context?: ConversationContext,
+): { step: number; totalSteps: number; label: string } {
   const totalSteps = WEB_FLOW_STATES.length;
   const index = WEB_FLOW_STATES.indexOf(state);
 
@@ -73,12 +87,21 @@ export function progressFor(state: ConversationState): { step: number; totalStep
     return { step: index + 1, totalSteps, label: WEB_FLOW_LABELS[state] };
   }
 
-  const isBeforeFlow = state === ConversationState.GREETING || state === ConversationState.AUTHORIZATION;
-  return {
-    step: isBeforeFlow ? 1 : totalSteps,
-    totalSteps,
-    label: isBeforeFlow ? WEB_FLOW_LABELS[state] : WEB_FLOW_LABELS[ConversationState.POLICY_ISSUED],
-  };
+  if (state === ConversationState.GREETING || state === ConversationState.AUTHORIZATION) {
+    return { step: 1, totalSteps, label: WEB_FLOW_LABELS[state] };
+  }
+
+  // Solo COMPLETED es una compra hecha — se llega ahí con hasCompletedPurchase. ABANDONED y
+  // REJECTED caían en el mismo saco y pintaban "6 de 6 · ¡Listo!" sin haber pasado por PAYMENT:
+  // a quien cerraban por inactividad, y a quien RECHAZABA el consentimiento de la Ley 1581, la
+  // barra les decía que su compra estaba lista.
+  if (state === ConversationState.COMPLETED) {
+    return { step: totalSteps, totalSteps, label: WEB_FLOW_LABELS[ConversationState.COMPLETED] };
+  }
+  if (state === ConversationState.REJECTED) {
+    return { step: 1, totalSteps, label: 'Sin autorizar' };
+  }
+  return { step: pasoAlcanzado(context), totalSteps, label: 'Pausado' };
 }
 
 export const STATE_RESPONSES: ResponsesMap = {

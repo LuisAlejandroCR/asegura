@@ -25,7 +25,7 @@ import { ConversationService } from './conversation.service';
 import { ConversationState, ConversationContext, Conversation, PetDetail, DocumentType } from './types';
 import { STATE_RESPONSES, formatNameList, progressFor } from './conversation-state.machine';
 // One implementation of the data rules for both channels: voice validates what text validates.
-import { isValidName, normalizeName, normalizeSpokenEmail as sharedNormalizeEmail } from './tools';
+import { isValidName, normalizeName, normalizeSpokenEmail as sharedNormalizeEmail, tipoDocumentoDeclarado, TIPOS_DOCUMENTO_OFRECIDOS, TIPOS_DOCUMENTO_ETIQUETAS } from './tools';
 import { pickPersistentFields } from './persistent-context';
 import { QuotingService } from '../quoting/quoting.service';
 import { AffiliateLookupService } from '../quoting/affiliate-lookup.service';
@@ -365,7 +365,7 @@ export class AgentService {
     const reply: WebReply = {
       texts,
       state: finalState,
-      progress: progressFor(finalState),
+      progress: progressFor(finalState, finalContext),
       expectedInput: finalContext.awaitingSelfie ? 'selfie' : 'text',
     };
 
@@ -771,7 +771,8 @@ export class AgentService {
             ...baseContext,
             serieId: serie,
             cedula: serie,
-            documentType: 'CC',
+            // Sin documentType a propósito: una serie de afiliado no dice de qué documento es,
+            // y ponerle 'CC' aquí era la misma suposición que DATA_CAPTURE ahora pregunta.
             affiliateProfile: record,
             ...(record.segmentoGrupoFamiliar !== undefined ? { segmentoGrupoFamiliar: record.segmentoGrupoFamiliar } : {}),
             ...(record.rangoSalarial !== undefined ? { rangoSalarial: record.rangoSalarial } : {}),
@@ -1660,14 +1661,16 @@ export class AgentService {
 
   // Not everyone has a CC: CE, TI and NIP/NUIP identify real people too. Defaults to CC when
   // no type is named, which matches prior behavior for a plain number.
-  private detectDocumentType(text: string): DocumentType {
-    if (text.includes('extranjer')) return 'CE';
-    if (text.includes('tarjeta de identidad') || /\bti\b/.test(text)) return 'TI';
-    if (/\bnuip\b/.test(text)) return 'NUIP';
-    if (/\bnip\b/.test(text)) return 'NIP';
-    if (/\bce\b/.test(text)) return 'CE';
-    return 'CC';
+  // Delegado a la capa de tools a propósito. Había una copia aquí que se había quedado atrás:
+  // no conocía PEP —el documento de buena parte de la población migrante— y caía a 'CC' en
+  // silencio, aunque el comentario del otro archivo afirmara que ambos eran espejo. Un tipo de
+  // documento equivocado se imprime en la póliza.
+  private detectDocumentType(text: string): DocumentType | null {
+    return tipoDocumentoDeclarado(text);
   }
+
+  private static readonly PREGUNTA_TIPO_DOCUMENTO =
+    `¿Y ese número de qué documento es: ${TIPOS_DOCUMENTO_OFRECIDOS.map((t) => TIPOS_DOCUMENTO_ETIQUETAS[t]).join(', ')}?`;
 
   // Data capture
 
@@ -1681,6 +1684,18 @@ export class AgentService {
     photo?: NormalizedMessage['photo'],
   ): Promise<ProcessResult> {
     const newContext: ConversationContext = { ...context };
+
+    // Respuesta a "¿de qué documento es ese número?". Se pregunta una vez y una sola: si la
+    // respuesta no nombra ninguno, se sigue con CC —el mayoritario— en vez de volver a
+    // preguntar, porque trabar la venta en un bucle es peor que el caso que ya teníamos.
+    if (context.awaitingDocumentType) {
+      newContext.awaitingDocumentType = undefined;
+      newContext.documentType = this.detectDocumentType(text) ?? 'CC';
+      return {
+        text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext),
+        context: newContext,
+      };
+    }
 
     // Waitlist contact capture, offered when a species has no products left. One field at a
     // time; once all three are in, the conversation returns to QUOTE_PRESENTED.
@@ -1929,7 +1944,15 @@ export class AgentService {
         return { text: 'El número de documento debe tener entre 6 y 10 dígitos. Intenta de nuevo.' };
       }
       newContext.cedula = digitsMatch[0];
-      newContext.documentType = this.detectDocumentType(text);
+      const declarado = this.detectDocumentType(text);
+      if (declarado) {
+        newContext.documentType = declarado;
+      } else {
+        // Nadie dijo cuál es. Preguntar un turno cuesta menos que emitir una póliza a nombre
+        // de una cédula de ciudadanía que la persona no tiene.
+        newContext.awaitingDocumentType = true;
+        return { text: AgentService.PREGUNTA_TIPO_DOCUMENTO, context: newContext };
+      }
       return {
         text: STATE_RESPONSES[ConversationState.DATA_CAPTURE](newContext),
         context: newContext,

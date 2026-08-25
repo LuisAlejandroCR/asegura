@@ -120,8 +120,11 @@ export function validarDatosLogic(
       datos.cedula = c;
       // An explicit answer wins; otherwise read it from the turn, and fall back to the most
       // common one. `preguntarTipo` in the result tells the caller it was a fallback.
+      // Solo se archiva cuando alguien lo dijo. Antes caía a 'CC' y `preguntarTipo` quedaba
+      // como un aviso que nadie leía: el tipo ya estaba escrito, así que no había nada que
+      // corregir y la póliza salía a nombre de un documento que la persona podía no tener.
       const declarado = args.documentType ?? tipoDocumentoDeclarado(args.mensaje ?? args.cedula);
-      datos.documentType = declarado ?? 'CC';
+      if (declarado) datos.documentType = declarado;
     } else {
       invalidos.push('cédula (deben ser 6 a 10 dígitos, sin puntos)');
     }
@@ -143,7 +146,9 @@ export function validarDatosLogic(
     return {
       ok: true,
       datos,
-      preguntarTipo: `Quedó como cédula de ciudadanía. Pregúntale cuál es: ${TIPOS_DOCUMENTO_OFRECIDOS.map((t) => TIPOS_DOCUMENTO_ETIQUETAS[t]).join(', ')}.`,
+      // El texto decía "quedó como cédula de ciudadanía" y describía lo que ya no pasa: el
+      // tipo no se archiva solo. Ahora falta de verdad, y sin él no se puede emitir.
+      preguntarTipo: `Falta el tipo de documento y no se asume ninguno. Pregúntale cuál es: ${TIPOS_DOCUMENTO_OFRECIDOS.map((t) => TIPOS_DOCUMENTO_ETIQUETAS[t]).join(', ')}.`,
     };
   }
   return { ok: true, datos };

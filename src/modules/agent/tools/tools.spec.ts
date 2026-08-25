@@ -53,8 +53,8 @@ describe('cotizarLogic', () => {
 describe('validarDatosLogic', () => {
   it('accepts a dictated cedula and a spoken email', () => {
     const result = validarDatosLogic({ cedula: '1, 2, 3, 4, 5, 6, 7', email: 'juan arroba mail punto com' });
-    // preguntarTipo comes along because nobody said which document it is.
-    expect(result).toMatchObject({ ok: true, datos: { cedula: '1234567', documentType: 'CC', email: 'juan@mail.com' } });
+    // documentType queda FUERA: nadie dijo cuál es, y preguntarTipo pide que se pregunte.
+    expect(result).toMatchObject({ ok: true, datos: { cedula: '1234567', email: 'juan@mail.com' } });
   });
 
   it('rejects a cedula with thousands separators rather than silently changing it', () => {
@@ -495,10 +495,14 @@ describe('registrarLead', () => {
 });
 
 describe('tipo de documento — se pregunta, no se asume', () => {
-  it('un número pelado sigue quedando como CC, pero pide confirmarlo', () => {
+  // Antes archivaba 'CC' Y pedía confirmarlo, que es la peor combinación: el tipo ya estaba
+  // escrito, así que preguntarTipo no corregía nada y nadie lo leía. Una póliza salía a nombre
+  // de una cédula de ciudadanía que la persona podía no tener — PEP, sobre todo.
+  it('un número pelado NO queda como CC: se deja sin tipo y se pide preguntarlo', () => {
     const result = validarDatosLogic({ cedula: '12345678' });
-    expect(result).toMatchObject({ ok: true, datos: { documentType: 'CC' } });
+    expect(result.ok).toBe(true);
     if (result.ok) {
+      expect(result.datos.documentType).toBeUndefined();
       // Se ofrecen los tres que trae la gente; leer los seis en voz alta no es una pregunta.
       expect(result.preguntarTipo).toContain('cédula de ciudadanía');
       expect(result.preguntarTipo).toContain('cédula de extranjería');

@@ -60,7 +60,7 @@ export class WebSessionController {
 
     return {
       state: conv.state,
-      progress: progressFor(conv.state as any),
+      progress: progressFor(conv.state as any, conv.context),
       transcript: conv.context.lastMessages ?? [],
       channel: conv.channel,
       checkoutUrl: conv.context.checkoutUrl,

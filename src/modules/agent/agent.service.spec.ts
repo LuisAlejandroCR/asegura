@@ -821,15 +821,55 @@ describe('AgentService — DATA_CAPTURE sequential flow', () => {
     );
   });
 
-  it('regression — a bare number defaults documentType to CC (backward compatible)', async () => {
+  // Este test fijaba el default a 'CC' y lo llamaba "backward compatible". Es justo el bug:
+  // el tipo de documento se imprime en la póliza, y suponerlo deja a quien tiene PEP o cédula
+  // de extranjería con un documento que no es el suyo. Ahora se pregunta una vez.
+  it('un número pelado NO se archiva como CC: pregunta de qué documento es', async () => {
     const { service, telegram, conversations } = buildService({
       state: ConversationState.DATA_CAPTURE,
       context: {},
     });
     telegram.normalize.mockResolvedValue(makeMessage('12345678'));
     await service.handleMessage({});
+
+    expect(String(telegram.sendText.mock.calls[0][1])).toContain('qué documento');
     expect(conversations.saveState).toHaveBeenCalledWith(
-      'conv-1', ConversationState.DATA_CAPTURE, expect.objectContaining({ cedula: '12345678', documentType: 'CC' }),
+      'conv-1',
+      ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ cedula: '12345678', awaitingDocumentType: true }),
+    );
+    expect(conversations.saveState.mock.calls[0][2].documentType).toBeUndefined();
+  });
+
+  it('la respuesta a esa pregunta archiva el tipo — PEP incluido, que el detector viejo no conocía', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', awaitingDocumentType: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('es PEP'));
+    await service.handleMessage({});
+
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1',
+      ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ documentType: 'PEP', awaitingDocumentType: undefined }),
+    );
+  });
+
+  // Se pregunta UNA vez: trabar la venta en un bucle de una sola pregunta es peor que el
+  // caso mayoritario, así que una respuesta que no nombra ninguno sigue con CC.
+  it('no se traba en bucle: una respuesta que no nombra ninguno sigue con CC', async () => {
+    const { service, telegram, conversations } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: { cedula: '12345678', awaitingDocumentType: true },
+    });
+    telegram.normalize.mockResolvedValue(makeMessage('no sé, el normal'));
+    await service.handleMessage({});
+
+    expect(conversations.saveState).toHaveBeenCalledWith(
+      'conv-1',
+      ConversationState.DATA_CAPTURE,
+      expect.objectContaining({ documentType: 'CC', awaitingDocumentType: undefined }),
     );
   });
 
@@ -4753,9 +4793,22 @@ describe('AgentService — end-to-end live-test scenarios (comprehensive)', () =
     });
     t1.normalize.mockResolvedValue(makeMessage('12345678'));
     await s1.handleMessage({});
-    const ctx1 = c1.saveState.mock.calls[0]?.[2] as ConversationContext;
-    expect(ctx1.cedula).toBe('12345678');
-    expect(t1.sendText.mock.calls[0]?.[1]).toContain('nombre completo');
+    const ctxCedula = c1.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(ctxCedula.cedula).toBe('12345678');
+    // El número pelado no dice de qué documento es, así que ahora hay un turno para eso.
+    expect(t1.sendText.mock.calls[0]?.[1]).toContain('qué documento');
+
+    const { service: sTipo, telegram: tTipo, conversations: cTipo } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: ctxCedula,
+      intent: makeIntent({}),
+    });
+    tTipo.normalize.mockResolvedValue(makeMessage('de ciudadanía'));
+    await sTipo.handleMessage({});
+    const ctx1 = cTipo.saveState.mock.calls[0]?.[2] as ConversationContext;
+    expect(ctx1.documentType).toBe('CC');
+    expect(ctx1.cedula).toBe('12345678'); // untouched, never re-asked
+    expect(tTipo.sendText.mock.calls[0]?.[1]).toContain('nombre completo');
 
     const { service: s2, telegram: t2, conversations: c2 } = buildService({
       state: ConversationState.DATA_CAPTURE,

@@ -19,6 +19,9 @@ const FLOWS: MultiTurnFixture[] = [
     start: { state: ConversationState.DATA_CAPTURE, context: { autorizado: true, quoteProductId: 'vida' } },
     machineTurns: [
       { user: '12345678' },
+      // La máquina pregunta de qué documento es antes de seguir; el router lo resuelve dentro
+      // de capturar_datos. Un turno más aquí, mismo sitio al final.
+      { user: 'de ciudadanía' },
       { user: 'Juan Pérez' },
       { user: 'juan@email.com' },
     ],
@@ -34,6 +37,9 @@ const FLOWS: MultiTurnFixture[] = [
     start: { state: ConversationState.DATA_CAPTURE, context: { autorizado: true, quoteProductId: 'vida' } },
     machineTurns: [
       { user: '12345678' },
+      // La máquina pregunta de qué documento es antes de seguir; el router lo resuelve dentro
+      // de capturar_datos. Un turno más aquí, mismo sitio al final.
+      { user: 'de ciudadanía' },
       { user: '2+2' },
       { user: 'Juan Pérez' },
     ],
@@ -49,6 +55,7 @@ const FLOWS: MultiTurnFixture[] = [
     start: { state: ConversationState.DATA_CAPTURE, context: { autorizado: true, quoteProductId: 'vida' } },
     machineTurns: [
       { user: '1, 2, 3, 4, 5, 6, 7' },
+      { user: 'de ciudadanía' },
       { user: 'Michelle Gómez' },
     ],
     routerTurns: [
@@ -77,6 +84,9 @@ const FLOWS: MultiTurnFixture[] = [
     },
     machineTurns: [
       { user: '12345678' },
+      // La máquina pregunta de qué documento es antes de seguir; el router lo resuelve dentro
+      // de capturar_datos. Un turno más aquí, mismo sitio al final.
+      { user: 'de ciudadanía' },
       { user: 'Juan Pérez' },
       { user: 'juan@email.com' },
       { user: 'sí', intent: { isAffirmative: true } },
@@ -99,6 +109,9 @@ const FLOWS: MultiTurnFixture[] = [
     },
     machineTurns: [
       { user: '12345678' },
+      // La máquina pregunta de qué documento es antes de seguir; el router lo resuelve dentro
+      // de capturar_datos. Un turno más aquí, mismo sitio al final.
+      { user: 'de ciudadanía' },
       { user: 'Juan Pérez' },
       { user: 'juan@email.com' },
       { user: 'Tengo 34 años y no tengo enfermedades' },

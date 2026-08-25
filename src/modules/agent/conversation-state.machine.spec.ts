@@ -37,13 +37,38 @@ describe('progressFor', () => {
     expect(p.step).toBe(p.totalSteps);
   });
 
-  it.each([ConversationState.COMPLETED, ConversationState.ABANDONED, ConversationState.REJECTED])(
-    'terminal state %s clamps to the last real step instead of throwing',
-    (state) => {
-      const p = progressFor(state);
-      expect(p.step).toBe(p.totalSteps);
-    },
-  );
+  // Los tres estados terminales compartían el clamp al último paso, y eso pintaba
+  // "6 de 6 · ¡Listo!" a quien cerraban por inactividad y a quien RECHAZABA el consentimiento
+  // de la Ley 1581 — una compra terminada que nunca pasó por PAYMENT. Solo COMPLETED lo es.
+  it('COMPLETED sí es el último paso: solo se llega ahí con la compra hecha', () => {
+    const p = progressFor(ConversationState.COMPLETED);
+    expect(p).toMatchObject({ step: 6, totalSteps: 6, label: '¡Listo!' });
+  });
+
+  it('REJECTED no dice "¡Listo!": nadie autorizó nada', () => {
+    const p = progressFor(ConversationState.REJECTED);
+    expect(p.label).not.toBe('¡Listo!');
+    expect(p.step).toBe(1);
+  });
+
+  it('ABANDONED conserva hasta dónde llegó, sin declararlo terminado', () => {
+    const conLinkDePago = progressFor(ConversationState.ABANDONED, { checkoutUrl: 'https://checkout.wompi.co/l/x' });
+    expect(conLinkDePago).toMatchObject({ step: 5, label: 'Pausado' });
+
+    const conCotizacion = progressFor(ConversationState.ABANDONED, { quoteProductId: 'vida' });
+    expect(conCotizacion.step).toBe(3);
+
+    // Sin contexto no se inventa avance.
+    expect(progressFor(ConversationState.ABANDONED).step).toBe(1);
+  });
+
+  it('ningún estado se sale del rango de la barra', () => {
+    for (const state of Object.values(ConversationState)) {
+      const p = progressFor(state as ConversationState);
+      expect(p.step).toBeGreaterThanOrEqual(1);
+      expect(p.step).toBeLessThanOrEqual(p.totalSteps);
+    }
+  });
 
   it('every state has a non-empty label', () => {
     for (const state of Object.values(ConversationState)) {

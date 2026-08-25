@@ -44,6 +44,9 @@ interface ConversationContext {
   petsAwaitingConfirmation?: boolean;
   cedula?: string;
   documentType?: DocumentType;
+  // Se preguntó de qué documento es el número y falta la respuesta. Sin esto, el número quedaba
+  // archivado como cédula de ciudadanía sin que nadie lo dijera, y eso se imprime en la póliza.
+  awaitingDocumentType?: boolean;
   nombre?: string;
   email?: string;
   // The summary was rejected without naming the wrong field; the next message names it,
