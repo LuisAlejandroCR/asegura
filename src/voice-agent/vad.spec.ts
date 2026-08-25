@@ -3,7 +3,7 @@
 // end-of-turn executor this install excludes. Both shipped once and only showed on a live call.
 import type { JobProcess } from '@livekit/agents';
 import { VAD, initializeLogger, llm, voice } from '@livekit/agents';
-import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, turnHandlingCon, checkLlmAccess, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, describirProveedores, hayRespaldoElevenLabs, normalizarBaseUrl, usaElevenLabs, usaGroqLlm } from './main';
+import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, turnHandlingCon, checkLlmAccess, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, describirProveedores, hayRespaldoElevenLabs, modeloElevenLabs, normalizarBaseUrl, usaElevenLabs, usaGroqLlm } from './main';
 
 // AgentSession logs from its field initializers; outside cli.runApp nothing has set the logger up.
 beforeAll(() => initializeLogger({ pretty: false, level: 'silent' }));
@@ -222,6 +222,31 @@ describe('proveedor de voz', () => {
 
     expect(describeRequiredEnv(env).ok).toBe(false);
     expect(describeRequiredEnv(env).report).toContain('ELEVENLABS_API_KEY: MISSING');
+  });
+});
+
+// Multilingual v2 cuesta el doble de créditos y sintetiza mucho más lento. La demo se queda sin
+// cuota a la mitad de las llamadas y con silencio de sobra, que es lo que se midió en la 118.
+describe('modelo de ElevenLabs', () => {
+  it('por defecto usa flash v2.5, no multilingual v2', () => {
+    expect(modeloElevenLabs({})).toBe('eleven_flash_v2_5');
+  });
+
+  it('se puede volver a la voz rica por variable, sin tocar código', () => {
+    expect(modeloElevenLabs({ ELEVENLABS_MODEL: 'eleven_multilingual_v2' })).toBe('eleven_multilingual_v2');
+  });
+
+  // El log de arranque es lo único que dice qué voz quedó puesta (Sesión 110), así que tiene
+  // que nombrar el modelo real y no una constante que quedó atrás.
+  it('el log de arranque nombra el modelo que de verdad se usa', () => {
+    expect(describirProveedores({ ELEVENLABS_API_KEY: 'k', ELEVENLABS_VOICE_ID: 'v' }))
+      .toContain('elevenlabs/eleven_flash_v2_5');
+  });
+
+  it('el chequeo de arranque sintetiza con el mismo modelo, no con otro', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true });
+    await checkTtsAccess(fetchMock as any, { ELEVENLABS_API_KEY: 'k', ELEVENLABS_VOICE_ID: 'v' });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model_id).toBe('eleven_flash_v2_5');
   });
 });
 
