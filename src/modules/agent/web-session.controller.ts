@@ -82,10 +82,12 @@ export class WebSessionController {
     return this.buildWhatsAppUrl();
   }
 
+  // The dialable number, not WHATSAPP_PHONE_NUMBER_ID — that one is a Graph API handle and
+  // a wa.me link built from it opens a chat with nobody.
   private buildWhatsAppUrl(): string | undefined {
-    const waNumber = this.config.get<string>('TWILIO_WHATSAPP_NUMBER');
+    const waNumber = this.config.get<string>('WHATSAPP_DISPLAY_NUMBER');
     if (!waNumber) return undefined;
-    const digitsOnly = waNumber.replace(/^whatsapp:/, '').replace(/\D/g, '');
+    const digitsOnly = waNumber.replace(/\D/g, '');
     if (!digitsOnly) return undefined;
     return `https://wa.me/${digitsOnly}`;
   }

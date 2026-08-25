@@ -1,6 +1,7 @@
-// document-cache.service.ts: short-lived buffer→URL registry so a channel that needs a
-// fetchable URL to send a document (Twilio's WhatsApp API — unlike Telegram's sendDocument,
-// which accepts a raw multipart upload) can turn an in-memory PDF Buffer into one.
+// document-cache.service.ts: short-lived buffer→URL registry that turns an in-memory PDF
+// Buffer into a fetchable URL. Its only remaining caller is the AseguraWeb session reply,
+// which renders in a browser and cannot receive a chat attachment — both chat channels
+// upload the bytes directly (Telegram sendDocument, Meta /media).
 import { randomUUID } from 'crypto';
 import { Injectable } from '@nestjs/common';
 
@@ -11,7 +12,7 @@ interface CachedDocument {
   expiresAt: number;
 }
 
-// A public, unauthenticated URL by necessity (Twilio's servers fetch it): keep it short-lived.
+// A public, unauthenticated URL: the browser fetching it carries no session. Keep it short-lived.
 const TTL_MS = 10 * 60_000;
 
 @Injectable()
@@ -38,7 +39,7 @@ export class DocumentCacheService {
     }
   }
 
-  // Not deleted on first read — Twilio may retry the fetch, and a 404 would drop the document.
+  // Not deleted on first read — a browser reload within the TTL would otherwise 404.
   get(token: string): CachedDocument | null {
     const entry = this.store.get(token);
     if (!entry) return null;

@@ -1,5 +1,5 @@
-// document-cache.service.spec.ts: the buffer→URL registry TwilioWhatsAppAdapter needs
-// since Twilio's Messages API takes a fetchable URL, never a raw upload.
+// document-cache.service.spec.ts: the buffer→URL registry the AseguraWeb session needs
+// since a browser cannot receive a chat attachment, only fetch a URL.
 
 import { DocumentCacheService } from './document-cache.service';
 
@@ -19,7 +19,7 @@ describe('DocumentCacheService', () => {
     expect(docs.get('does-not-exist')).toBeNull();
   });
 
-  // Not deleted on first read — Twilio may retry the media fetch before the TTL expires.
+  // Not deleted on first read — a browser reload within the TTL would otherwise 404.
   it('a token can be read more than once before it expires', () => {
     const docs = new DocumentCacheService();
     const token = docs.put(Buffer.from('x'), 'f.pdf');

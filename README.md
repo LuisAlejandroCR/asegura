@@ -74,13 +74,13 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 | NLP | Groq (openai/gpt-oss-120b) + Whisper (voz) |
 | Base de datos | Supabase (Postgres) |
 | Canal MVP | Telegram |
-| Canal WhatsApp | Twilio WhatsApp Sandbox (pruebas internas) |
+| Canal WhatsApp | Meta WhatsApp Cloud API (número de prueba, hasta 5 destinatarios) |
 | Pagos | Wompi — Payment Links (sandbox) |
 | Deploy | Railway (API) + Vercel (pitch web) |
 | Dashboard | Metabase |
 | Chat web (AseguraWeb) | Página propia con recorrido por etapas, cotización animada y pago — `apps/web/texto.html` |
 | Voz en tiempo real | LiveKit Agents + ElevenLabs — `apps/web/voz.html` |
-| Tests | 1267 en 46 suites (unit + fuzz + invariantes) |
+| Tests | 1390 en 53 suites (unit + fuzz + invariantes) |
 
 ---
 
@@ -89,7 +89,7 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 | Canal | Estado |
 |-------|--------|
 | Telegram (`t.me/asegura_bot`) | ✓ Disponible |
-| WhatsApp Business | Próximamente |
+| WhatsApp (Meta Cloud API) | ✓ Número de prueba — abierto a los 5 números registrados en Meta |
 
 ---
 

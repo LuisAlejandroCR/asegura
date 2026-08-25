@@ -58,15 +58,33 @@ class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
-  TWILIO_ACCOUNT_SID!: string;
+  WHATSAPP_PHONE_NUMBER_ID!: string;
 
   @IsString()
   @IsOptional()
-  TWILIO_AUTH_TOKEN!: string;
+  WHATSAPP_ACCESS_TOKEN!: string;
 
+  // Signs every inbound webhook. Separate from the access token: it is the Meta *app*
+  // secret, not the phone number's token.
   @IsString()
   @IsOptional()
-  TWILIO_WHATSAPP_NUMBER!: string;
+  WHATSAPP_APP_SECRET!: string;
+
+  // Echoed back to Meta on the one-time subscription handshake. Any string, chosen by us.
+  @IsString()
+  @IsOptional()
+  WHATSAPP_VERIFY_TOKEN!: string;
+
+  // Graph API version. Unset falls back to the one the adapter's contract was read against.
+  @IsString()
+  @IsOptional()
+  WHATSAPP_GRAPH_VERSION!: string;
+
+  // The dialable number behind WHATSAPP_PHONE_NUMBER_ID, used only to build the wa.me link
+  // that returns someone from AseguraWeb to the chat. Unset: the link is simply not offered.
+  @IsString()
+  @IsOptional()
+  WHATSAPP_DISPLAY_NUMBER!: string;
 
   @IsString()
   @IsOptional()
@@ -128,7 +146,12 @@ class EnvironmentVariables {
 // Groups that must be configured all-or-nothing. Each key is @IsOptional() on its own, so a
 // partial group (a typo'd name in Railway) used to boot fine and fail at the first request.
 const ALL_OR_NOTHING_GROUPS: { label: string; keys: (keyof EnvironmentVariables)[] }[] = [
-  { label: 'Twilio WhatsApp', keys: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_WHATSAPP_NUMBER'] },
+  // WHATSAPP_GRAPH_VERSION is deliberately out of the group: it has a working default, so
+  // setting it alone is not a half-configured integration.
+  {
+    label: 'Meta WhatsApp',
+    keys: ['WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_APP_SECRET', 'WHATSAPP_VERIFY_TOKEN'],
+  },
   { label: 'LiveKit', keys: ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'] },
   { label: 'ElevenLabs', keys: ['ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID'] },
   { label: 'Wompi', keys: ['WOMPI_ENVIRONMENT', 'WOMPI_PRIVATE_KEY', 'WOMPI_EVENTS_SECRET'] },
