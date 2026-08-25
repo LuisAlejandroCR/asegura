@@ -158,8 +158,28 @@ describe('MetaWhatsAppAdapter — outbound', () => {
       messaging_product: 'whatsapp',
       to: '573001234567',
       type: 'text',
-      text: { body: 'Tu póliza quedó lista', preview_url: true },
+      text: { body: 'Tu póliza quedó lista', preview_url: false },
     });
+  });
+
+  // Reported from a live chat on 2026-08-25: the person tapped the AseguraWeb link and got
+  // "este enlace ya se usó". WhatsApp had fetched it first to build the preview card, and
+  // /s/<code> links are single-use, so the crawl spent the one use. TelegramAdapter already
+  // disables previews for exactly this reason — this locks the same guarantee on WhatsApp.
+  it('never asks WhatsApp to preview a link — the crawl would spend a single-use code', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(mockResponse(200, {}));
+    (global as any).fetch = fetchMock;
+    await adapter.sendText('573001234567', 'Habla aquí: https://asegura.example/s/K7M2QP');
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).text.preview_url).toBe(false);
+  });
+
+  it('sendContactRequest goes out through the same no-preview path', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(mockResponse(200, {}));
+    (global as any).fetch = fetchMock;
+    await adapter.sendContactRequest('573001234567', 'Pásame tu teléfono');
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).text.preview_url).toBe(false);
   });
 
   it('honours WHATSAPP_GRAPH_VERSION when set', async () => {

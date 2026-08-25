@@ -199,9 +199,11 @@ export class MetaWhatsAppAdapter implements IChannelAdapter {
   }
 
   async sendText(userId: string, text: string): Promise<void> {
-    // preview_url on: the payment link and the AseguraWeb link are the whole point of the
-    // message, and an unpreviewed URL reads like spam.
-    await this.send(userId, { type: 'text', text: { body: text, preview_url: true } });
+    // Previews off, for the same reason TelegramAdapter turns them off: WhatsApp FETCHES a
+    // link to build the card, and /s/<code> links are single-use — the crawl spends the
+    // person's one use and they tap into "este enlace ya se usó". The HEAD handler on
+    // WebLinkController does not help: preview crawlers GET, they need the HTML.
+    await this.send(userId, { type: 'text', text: { body: text, preview_url: false } });
   }
 
   async sendDocument(userId: string, file: Buffer, filename: string): Promise<void> {
