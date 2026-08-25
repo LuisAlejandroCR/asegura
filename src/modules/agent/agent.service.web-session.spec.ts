@@ -104,3 +104,37 @@ describe('AgentService.handleWebMessage — WebReply shape', () => {
     expect(reply.quote?.razon).toBe('porque sí');
   });
 });
+
+// Reportado desde una prueba real: la persona escribía en AseguraWeb y WhatsApp le preguntaba
+// "¿Sigues ahí?" al minuto. handoffToWeb solo marca el mensaje que entrega el enlace, así que
+// cada turno posterior de la página rearmaba el aviso corto como si el chat estuviera mudo.
+describe('AgentService.handleWebMessage — el aviso de inactividad no persigue a quien está en la página', () => {
+  const enLaWeb = (estado = ConversationState.DISCOVERY) => {
+    const built = buildService({ state: estado, context: { autorizado: true } });
+    built.conversations.findById.mockResolvedValue(makeConversation(estado, { autorizado: true }));
+    return built;
+  };
+
+  it('programa el recordatorio como "en otra pantalla", sin el nudge de 60 s', async () => {
+    const { service, reminders } = enLaWeb();
+
+    await service.handleWebMessage('conv-1', { text: 'quiero un seguro de vida' });
+
+    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1', 'telegram', true);
+  });
+
+  // El mismo turno escrito en el chat sí merece el aviso: ahí el silencio es silencio.
+  it('un mensaje del chat lo sigue programando normal', async () => {
+    const { service, telegram, reminders } = buildService({
+      state: ConversationState.DISCOVERY,
+      context: { autorizado: true },
+    });
+    telegram.normalize.mockResolvedValue({
+      channelId: 'u1', channel: 'telegram', userId: 'u1', text: 'quiero un seguro de vida', timestamp: new Date(),
+    });
+
+    await service.handleMessage({});
+
+    expect(reminders.schedule).toHaveBeenCalledWith('conv-1', 'u1', 'telegram', false);
+  });
+});

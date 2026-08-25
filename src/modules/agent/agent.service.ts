@@ -263,7 +263,13 @@ export class AgentService {
   // Shared core between handleMessage (dispatches through an IChannelAdapter) and
   // handleWebMessage (returns JSON). Conversation identity comes only from userId + channel,
   // so a web message carrying the original chat identity lands on that same row.
-  private async computeReply(msg: NormalizedMessage): Promise<{ conv: Conversation; result: ProcessResult }> {
+  // desdeWeb: el mensaje se escribió DENTRO de AseguraWeb, no en el chat. Sin esta distinción
+  // cada turno de la página rearmaba el aviso de 60 s, que salía por WhatsApp preguntando
+  // "¿sigues ahí?" a alguien que estaba escribiendo en la otra pantalla en ese mismo momento.
+  private async computeReply(
+    msg: NormalizedMessage,
+    opts: { desdeWeb?: boolean } = {},
+  ): Promise<{ conv: Conversation; result: ProcessResult }> {
     const conv = await this.conversations.getOrCreate(msg.userId, msg.channel);
     // Any incoming message proves the person is still here: cancel the pending reminder before
     // scheduling a fresh one below.
@@ -310,7 +316,11 @@ export class AgentService {
       // Un link de pago abierto o un traspaso a AseguraWeb significan que la persona salió del
       // chat a propósito: ahí el aviso interrumpe, no rescata.
       const finalContext = result.context ?? conv.context;
-      const enOtraPantalla = !!finalContext?.checkoutUrl || result.handoffToWeb === true;
+      // handoffToWeb solo es cierto en el mensaje que entrega el enlace; desdeWeb cubre todos
+      // los turnos siguientes, que es donde el aviso interrumpía de verdad. Queda el cierre
+      // largo: quien abandona la página igual tiene que cerrarse en algún momento.
+      const enOtraPantalla =
+        !!finalContext?.checkoutUrl || result.handoffToWeb === true || opts.desdeWeb === true;
       this.reminders.schedule(conv.id, msg.userId, conv.channel as 'telegram' | 'whatsapp', enOtraPantalla);
     }
 
@@ -343,7 +353,7 @@ export class AgentService {
       ...(input.photo && { photo: input.photo }),
     };
 
-    const { result } = await this.computeReply(msg);
+    const { result } = await this.computeReply(msg, { desdeWeb: true });
     return this.toWebReply(result, conv);
   }
 

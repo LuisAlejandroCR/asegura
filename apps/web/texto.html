@@ -120,7 +120,9 @@
     -webkit-overflow-scrolling:touch;
   }
 
-  .fila{display:flex;align-items:flex-end;gap:7px;max-width:100%}
+  /* min-width:0 — sin esto un hijo flex se niega a encogerse por debajo del ancho de su
+     contenido, y una URL larga del catálogo ensancha la fila entera. */
+  .fila{display:flex;align-items:flex-end;gap:7px;max-width:100%;min-width:0}
   .fila-usuario{justify-content:flex-end}
 
   /* Avatar del agente: presencia constante. Se oculta (sin perder el sangrado) en mensajes
@@ -137,11 +139,18 @@
 
   .burbuja{
     max-width:calc(100% - 34px);
+    min-width:0;
     padding:11px 14px;
     border-radius:17px;
     font-size:14.5px;
     line-height:1.48;
     white-space:pre-wrap;
+    /* El catálogo manda URLs de colsubsidio.com sin un solo espacio. Sin esto no hay dónde
+       partirlas: la burbuja crece más allá de su max-width, empuja la columna y todo el chat
+       —incluidas las burbujas cortas— aparece cortado por la derecha. `break-word` queda de
+       respaldo para navegadores sin `anywhere`. */
+    word-break:break-word;
+    overflow-wrap:anywhere;
     animation:aparecer .38s cubic-bezier(.2,.85,.25,1) both;
   }
 
