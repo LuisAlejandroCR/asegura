@@ -36,6 +36,14 @@ export function hayRespaldoElevenLabs(env: NodeJS.ProcessEnv = process.env): boo
   return !usaElevenLabs(env) && !!env.ELEVENLABS_API_KEY && !!env.ELEVENLABS_VOICE_ID;
 }
 
+// Flash v2.5 gasta 1 crédito por cada 2 caracteres —la mitad que multilingual v2, o sea el doble
+// de llamadas por el mismo plan— y sintetiza en ~75 ms contra los cientos del otro. Lo paga con
+// expresividad, que en un asesor de seguros cuesta menos que dejar un silencio. Ajustable en vivo
+// por si una demo prefiere la voz rica, como el endpointing de la Sesión 121.
+export function modeloElevenLabs(env: NodeJS.ProcessEnv = process.env): string {
+  return env.ELEVENLABS_MODEL || 'eleven_flash_v2_5';
+}
+
 // Checked at startup, not inside entry(): a key missing there lets the worker register and
 // then fail per call with LiveKit's opaque "error in entry function" — no name, no stack.
 const REQUIRED_BASE = ['LLM_API_KEY', 'LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'] as const;
@@ -160,7 +168,7 @@ function construirElevenLabs() {
   return new elevenlabs.TTS({
     apiKey: requireEnv('ELEVENLABS_API_KEY'),
     voiceId: requireEnv('ELEVENLABS_VOICE_ID'),
-    model: 'eleven_multilingual_v2',
+    model: modeloElevenLabs(),
     language: 'es',
   });
 }
@@ -189,7 +197,7 @@ export function describirProveedores(env: NodeJS.ProcessEnv = process.env): stri
       : `${env.VOICE_LLM_MODEL || 'google/gemini-2.5-flash'} vía la pasarela de LiveKit`;
   const voz = usaElevenLabs(env)
     ? 'ElevenLabs propia'
-    : `${env.VOICE_TTS_MODEL || 'elevenlabs/eleven_multilingual_v2'} por la pasarela` +
+    : `${env.VOICE_TTS_MODEL || `elevenlabs/${modeloElevenLabs(env)}`} por la pasarela` +
       (hayRespaldoElevenLabs(env) ? ' con ElevenLabs de respaldo' : ' sin respaldo');
   return `modelo: ${modelo} | voz: ${voz}`;
 }
@@ -221,7 +229,7 @@ function construirTts() {
   // La voz por defecto de Cartesia lee español con acento inglés. Aitana es española nativa y
   // sale por la pasarela, así que no gasta la cuota de la cuenta propia de ElevenLabs.
   const pasarela = new inference.TTS({
-    model: process.env.VOICE_TTS_MODEL || 'elevenlabs/eleven_multilingual_v2',
+    model: process.env.VOICE_TTS_MODEL || `elevenlabs/${modeloElevenLabs()}`,
     voice: process.env.VOICE_TTS_VOICE || 'AxFLn9byyiDbMn5fmyqu',
     language: 'es',
   });
@@ -322,7 +330,7 @@ export async function checkTtsAccess(
       {
         method: 'POST',
         headers: { 'xi-api-key': env.ELEVENLABS_API_KEY ?? '', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: 'Hola', model_id: 'eleven_multilingual_v2' }),
+        body: JSON.stringify({ text: 'Hola', model_id: modeloElevenLabs(env) }),
       },
     );
     if (response.ok) return { ok: true, fatal: false, detail: 'ok' };

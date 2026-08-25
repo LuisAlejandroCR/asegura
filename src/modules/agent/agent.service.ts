@@ -447,6 +447,25 @@ export class AgentService {
   private static readonly CHANNEL_COMPLAINT_TEXT =
     'Perdón por eso 🙏 Sigamos aquí en el chat, que sí funciona — escríbeme o mándame un audio, como prefieras. Si quieres reintentar con la página, dime y te mando otro enlace.';
 
+  // The line above promises "dime y te mando otro enlace" and for a long time nothing honored
+  // it: "genera otro enlace" fell through as an unclear reply, and the third one tripped the
+  // circuit breaker and escalated the person to a human — the opposite of a self-service flow.
+  // Two shapes only, both requiring an explicit ask, so a complaint about the page ("el enlace
+  // no funciona") stays a complaint and is answered by the branch below.
+  private static readonly WEB_LINK_REQUEST_PATTERNS: RegExp[] = [
+    /\b(otro|otra|nuevo|nueva|de nuevo|otra vez|reenv[íi]a\w*|m[áa]nda\w*|env[íi]a\w*|gener\w*|dame|p[áa]sa\w*|comparte)\b[^.?!]{0,25}\b(enlace|link|p[áa]gina|pagina)\b/i,
+    /\b(enlace|link|p[áa]gina|pagina)\b[^.?!]{0,25}\b(para (hablar|escribir)|de voz|otra vez|de nuevo|nuevo)\b/i,
+  ];
+
+  // A payment link is a different object with a different flow, and "mándame el link de pago"
+  // matches the first shape word for word. Carved out here as well as by state at the call site.
+  private static readonly PAYMENT_LINK_WORDS = /\b(pago|pagar|pagos|checkout|wompi|tarjeta)\b/i;
+
+  private static isWebLinkRequest(text: string): boolean {
+    if (AgentService.PAYMENT_LINK_WORDS.test(text)) return false;
+    return AgentService.WEB_LINK_REQUEST_PATTERNS.some((re) => re.test(text));
+  }
+
   private static readonly FAREWELL_AFTER_PURCHASE =
     'Listo, cierro por aquí 😊 No tienes que hacer nada más. Cuando quieras — una duda de coberturas, comparar otro plan, o proteger algo nuevo — escríbeme.';
 
@@ -594,6 +613,18 @@ export class AgentService {
     // question. Without this the message reached the quote gate and a complaint was sold to.
     // Excluded past DATA_CAPTURE: there "no me carga" is about the payment link, which the
     // payment flow answers itself.
+    // Checked before the complaint branch because it is the narrower of the two: it needs an
+    // explicit ask, while a complaint only needs a failure word near a technical noun.
+    if (
+      currentState !== ConversationState.DATA_CAPTURE &&
+      currentState !== ConversationState.PAYMENT &&
+      AgentService.isWebLinkRequest(text)
+    ) {
+      const resent = this.resendWebLink(convId, context, text);
+      // Null only when WEB_APP_URL is unset. Falling through beats promising a link that 404s.
+      if (resent) return resent;
+    }
+
     if (
       currentState !== ConversationState.DATA_CAPTURE &&
       currentState !== ConversationState.PAYMENT &&
@@ -764,6 +795,37 @@ export class AgentService {
     return `${publicUrl.replace(/\/$/, '')}/s/${this.webLinkCodes.mint(destination)}`;
   }
 
+  // The one place an AseguraWeb link is built, so the modality-choice reply and a later
+  // "mándame otro enlace" can never drift apart. Null means WEB_APP_URL is unset — the only
+  // reason a caller has nothing to offer.
+  private mintWebLink(convId: string, modality: 'voz' | 'texto'): string | null {
+    const webAppUrl = this.config.get<string>('WEB_APP_URL');
+    if (!webAppUrl) return null;
+    const token = this.webSessionTokens.sign({ conversationId: convId });
+    if (!token) return null;
+    return this.shortLink(`${webAppUrl.replace(/\/$/, '')}/${modality}.html?token=${token}`);
+  }
+
+  // Honors what CHANNEL_COMPLAINT_TEXT promises. A fresh token every time on purpose: the usual
+  // reason for asking again is that the previous one expired. Deliberately returns no nextState —
+  // someone deep in the flow asking for the link must not be sent back to DISCOVERY.
+  private resendWebLink(convId: string, context: ConversationContext, text: string): ProcessResult | null {
+    const wantsVoice = /\b(hablar|voz|audio|llamar)\b/i.test(text);
+    const wantsText = /\b(escribir|texto|escrib|chat)\b/i.test(text);
+    // Neither named: repeat whatever they chose before, and default to writing.
+    const modality: 'voz' | 'texto' = wantsVoice && !wantsText ? 'voz' : wantsText ? 'texto' : (context.webModality ?? 'texto');
+    const link = this.mintWebLink(convId, modality);
+    if (!link) return null;
+
+    const verb = modality === 'voz' ? 'hablar' : 'escribir';
+    return {
+      text: `Claro, aquí tienes uno nuevo para ${verb}: ${link}\n\n` +
+        'Si prefieres, seguimos aquí en el chat — como te quede mejor.',
+      context: { ...context, webModality: modality },
+      handoffToWeb: true,
+    };
+  }
+
   private offerDiscoveryEntry(prefix: string, context: ConversationContext): ProcessResult {
     if (this.config.get<string>('WEB_APP_URL')) {
       return {
@@ -800,16 +862,14 @@ export class AgentService {
     if (voiceAt < 0 && textAt < 0) return null;
     const wantsVoice = voiceAt >= 0 && (textAt < 0 || voiceAt < textAt);
 
-    const webAppUrl = this.config.get<string>('WEB_APP_URL');
-    const token = webAppUrl ? this.webSessionTokens.sign({ conversationId: convId }) : null;
-    // Shouldn't happen (the gate is only set when WEB_APP_URL exists), but never crash on it.
-    if (!webAppUrl || !token) return null;
-
     const modality: 'voz' | 'texto' = wantsVoice ? 'voz' : 'texto';
+    const link = this.mintWebLink(convId, modality);
+    // Shouldn't happen (the gate is only set when WEB_APP_URL exists), but never crash on it.
+    if (!link) return null;
+
     const verb = wantsVoice ? 'hablar' : 'escribir';
-    const destination = `${webAppUrl.replace(/\/$/, '')}/${modality}.html?token=${token}`;
     return {
-      text: `Perfecto, puedes ${verb} aquí: ${this.shortLink(destination)}\n\n` +
+      text: `Perfecto, puedes ${verb} aquí: ${link}\n\n` +
         'Cuando termines, vuelve al chat — o sigue escribiéndome aquí si prefieres.',
       // webModality persists: createPaymentLinkFlow reads it later to set Wompi's redirect_url, so
       // checkout returns the browser to the same AseguraWeb page.
