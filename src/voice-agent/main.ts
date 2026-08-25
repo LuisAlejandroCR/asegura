@@ -45,6 +45,11 @@ export function modeloElevenLabs(env: NodeJS.ProcessEnv = process.env): string {
   return env.ELEVENLABS_MODEL || 'eleven_flash_v2_5';
 }
 
+// Adri (`accent: colombian`, biblioteca compartida de ElevenLabs). El voice id que corría era
+// una voz `premade` INGLESA leyendo español, que es lo que suena a robot — no el modelo. Se
+// oyó contra Aitana (peninsular) y Alma (latinoamericana) antes de elegir.
+export const VOZ_COLOMBIANA = '3pwz9prJRqL2Ws5zBmTh';
+
 // BVC quita las voces de OTRAS personas y deja la del hablante principal; no es un filtro de
 // ruido ambiente. Pesa más aquí que en otro proyecto: sin el detector semántico de fin de turno
 // —excluido del install por 2 GB— el VAD de Silero es el único juez de que la persona terminó, y
@@ -257,11 +262,13 @@ function construirLlm() {
 function construirTts() {
   if (usaElevenLabs()) return construirElevenLabs();
 
-  // La voz por defecto de Cartesia lee español con acento inglés. Aitana es española nativa y
-  // sale por la pasarela, así que no gasta la cuota de la cuenta propia de ElevenLabs.
+  // Adri, no Aitana: las dos son nativas, pero Aitana es peninsular y esto se vende en
+  // Colombia. La ruta directa y la pasarela comparten voz a propósito — tenerlas distintas
+  // fue justo el bug: la voz española estaba puesta aquí mientras la llamada real salía por
+  // la otra ruta con una voz inglesa leyendo español, y sonaba a robot.
   const pasarela = new inference.TTS({
     model: process.env.VOICE_TTS_MODEL || `elevenlabs/${modeloElevenLabs()}`,
-    voice: process.env.VOICE_TTS_VOICE || 'AxFLn9byyiDbMn5fmyqu',
+    voice: process.env.VOICE_TTS_VOICE || VOZ_COLOMBIANA,
     language: 'es',
   });
   if (!hayRespaldoElevenLabs()) return pasarela;
