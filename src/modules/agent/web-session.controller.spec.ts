@@ -7,7 +7,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { WebSessionController } from './web-session.controller';
 import { ConversationState } from './types';
 
-function makeDeps(overrides: { verify?: any; channel?: string; configValues?: Record<string, string>; context?: Record<string, unknown>; botUsername?: string } = {}) {
+function makeDeps(overrides: { verify?: any; channel?: string; configValues?: Record<string, string>; context?: Record<string, unknown>; state?: ConversationState; botUsername?: string } = {}) {
   const tokens = {
     verify: jest.fn(overrides.verify ?? (() => ({ conversationId: 'conv-1' }))),
   };
@@ -16,7 +16,7 @@ function makeDeps(overrides: { verify?: any; channel?: string; configValues?: Re
       id: 'conv-1',
       user_id: 'u1',
       channel: overrides.channel ?? 'telegram',
-      state: ConversationState.DISCOVERY,
+      state: overrides.state ?? ConversationState.DISCOVERY,
       context: overrides.context ?? { lastMessages: [{ role: 'agent', text: 'hola' }] },
     }),
   };
@@ -138,6 +138,30 @@ describe('WebSessionController — cuándo la compra está pagada', () => {
     const { controller } = makeDeps({ context: { policyId: 'pol-1', checkoutUrl: 'https://x' } });
     const snapshot = await controller.getSession('good-token');
     expect(snapshot.compraConfirmada).toBe(false);
+  });
+
+  // Reportado desde una prueba real: la pantalla decía "¡Ya quedaste asegurado!" con la barra
+  // en "Etapa 5 de 6 · Pago", contradiciéndose sola. `hasCompletedPurchase` no se borra nunca
+  // —es lo que distingue abandonar de haber comprado—, así que a un cliente que vuelve le daba
+  // por pagada la venta NUEVA en cuanto se acuñaba el link. Un checkoutUrl vigente prueba lo
+  // contrario: falta pagar.
+  it('regresión — quien ya compró antes NO da por pagada la venta nueva que sigue pendiente', async () => {
+    const { controller } = makeDeps({
+      context: { hasCompletedPurchase: true, checkoutUrl: 'https://checkout.wompi.co/l/nuevo' },
+    });
+    const snapshot = await controller.getSession('good-token');
+    expect(snapshot.compraConfirmada).toBe(false);
+  });
+
+  // El webhook pone POLICY_ISSUED al confirmar y solo después DISCOVERY para el cross-sell;
+  // en esa ventana el link todavía está puesto, y la compra sí está pagada.
+  it('POLICY_ISSUED cuenta como pagada aunque el link siga en el contexto', async () => {
+    const { controller } = makeDeps({
+      state: ConversationState.POLICY_ISSUED,
+      context: { policyId: 'pol-1', checkoutUrl: 'https://checkout.wompi.co/l/x' },
+    });
+    const snapshot = await controller.getSession('good-token');
+    expect(snapshot.compraConfirmada).toBe(true);
   });
 });
 

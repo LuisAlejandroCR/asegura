@@ -8,7 +8,7 @@ import { ConversationService } from './conversation.service';
 import { WebSessionTokenService } from './web-session-token.service';
 import { TelegramAdapter } from '../channel/telegram-adapter.service';
 import { progressFor } from './conversation-state.machine';
-import { ConversationContext } from './types';
+import { ConversationContext, ConversationState } from './types';
 
 interface WebSessionSnapshot {
   state: string;
@@ -67,7 +67,15 @@ export class WebSessionController {
       cotizacion: conv.context.quoteSnapshot,
       returnUrl: this.buildReturnUrl(conv.channel),
       chatUrl: this.buildChatUrl(conv.channel),
-      compraConfirmada: conv.context.hasCompletedPurchase === true,
+      // `hasCompletedPurchase` responde "¿compró alguna vez?" y no se borra nunca por diseño
+      // —es lo que distingue abandonar de haber comprado—, así que a un cliente que vuelve le
+      // pintaba "¡Ya quedaste asegurado!" en cuanto aparecía un link de pago NUEVO, sin haberlo
+      // pagado. Un `checkoutUrl` vigente es justamente la prueba de que falta pagar; el webhook
+      // lo suelta al confirmar y lo limpia al rechazar. POLICY_ISSUED cubre la ventana entre el
+      // pago y el cross-sell, donde el link todavía está puesto.
+      compraConfirmada:
+        conv.state === ConversationState.POLICY_ISSUED ||
+        (conv.context.hasCompletedPurchase === true && !conv.context.checkoutUrl),
     };
   }
 
