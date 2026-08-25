@@ -577,8 +577,12 @@ const webToken = new URLSearchParams(location.search).get('token');
 
     // La hoja se pinta solo con la cotización que la herramienta produjo (regla #5): sin
     // ella no hay precio que mostrar, y no se inventa uno.
+    // Y nunca encima de quien está hablando: la hoja tapaba al agente a media frase, justo
+    // cuando explicaba qué se va a cobrar. No se descarta, se aplaza — `hojaYaMostrada` sigue
+    // en false, así que el sondeo la abre en cuanto calla.
     const puedeMostrarHoja = linkPago && snapshot.cotizacion && !hojaYaMostrada
-      && cuerpo.dataset.estado !== 'pagando' && !postCheckout.classList.contains('activo');
+      && cuerpo.dataset.estado !== 'pagando' && cuerpo.dataset.estado !== 'hablando'
+      && !postCheckout.classList.contains('activo');
     if (puedeMostrarHoja) {
       hojaYaMostrada = true;
       abrirResumen(snapshot.cotizacion);
@@ -749,7 +753,11 @@ const webToken = new URLSearchParams(location.search).get('token');
     room.on(RoomEvent.ActiveSpeakersChanged, (hablantes) => {
       if (cuerpo.dataset.estado === 'resumen' || cuerpo.dataset.estado === 'pagando') return;
       const agenteHablando = hablantes.some((p) => !p.isLocal);
+      const dejoDeHablar = cuerpo.dataset.estado === 'hablando' && !agenteHablando;
       setEstado(agenteHablando ? 'hablando' : 'escuchando');
+      // Una hoja aplazada no espera al siguiente tick: 3 segundos de silencio después de
+      // "ya te aparece el botón" se leen como que el botón no apareció.
+      if (dejoDeHablar && !hojaYaMostrada) leerSesion();
     });
 
     room.on(RoomEvent.DataReceived, alRecibirDatos);
