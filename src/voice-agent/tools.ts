@@ -95,7 +95,14 @@ export function createEmitirPolizaTool(deps: Pick<ToolDeps, 'policies'>, state: 
   });
 }
 
-export function createGenerarLinkPagoTool(deps: Pick<ToolDeps, 'payments' | 'quoting'>, state: VoiceSessionState) {
+// urlDeRetorno: qué URL le damos a Wompi para devolver el navegador cuando el checkout
+// termina — pagado, rechazado o sin fondos. La construye quien tiene la configuración, no
+// este archivo, para no meter ConfigService en el contrato plano de las tools.
+export function createGenerarLinkPagoTool(
+  deps: Pick<ToolDeps, 'payments' | 'catalog'>,
+  state: VoiceSessionState,
+  urlDeRetorno?: () => string | undefined,
+) {
   return tool({
     name: 'generar_link_pago',
     description:
@@ -103,7 +110,10 @@ export function createGenerarLinkPagoTool(deps: Pick<ToolDeps, 'payments' | 'quo
       'aparece en pantalla; nunca leas la URL en voz alta.',
     parameters: z.object({}),
     execute: async () => {
-      const result = await generarLinkPagoLogic(deps, state.context, { policyId: state.context.policyId ?? '' });
+      const result = await generarLinkPagoLogic(deps, state.context, {
+        policyId: state.context.policyId ?? '',
+        redirectUrl: urlDeRetorno?.(),
+      });
       if (result.ok) state.merge({ checkoutUrl: result.checkoutUrl });
       return result;
     },

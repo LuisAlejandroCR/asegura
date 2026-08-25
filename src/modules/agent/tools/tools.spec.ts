@@ -18,7 +18,7 @@ describe('tools — Ley 1581 is a precondition, not an instruction', () => {
   it.each([
     ['consultarAfiliado', () => consultarAfiliadoLogic({}, {}, { serie: '42' })],
     ['emitirPoliza', () => emitirPolizaLogic({}, 'conv-1', {})],
-    ['generarLinkPago', () => generarLinkPagoLogic({ quoting }, {}, { policyId: 'pol-1' })],
+    ['generarLinkPago', () => generarLinkPagoLogic({}, {}, { policyId: 'pol-1' })],
   ])('%s refuses without authorization', async (_name, call) => {
     const result = await call();
     expect(result).toEqual({ ok: false, motivo: NOT_AUTHORIZED });
@@ -109,19 +109,25 @@ describe('emitirPolizaLogic', () => {
 });
 
 describe('generarLinkPagoLogic', () => {
+  const catalogo = new ProductCatalog();
+  const conPago = (createPaymentLink: jest.Mock) => ({
+    catalog: catalogo,
+    payments: { isEnabled: true, createPaymentLink },
+  });
+  const elegido = { ...authorized, quoteProductId: 'vida' };
+
   it('refuses when Wompi is not configured, rather than inventing a link', async () => {
-    const deps = { quoting, payments: { isEnabled: false, createPaymentLink: jest.fn() } };
-    const result = await generarLinkPagoLogic(deps, { ...authorized, productCategory: 'vida' }, { policyId: 'pol-1' });
+    const deps = { catalog: catalogo, payments: { isEnabled: false, createPaymentLink: jest.fn() } };
+    const result = await generarLinkPagoLogic(deps, elegido, { policyId: 'pol-1' });
     expect(result.ok).toBe(false);
   });
 
   // Money: two Wompi links for one policy are two possible charges.
   it('regresión — con un link vigente devuelve ese, no crea otro', async () => {
     const createPaymentLink = jest.fn();
-    const deps = { quoting, payments: { isEnabled: true, createPaymentLink } };
-    const context = { ...authorized, productCategory: 'vida', checkoutUrl: 'https://checkout.wompi.co/l/ya-existe' };
+    const context = { ...elegido, checkoutUrl: 'https://checkout.wompi.co/l/ya-existe' };
 
-    const result = await generarLinkPagoLogic(deps, context, { policyId: 'pol-1' });
+    const result = await generarLinkPagoLogic(conPago(createPaymentLink), context, { policyId: 'pol-1' });
 
     expect(result).toEqual({ ok: true, checkoutUrl: 'https://checkout.wompi.co/l/ya-existe' });
     expect(createPaymentLink).not.toHaveBeenCalled();
@@ -129,11 +135,73 @@ describe('generarLinkPagoLogic', () => {
 
   it('prices the link from the catalog, never from an argument', async () => {
     const createPaymentLink = jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.wompi.co/l/x' });
-    const deps = { quoting, payments: { isEnabled: true, createPaymentLink } };
-    const result = await generarLinkPagoLogic(deps, { ...authorized, productCategory: 'vida' }, { policyId: 'pol-1' });
+    const result = await generarLinkPagoLogic(conPago(createPaymentLink), elegido, { policyId: 'pol-1' });
 
     expect(result).toEqual({ ok: true, checkoutUrl: 'https://checkout.wompi.co/l/x' });
     expect(createPaymentLink).toHaveBeenCalledWith(expect.objectContaining({ amountCOP: expect.any(Number) }));
+  });
+
+  // Reported from a live call on 2026-08-25: the sheet showed Asistencias múltiples at
+  // $20.000 and Wompi charged $12.000 for Vida. This tool called bestQuote(), which re-runs
+  // scoring and returns whatever wins NOW, while emitir_poliza issued the policy for the
+  // pinned product — so the policy and the charge were for different things.
+  it('regresión — cobra el producto elegido, no el que el motor prefiera ahora', async () => {
+    const createPaymentLink = jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.wompi.co/l/x' });
+    // productCategory 'vida' is what bestQuote() would follow; the pinned product is another.
+    const context = { ...authorized, productCategory: 'vida' as const, quoteProductId: 'asistencias-multiples' };
+
+    await generarLinkPagoLogic(conPago(createPaymentLink), context, { policyId: 'pol-1' });
+
+    expect(createPaymentLink).toHaveBeenCalledWith(
+      expect.objectContaining({ productName: 'Asistencias múltiples' }),
+    );
+  });
+
+  // Charging something nobody was shown is worse than not charging at all — the same call
+  // the state machine made when it stopped falling back to a flat amount.
+  it('se niega cuando no hay producto elegido, en vez de cobrar cualquier cosa', async () => {
+    const createPaymentLink = jest.fn();
+    const result = await generarLinkPagoLogic(
+      conPago(createPaymentLink),
+      { ...authorized, productCategory: 'vida' as const },
+      { policyId: 'pol-1' },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(createPaymentLink).not.toHaveBeenCalled();
+  });
+
+  it('suma los productos de una compra múltiple, no cobra solo el primero', async () => {
+    const createPaymentLink = jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.wompi.co/l/x' });
+    const context = { ...authorized, selectedProductIds: ['vida', 'asistencias-multiples'] };
+
+    await generarLinkPagoLogic(conPago(createPaymentLink), context, { policyId: 'pol-1' });
+
+    const [args] = createPaymentLink.mock.calls[0];
+    expect(args.productName).toBe('2 seguros Colsubsidio');
+    expect(args.amountCOP).toBe(32000);
+  });
+
+  // Without it Wompi's receipt is a dead end in every outcome — approved, rejected, no funds.
+  it('pasa la URL de retorno a Wompi cuando la hay', async () => {
+    const createPaymentLink = jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.wompi.co/l/x' });
+
+    await generarLinkPagoLogic(conPago(createPaymentLink), elegido, {
+      policyId: 'pol-1',
+      redirectUrl: 'https://asegura.example/voz.html?token=abc',
+    });
+
+    expect(createPaymentLink).toHaveBeenCalledWith(
+      expect.objectContaining({ redirectUrl: 'https://asegura.example/voz.html?token=abc' }),
+    );
+  });
+
+  it('omite el campo cuando no hay URL de retorno, en vez de mandar undefined', async () => {
+    const createPaymentLink = jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.wompi.co/l/x' });
+
+    await generarLinkPagoLogic(conPago(createPaymentLink), elegido, { policyId: 'pol-1' });
+
+    expect(createPaymentLink.mock.calls[0][0]).not.toHaveProperty('redirectUrl');
   });
 });
 
