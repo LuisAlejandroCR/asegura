@@ -1,0 +1,3 @@
+# Gitignored files copied into every new worktree (worktrees.md rule 3).
+.env
+.env.local
