@@ -80,7 +80,7 @@ Los seguros de mascotas se cotizan por mascota: una familia con 3 mascotas ve el
 | Dashboard | Metabase |
 | Chat web (AseguraWeb) | Página propia con recorrido por etapas, cotización animada y pago — `apps/web/texto.html` |
 | Voz en tiempo real | LiveKit Agents + ElevenLabs — `apps/web/voz.html` |
-| Tests | 1422 en 55 suites (unit + fuzz + invariantes) |
+| Tests | 1426 en 55 suites (unit + fuzz + invariantes) |
 
 ---
 

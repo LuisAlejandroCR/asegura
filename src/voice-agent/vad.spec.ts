@@ -3,7 +3,7 @@
 // end-of-turn executor this install excludes. Both shipped once and only showed on a live call.
 import type { JobProcess } from '@livekit/agents';
 import { VAD, initializeLogger, llm, voice } from '@livekit/agents';
-import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, turnHandlingCon, checkLlmAccess, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, describirProveedores, hayRespaldoElevenLabs, modeloElevenLabs, normalizarBaseUrl, usaElevenLabs, usaGroqLlm } from './main';
+import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, turnHandlingCon, checkLlmAccess, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, describirProveedores, hayRespaldoElevenLabs, modeloElevenLabs, normalizarBaseUrl, opcionesDeEntrada, usaCancelacionDeVoces, usaElevenLabs, usaGroqLlm } from './main';
 
 // AgentSession logs from its field initializers; outside cli.runApp nothing has set the logger up.
 beforeAll(() => initializeLogger({ pretty: false, level: 'silent' }));
@@ -247,6 +247,32 @@ describe('modelo de ElevenLabs', () => {
     const fetchMock = jest.fn().mockResolvedValue({ ok: true });
     await checkTtsAccess(fetchMock as any, { ELEVENLABS_API_KEY: 'k', ELEVENLABS_VOICE_ID: 'v' });
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).model_id).toBe('eleven_flash_v2_5');
+  });
+});
+
+// BVC quita las voces de otras personas, no el ruido ambiente. Importa aquí porque sin detector
+// semántico de fin de turno el VAD es el único juez, y una conversación de fondo lo dispara.
+describe('cancelación de voces de fondo', () => {
+  it('viene puesta: el problema que resuelve es el caso normal, no la excepción', () => {
+    expect(usaCancelacionDeVoces({})).toBe(true);
+  });
+
+  it('se apaga por variable, porque se factura aparte', () => {
+    expect(usaCancelacionDeVoces({ VOICE_BVC: 'off' })).toBe(false);
+    expect(opcionesDeEntrada({ VOICE_BVC: 'off' })).toEqual({});
+  });
+
+  it('puesta, entra en las opciones de entrada de la sesión', () => {
+    const filtro = { marca: 'krisp' } as any;
+    expect(opcionesDeEntrada({}, () => filtro)).toEqual({ noiseCancellation: filtro });
+  });
+
+  // Una llamada con ruido es peor que una limpia y muchísimo mejor que ninguna: si el binario
+  // nativo no carga en el contenedor, la sesión tiene que arrancar igual.
+  it('si el filtro no se puede construir, la llamada sigue sin él en vez de morir', () => {
+    const explota = () => { throw new Error('native binding not found'); };
+    expect(() => opcionesDeEntrada({}, explota as any)).not.toThrow();
+    expect(opcionesDeEntrada({}, explota as any)).toEqual({});
   });
 });
 

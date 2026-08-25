@@ -6,6 +6,7 @@ import { type JobContext, type JobProcess, type VAD, ServerOptions, cli, defineA
 import * as openai from '@livekit/agents-plugin-openai';
 import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
 import * as silero from '@livekit/agents-plugin-silero';
+import * as krisp from '@livekit/agents-plugin-krisp';
 import * as fs from 'fs';
 import dotenv from 'dotenv';
 import { greetingFor, createVoiceAgent, faseDe, herramientasDeFase, instruccionesCon } from './agent';
@@ -42,6 +43,36 @@ export function hayRespaldoElevenLabs(env: NodeJS.ProcessEnv = process.env): boo
 // por si una demo prefiere la voz rica, como el endpointing de la Sesión 121.
 export function modeloElevenLabs(env: NodeJS.ProcessEnv = process.env): string {
   return env.ELEVENLABS_MODEL || 'eleven_flash_v2_5';
+}
+
+// BVC quita las voces de OTRAS personas y deja la del hablante principal; no es un filtro de
+// ruido ambiente. Pesa más aquí que en otro proyecto: sin el detector semántico de fin de turno
+// —excluido del install por 2 GB— el VAD de Silero es el único juez de que la persona terminó, y
+// una conversación de fondo lo dispara igual que su voz. Se factura aparte desde el 2026-05-01,
+// así que se apaga por variable sin tocar código.
+export function usaCancelacionDeVoces(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.VOICE_BVC !== 'off';
+}
+
+// Construirlo puede fallar donde el binario nativo no cargue. Una llamada con ruido es peor que
+// una limpia y muchísimo mejor que ninguna, así que un fallo aquí degrada en vez de tumbar la
+// sesión — el mismo trato que se le da a cada integración externa de este repo.
+type OpcionesDeEntrada = { noiseCancellation?: ReturnType<typeof krisp.voiceIsolation> };
+
+export function opcionesDeEntrada(
+  env: NodeJS.ProcessEnv = process.env,
+  construir: typeof krisp.voiceIsolation = krisp.voiceIsolation,
+): OpcionesDeEntrada {
+  if (!usaCancelacionDeVoces(env)) return {};
+  try {
+    return { noiseCancellation: construir() };
+  } catch (err) {
+    console.warn(
+      '[asegura-voice] BVC no disponible, la llamada sigue sin él:',
+      err instanceof Error ? err.message : err,
+    );
+    return {};
+  }
 }
 
 // Checked at startup, not inside entry(): a key missing there lets the worker register and
@@ -310,7 +341,7 @@ async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
       void agent.updateChatCtx(historial.copy().truncate(MAX_ITEMS_HISTORIAL));
     });
 
-    await session.start({ agent, room: ctx.room });
+    await session.start({ agent, room: ctx.room, inputOptions: opcionesDeEntrada() });
 
     // say(), not generateReply(): the Ley 1581 notice has to come out word for word. Which
     // greeting depends on whether the chat already holds this person's consent.
