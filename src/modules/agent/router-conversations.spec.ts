@@ -7,7 +7,8 @@ import { ToolRouterService } from './tool-router.service';
 import { ChatTurn, ToolCallRequest } from '../nlp/types';
 import { ConversationContext } from './types';
 
-const quoting = new QuotingService(new ProductCatalog());
+const catalog = new ProductCatalog();
+const quoting = new QuotingService(catalog);
 const call = (name: string, args: Record<string, unknown> = {}): ToolCallRequest => ({ id: `c-${name}`, name, args });
 
 // Replays one model turn per user turn, so a fixture reads as a conversation.
@@ -120,13 +121,18 @@ describe('conversación — cierre completo', () => {
   it('cotiza, captura, emite y cobra, en ese orden y sin saltarse un paso', async () => {
     const policies = { issue: jest.fn().mockResolvedValue({ policyId: 'pol-9' }) };
     const createPaymentLink = jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.wompi.co/l/x' });
-    const router = new ToolRouterService({ quoting, policies, payments: { isEnabled: true, createPaymentLink } });
+    const router = new ToolRouterService({ quoting, catalog, policies, payments: { isEnabled: true, createPaymentLink } });
 
     const nlp = scriptedModel([
       { toolCalls: [call('cotizar', { productCategory: 'vida' })] },
       { text: '¿Te sirve?' },
       { toolCalls: [call('capturar_datos', { cedula: '12345678', nombre: 'Juan Pérez', email: 'juan@mail.com' })] },
       { text: 'Confirmo el resumen.' },
+      // vida exige aseguramiento. Este paso faltaba y el test pasaba igual porque el router
+      // se construía sin catálogo, y requiresUnderwriting devuelve false sin él: la prueba
+      // llamada "sin saltarse un paso" se saltaba justo este.
+      { toolCalls: [call('preguntas_aseguramiento', { respuestas: '32 años, sin enfermedades.' })] },
+      { text: 'Gracias, lo registro.' },
       { toolCalls: [call('emitir_poliza')] },
       { text: 'Emitida.' },
       { toolCalls: [call('generar_link_pago')] },
@@ -136,7 +142,7 @@ describe('conversación — cierre completo', () => {
     const ctx = await converse(
       router,
       nlp,
-      [{ user: 'quiero vida' }, { user: 'mis datos' }, { user: 'confirmo' }, { user: 'pagar' }],
+      [{ user: 'quiero vida' }, { user: 'mis datos' }, { user: 'sin enfermedades' }, { user: 'confirmo' }, { user: 'pagar' }],
       { autorizado: true },
     );
 

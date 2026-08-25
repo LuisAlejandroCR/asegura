@@ -7,6 +7,7 @@ import { ProductCatalog } from '../modules/quoting/product-catalog.service';
 import { ToolDeps } from '../modules/agent/tools';
 import { ConversationContext } from '../modules/agent/types';
 import { VoiceSessionState } from './session-state';
+import { construirUrlDeRetorno } from './url-retorno';
 import { createCotizarTool } from './cotizar-tool';
 import {
   createAutorizarTool, createCapturarDatosTool, createConsultarAfiliadoTool,
@@ -163,7 +164,7 @@ function construirHerramientas(state: VoiceSessionState, deps: ToolDeps): MapaHe
     registrar_mascotas: createRegistrarMascotasTool(state),
     preguntas_aseguramiento: createPreguntasAseguramientoTool(deps, state),
     emitir_poliza: createEmitirPolizaTool(deps, state),
-    generar_link_pago: createGenerarLinkPagoTool({ ...deps, quoting: deps.quoting }, state),
+    generar_link_pago: createGenerarLinkPagoTool(deps, state, () => construirUrlDeRetorno(state.conversationId)),
   };
 }
 
