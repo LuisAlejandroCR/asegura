@@ -215,7 +215,11 @@ describe('createPaymentLinkFlow — Wompi redirect_url (plan-17 §12)', () => {
     );
   });
 
-  it('never sets redirect_url for a chat-only conversation (webModality unset)', async () => {
+  // Verificado contra una transacción real: `redirect_url: NO TIENE`, y por eso Wompi dejaba a
+  // la persona en su recibo sin ninguna salida — hubiera pagado, la hubieran rechazado o se
+  // hubiera quedado sin fondos. AseguraWeb ya sabe devolver al chat con su propia cuenta atrás,
+  // así que el retorno va SIEMPRE; sin modalidad elegida, la de texto.
+  it('una compra desde el chat también recibe retorno: a texto.html, no a ningún lado', async () => {
     const { service, conversations, wompi, config, telegram } = buildService({
       state: ConversationState.DATA_CAPTURE,
       context: {
@@ -234,6 +238,28 @@ describe('createPaymentLinkFlow — Wompi redirect_url (plan-17 §12)', () => {
     telegram.normalize.mockResolvedValue({ userId: 'u1', channel: 'telegram', channelId: '1', text: 'link de pago', timestamp: new Date() });
     await service.handleMessage({});
     const call = wompi.createPaymentLink.mock.calls[0]?.[0];
-    expect(call?.redirectUrl).toBeUndefined();
+    expect(call?.redirectUrl).toMatch(/^https:\/\/asegura-app\.vercel\.app\/texto\.html\?token=.+/);
+  });
+
+  // Lo único que puede dejar a Wompi sin retorno: que no haya página a la que volver.
+  it('sin WEB_APP_URL no se inventa un retorno roto', async () => {
+    const { service, conversations, wompi, telegram } = buildService({
+      state: ConversationState.DATA_CAPTURE,
+      context: {
+        quoteProductId: 'accidentes-personales', cedula: '123', nombre: 'Ana', email: 'a@b.com',
+        phoneVerified: true, selfieProvided: true, awaitingPaymentMethodChoice: true,
+      },
+    });
+    conversations.getOrCreate.mockResolvedValue({
+      id: 'conv-1', user_id: 'u1', channel: 'telegram', state: ConversationState.DATA_CAPTURE,
+      context: {
+        quoteProductId: 'accidentes-personales', cedula: '123', nombre: 'Ana', email: 'a@b.com',
+        phoneVerified: true, selfieProvided: true, awaitingPaymentMethodChoice: true,
+      },
+    });
+    telegram.normalize.mockResolvedValue({ userId: 'u1', channel: 'telegram', channelId: '1', text: 'link de pago', timestamp: new Date() });
+    await service.handleMessage({});
+
+    expect(wompi.createPaymentLink.mock.calls[0]?.[0]?.redirectUrl).toBeUndefined();
   });
 });

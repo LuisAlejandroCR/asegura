@@ -835,12 +835,28 @@ const webToken = new URLSearchParams(location.search).get('token');
   });
 
   // Un solo toque: si sabemos dónde vive el chat, la página se va sola; si no, al menos deja
-  // de pedir que se cierre sin decir cómo.
+  // de pedir que se cierre sin decir cómo. Los 3 segundos son los mismos de la pantalla de
+  // post-checkout: irse de golpe se lee como que la página se rompió, y dejan margen para
+  // deshacer un toque accidental que, en una llamada, cuelga de verdad.
   function volverAlChat() {
     const miniApp = window.Telegram && window.Telegram.WebApp;
     if (miniApp && typeof miniApp.close === 'function') { miniApp.close(); return; }
-    if (urlDelChat) { location.href = urlDelChat; return; }
-    setEstado('terminado', 'Conversación terminada. Ya puedes cerrar esta pestaña.');
+    if (!urlDelChat) {
+      setEstado('terminado', 'Conversación terminada. Ya puedes cerrar esta pestaña.');
+      return;
+    }
+
+    // Sin botón de "volver ahora": el único que hay vive dentro de #postCheckout, que aquí no
+    // está activo, así que mostrarlo sería pintar algo que nadie puede tocar. Quien pulsó
+    // Terminar ya decidió; los 3 segundos son cortesía, no una pregunta.
+    let n = 3;
+    const pintar = () => setEstado('terminado', `Listo. Te llevamos de vuelta al chat en ${n}…`);
+    pintar();
+    const iv = setInterval(() => {
+      n--;
+      if (n <= 0) { clearInterval(iv); location.href = urlDelChat; return; }
+      pintar();
+    }, 1000);
   }
 })();
 </script>

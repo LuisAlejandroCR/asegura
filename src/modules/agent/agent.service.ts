@@ -2161,11 +2161,17 @@ export class AgentService {
     // A session actively using AseguraWeb gets a FRESH token — the original link's may be long
     // expired by checkout — so Wompi's redirect_url returns the browser to the same page.
     // Chat-only conversations get no redirect_url.
+    // Sin redirect_url, Wompi se queda en su recibo y la persona no tiene por dónde volver —
+    // pagara, la rechazaran o se quedara sin fondos. Antes solo se mandaba a quien venía de
+    // AseguraWeb, así que comprar desde el chat terminaba en un callejón sin salida. Ahora va
+    // siempre: esa página ya sabe devolver a quien llegó desde el chat, con su propia cuenta
+    // atrás hacia WhatsApp o Telegram. Verificado en una transacción real que salió sin él.
     const webAppUrl = this.config.get<string>('WEB_APP_URL');
-    const redirectUrl = context.webModality && webAppUrl
+    const modalidadDeVuelta = context.webModality ?? 'texto';
+    const redirectUrl = webAppUrl
       ? (() => {
           const token = this.webSessionTokens.sign({ conversationId: convId });
-          return token ? `${webAppUrl.replace(/\/$/, '')}/${context.webModality}.html?token=${token}` : undefined;
+          return token ? `${webAppUrl.replace(/\/$/, '')}/${modalidadDeVuelta}.html?token=${token}` : undefined;
         })()
       : undefined;
 
