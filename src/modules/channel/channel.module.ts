@@ -11,11 +11,14 @@ import { DocumentCacheService } from './document-cache.service';
 import { ChannelRegistry } from './channel-registry.service';
 import { ReminderService } from './reminder.service';
 import { ConversationModule } from '../agent/conversation.module';
+import { LeadsModule } from '../leads/leads.module';
 
 @Module({
   // ConversationModule: ReminderService's auto-close reads and saves conversation state
   // from its own timer, not just sends a text.
-  imports: [ConversationModule],
+  // LeadsModule: al cerrar una conversación sin venta, ReminderService deja la fila que
+  // convierte un abandono en una llamada de vuelta.
+  imports: [ConversationModule, LeadsModule],
   controllers: [TelegramWebhookController, DownloadsController],
   providers: [TelegramAdapter, MetaWhatsAppAdapter, DocumentCacheService, ChannelRegistry, ReminderService],
   exports: [TelegramAdapter, MetaWhatsAppAdapter, ChannelRegistry, ReminderService, DocumentCacheService],

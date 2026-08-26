@@ -14,6 +14,10 @@ function makeChannels() {
   return { registry, telegram, whatsapp };
 }
 
+function makeLeads() {
+  return { registrar: jest.fn().mockResolvedValue(undefined) } as any;
+}
+
 function makeConversations(overrides?: { state?: ConversationState; context?: Record<string, unknown> }) {
   return {
     findById: jest.fn().mockResolvedValue({
@@ -37,7 +41,7 @@ describe('ReminderService', () => {
 
   it('sends the reminder text to the right user after 60s of no activity', () => {
     const { registry, telegram } = makeChannels();
-    const service = new ReminderService(registry, makeConversations());
+    const service = new ReminderService(registry, makeConversations(), makeLeads());
 
     service.schedule('conv-1', 'user-1', 'telegram');
     jest.advanceTimersByTime(60_000);
@@ -48,7 +52,7 @@ describe('ReminderService', () => {
 
   it('does not fire before 60s have elapsed', () => {
     const { registry, telegram } = makeChannels();
-    const service = new ReminderService(registry, makeConversations());
+    const service = new ReminderService(registry, makeConversations(), makeLeads());
 
     service.schedule('conv-1', 'user-1', 'telegram');
     jest.advanceTimersByTime(59_999);
@@ -60,7 +64,7 @@ describe('ReminderService', () => {
   // there — the pending reminder must not fire once they've responded.
   it('cancel() prevents a scheduled reminder from firing', () => {
     const { registry, telegram } = makeChannels();
-    const service = new ReminderService(registry, makeConversations());
+    const service = new ReminderService(registry, makeConversations(), makeLeads());
 
     service.schedule('conv-1', 'user-1', 'telegram');
     service.cancel('conv-1');
@@ -71,7 +75,7 @@ describe('ReminderService', () => {
 
   it('scheduling again for the same conversation replaces the previous timer instead of stacking two', () => {
     const { registry, telegram } = makeChannels();
-    const service = new ReminderService(registry, makeConversations());
+    const service = new ReminderService(registry, makeConversations(), makeLeads());
 
     service.schedule('conv-1', 'user-1', 'telegram');
     jest.advanceTimersByTime(30_000);
@@ -86,7 +90,7 @@ describe('ReminderService', () => {
 
   it('keeps independent timers for different conversations', () => {
     const { registry, telegram } = makeChannels();
-    const service = new ReminderService(registry, makeConversations());
+    const service = new ReminderService(registry, makeConversations(), makeLeads());
 
     service.schedule('conv-1', 'user-1', 'telegram');
     service.schedule('conv-2', 'user-2', 'telegram');
@@ -99,7 +103,7 @@ describe('ReminderService', () => {
 
   it('cancel() on a conversation with no scheduled timer is a no-op, not a throw', () => {
     const { registry } = makeChannels();
-    const service = new ReminderService(registry, makeConversations());
+    const service = new ReminderService(registry, makeConversations(), makeLeads());
     expect(() => service.cancel('never-scheduled')).not.toThrow();
   });
 
@@ -113,7 +117,7 @@ describe('ReminderService', () => {
     it('sends a closing message to the user, not just a silent DB update', async () => {
       const { registry, telegram } = makeChannels();
       const conversations = makeConversations({ state: ConversationState.DISCOVERY, context: {} });
-      const service = new ReminderService(registry, conversations);
+      const service = new ReminderService(registry, conversations, makeLeads());
 
       service.schedule('conv-1', 'user-1', 'telegram');
       await jest.advanceTimersByTimeAsync(60_000 + 180_000);
@@ -128,7 +132,7 @@ describe('ReminderService', () => {
     it('closes as "insufficient_info" when no productCategory was ever captured', async () => {
       const { registry } = makeChannels();
       const conversations = makeConversations({ state: ConversationState.DISCOVERY, context: {} });
-      const service = new ReminderService(registry, conversations);
+      const service = new ReminderService(registry, conversations, makeLeads());
 
       service.schedule('conv-1', 'user-1', 'telegram');
       await jest.advanceTimersByTimeAsync(60_000 + 180_000);
@@ -146,7 +150,7 @@ describe('ReminderService', () => {
         state: ConversationState.QUOTE_PRESENTED,
         context: { productCategory: 'mascotas' },
       });
-      const service = new ReminderService(registry, conversations);
+      const service = new ReminderService(registry, conversations, makeLeads());
 
       service.schedule('conv-1', 'user-1', 'telegram');
       await jest.advanceTimersByTimeAsync(60_000 + 180_000);
@@ -161,7 +165,7 @@ describe('ReminderService', () => {
     it('does not close a conversation that already reached a terminal state some other way, and does not message it either', async () => {
       const { registry, telegram } = makeChannels();
       const conversations = makeConversations({ state: ConversationState.COMPLETED });
-      const service = new ReminderService(registry, conversations);
+      const service = new ReminderService(registry, conversations, makeLeads());
 
       service.schedule('conv-1', 'user-1', 'telegram');
       await jest.advanceTimersByTimeAsync(60_000 + 180_000);
@@ -174,7 +178,7 @@ describe('ReminderService', () => {
     it('a reply during the grace period (cancel) prevents the auto-close', async () => {
       const { registry } = makeChannels();
       const conversations = makeConversations();
-      const service = new ReminderService(registry, conversations);
+      const service = new ReminderService(registry, conversations, makeLeads());
 
       service.schedule('conv-1', 'user-1', 'telegram');
       await jest.advanceTimersByTimeAsync(60_000); // nudge fires, grace period starts
@@ -193,7 +197,7 @@ describe('ReminderService', () => {
     it('does NOT auto-close at the regular 4-minute mark when hasPendingPayment is true', async () => {
       const { registry, telegram } = makeChannels();
       const conversations = makeConversations({ state: ConversationState.PAYMENT, context: { checkoutUrl: 'https://checkout.wompi.co/l/test' } });
-      const service = new ReminderService(registry, conversations);
+      const service = new ReminderService(registry, conversations, makeLeads());
 
       service.schedule('conv-1', 'user-1', 'telegram', true);
       await jest.advanceTimersByTimeAsync(60_000 + 180_000); // the old, regular close point
@@ -206,7 +210,7 @@ describe('ReminderService', () => {
     it('auto-closes once the link expired, and that is the only message it sends', async () => {
       const { registry, telegram } = makeChannels();
       const conversations = makeConversations({ state: ConversationState.PAYMENT, context: { checkoutUrl: 'https://checkout.wompi.co/l/test' } });
-      const service = new ReminderService(registry, conversations);
+      const service = new ReminderService(registry, conversations, makeLeads());
 
       service.schedule('conv-1', 'user-1', 'telegram', true);
       await jest.advanceTimersByTimeAsync(33 * 60_000);
@@ -222,7 +226,7 @@ describe('ReminderService', () => {
     it('hasPendingPayment defaults to false — unchanged 4-minute behavior when omitted', async () => {
       const { registry } = makeChannels();
       const conversations = makeConversations({ state: ConversationState.DISCOVERY, context: {} });
-      const service = new ReminderService(registry, conversations);
+      const service = new ReminderService(registry, conversations, makeLeads());
 
       service.schedule('conv-1', 'user-1', 'telegram');
       await jest.advanceTimersByTimeAsync(60_000 + 180_000);
@@ -237,7 +241,7 @@ describe('ReminderService', () => {
   describe('routes through the channel the conversation belongs to', () => {
     it('nudges a WhatsApp conversation on WhatsApp, not Telegram', () => {
       const { registry, telegram, whatsapp } = makeChannels();
-      const service = new ReminderService(registry, makeConversations());
+      const service = new ReminderService(registry, makeConversations(), makeLeads());
 
       service.schedule('conv-1', 'whatsapp:+573001112233', 'whatsapp');
       jest.advanceTimersByTime(60_000);
@@ -248,7 +252,7 @@ describe('ReminderService', () => {
 
     it('closes a WhatsApp conversation on WhatsApp too', async () => {
       const { registry, telegram, whatsapp } = makeChannels();
-      const service = new ReminderService(registry, makeConversations());
+      const service = new ReminderService(registry, makeConversations(), makeLeads());
 
       service.schedule('conv-1', 'whatsapp:+573001112233', 'whatsapp');
       await jest.advanceTimersByTimeAsync(60_000 + 180_000);
@@ -259,7 +263,7 @@ describe('ReminderService', () => {
 
     it('still uses Telegram for a Telegram conversation', () => {
       const { registry, telegram, whatsapp } = makeChannels();
-      const service = new ReminderService(registry, makeConversations());
+      const service = new ReminderService(registry, makeConversations(), makeLeads());
 
       service.schedule('conv-1', 'user-1', 'telegram');
       jest.advanceTimersByTime(60_000);
@@ -267,5 +271,85 @@ describe('ReminderService', () => {
       expect(telegram.sendText).toHaveBeenCalledTimes(1);
       expect(whatsapp.sendText).not.toHaveBeenCalled();
     });
+  });
+});
+
+// "Terminar" con el pago hecho no es un abandono. La captura de una transacción aprobada llegó
+// junto con un "cerramos la sesión de AseguraWeb" en el chat: la venta quedaba marcada ABANDONED
+// mientras la persona esperaba su póliza.
+describe('closeNow con una venta en curso', () => {
+  const TEXTO = 'Cerramos la sesión de AseguraWeb.';
+
+  it('no cierra ni avisa cuando ya hay un link de pago abierto', async () => {
+    const { registry, telegram } = makeChannels();
+    const conversations = makeConversations({ context: { checkoutUrl: 'https://checkout.wompi.co/l/x' } });
+    const leads = makeLeads();
+    const service = new ReminderService(registry, conversations, leads);
+
+    await service.closeNow('conv-1', TEXTO);
+
+    expect(telegram.sendText).not.toHaveBeenCalled();
+    expect(conversations.saveState).not.toHaveBeenCalled();
+    expect(leads.registrar).not.toHaveBeenCalled();
+  });
+
+  it('tampoco en PAYMENT, donde el webhook de Wompi es quien manda', async () => {
+    const { registry, telegram } = makeChannels();
+    const conversations = makeConversations({ state: ConversationState.PAYMENT });
+    const service = new ReminderService(registry, conversations, makeLeads());
+
+    await service.closeNow('conv-1', TEXTO);
+
+    expect(telegram.sendText).not.toHaveBeenCalled();
+    expect(conversations.saveState).not.toHaveBeenCalled();
+  });
+
+  it('ni con una póliza ya emitida esperando confirmación', async () => {
+    const { registry, telegram } = makeChannels();
+    const conversations = makeConversations({ context: { policyId: 'pol-1' } });
+    const service = new ReminderService(registry, conversations, makeLeads());
+
+    await service.closeNow('conv-1', TEXTO);
+
+    expect(telegram.sendText).not.toHaveBeenCalled();
+  });
+});
+
+// Irse antes de quedar asegurado no dejaba más rastro que un estado que nadie consulta.
+describe('el abandono deja a alguien a quien llamar', () => {
+  // El cierre por silencio se mide en minutos: sin relojes falsos este bloque tardaría cuatro.
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  });
+
+  it('registra el lead al pulsar "Terminar" sin haber comprado', async () => {
+    const { registry } = makeChannels();
+    const conversations = makeConversations({
+      state: ConversationState.QUOTE_PRESENTED,
+      context: { quoteProductId: 'exequial-recordar', nombre: 'Ana Gómez' },
+    });
+    const leads = makeLeads();
+    const service = new ReminderService(registry, conversations, leads);
+
+    await service.closeNow('conv-1', 'Cerramos la sesión.');
+
+    expect(leads.registrar).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'conv-1' }),
+      'web_session_ended',
+    );
+  });
+
+  it('y también cuando la conversación se cierra sola por silencio', async () => {
+    const { registry } = makeChannels();
+    const conversations = makeConversations({ context: { productCategory: 'mascotas' } });
+    const leads = makeLeads();
+    const service = new ReminderService(registry, conversations, leads);
+
+    service.schedule('conv-1', 'user-1', 'telegram');
+    await jest.advanceTimersByTimeAsync(60_000 + 180_000);
+
+    expect(leads.registrar).toHaveBeenCalledWith(expect.anything(), 'no_response');
   });
 });

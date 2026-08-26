@@ -6,6 +6,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ChannelRegistry } from './channel-registry.service';
 import { ConversationService } from '../agent/conversation.service';
 import { ConversationState } from '../agent/types';
+import { LeadService, mereceSeguimiento } from '../leads/lead.service';
 
 // The one in-memory timer in an otherwise message-driven app; it resets on every deploy.
 // 60s, not 30s: a 29-second voice note alone ate the original window.
@@ -36,6 +37,7 @@ export class ReminderService {
   constructor(
     private readonly channels: ChannelRegistry,
     private readonly conversations: ConversationService,
+    private readonly leads: LeadService,
   ) {}
 
   // Keyed by conversation id, not user id. awayOnAnotherSurface — un checkout de Wompi abierto o
@@ -88,6 +90,19 @@ export class ReminderService {
     const conv = await this.conversations.findById(conversationId);
     if (!conv || TERMINAL_STATES.has(conv.state)) return;
 
+    // Con el pago hecho o en curso, "Terminar" no es abandonar: es colgar después de comprar.
+    // Marcarlo ABANDONED borraba una venta del embudo y, encima del recibo de Wompi, le llegaba
+    // un "cerramos la sesión de AseguraWeb" al chat mientras esperaba su póliza. De aquí en
+    // adelante manda el webhook de Wompi, que es quien sabe cómo terminó la transacción.
+    if (!mereceSeguimiento(conv)) {
+      this.logger.log(`closeNow: ${conversationId} tiene un pago en curso — ni cierre ni aviso`);
+      return;
+    }
+
+    // Se fue antes de quedar asegurada: queda anotada para que alguien la llame. Va primero
+    // porque después de saveState la conversación ya es ABANDONED y el contexto es historia.
+    await this.leads.registrar(conv, 'web_session_ended');
+
     await this.channels.get(conv.channel as 'telegram' | 'whatsapp').sendText(conv.user_id, texto)
       .catch((err) => this.logger.warn(`closeNow sendText failed: ${err}`));
     await this.conversations.saveState(conversationId, ConversationState.ABANDONED, {
@@ -101,6 +116,9 @@ export class ReminderService {
     if (!conv || TERMINAL_STATES.has(conv.state)) return;
 
     const reason = conv.context?.productCategory ? 'no_response' : 'insufficient_info';
+    // El cierre por inactividad merece la misma llamada de vuelta que pulsar "Terminar": en
+    // los dos casos la persona se quedó sin seguro y nadie se entera si solo se guarda un estado.
+    if (mereceSeguimiento(conv)) await this.leads.registrar(conv, reason);
     await this.channels.get(channel).sendText(userId, TIMEOUT_CLOSE_TEXT)
       .catch((err) => this.logger.warn(`closeIfStillStalled sendText failed: ${err}`));
     await this.conversations.saveState(conversationId, ConversationState.ABANDONED, {
