@@ -190,9 +190,68 @@ describe('ficha de la venta en curso', () => {
   it('no repite como pendiente un dato ya capturado', () => {
     const ficha = fichaDeVenta({
       autorizado: true, quoteProductId: 'x',
-      cedula: '1234567890', nombre: 'Ana Gómez', email: 'ana@ejemplo.co',
+      cedula: '1234567890', documentType: 'CC', nombre: 'Ana Gómez', email: 'ana@ejemplo.co',
     });
 
     expect(ficha).not.toContain('Falta');
+  });
+});
+
+// Quien ya compró vuelve con cédula, nombre y correo en la fila. La llamada se los preguntaba
+// otra vez de a uno —cuatro turnos de interrogatorio— porque el modelo no ve la fila.
+describe('datos de una compra anterior', () => {
+  const contextoDeQuienYaCompro = {
+    autorizado: true,
+    quoteProductId: 'exequial-recordar',
+    hasCompletedPurchase: true,
+    cedula: '1234567890',
+    documentType: 'CC' as const,
+    nombre: 'Ana Gómez',
+    email: 'ana@ejemplo.co',
+  };
+
+  it('se los dicta al modelo con la orden de confirmarlos, no de preguntarlos', () => {
+    const ficha = fichaDeVenta(contextoDeQuienYaCompro);
+
+    expect(ficha).toContain('1234567890');
+    expect(ficha).toContain('Ana Gómez');
+    expect(ficha).toContain('ana@ejemplo.co');
+    expect(ficha).toContain('No se los preguntes de nuevo');
+    expect(ficha).toContain('confirme');
+  });
+
+  it('lee el tipo de documento en palabras, que es como suena por teléfono', () => {
+    expect(fichaDeVenta(contextoDeQuienYaCompro)).toContain('cédula de ciudadanía 1234567890');
+    expect(fichaDeVenta({ ...contextoDeQuienYaCompro, documentType: 'PEP' })).toContain('PEP 1234567890');
+  });
+
+  // Una cédula archivada antes de la Sesión 131 no trae tipo, y sin preguntarlo la póliza sale
+  // impresa como cédula de ciudadanía sin que nadie lo haya dicho.
+  it('pregunta de qué documento es un número guardado sin tipo', () => {
+    const { documentType, ...sinTipo } = contextoDeQuienYaCompro;
+    void documentType;
+    const ficha = fichaDeVenta(sinTipo);
+
+    expect(ficha).toContain('Falta por capturar');
+    expect(ficha).toContain('de qué documento es ese número');
+    expect(ficha).not.toContain('la cédula,');
+  });
+
+  it('sigue pidiendo lo que de verdad falta', () => {
+    const ficha = fichaDeVenta({
+      autorizado: true, quoteProductId: 'exequial-recordar',
+      cedula: '1234567890', documentType: 'CC', nombre: 'Ana Gómez',
+    });
+
+    expect(ficha).toContain('Falta por capturar: el correo');
+  });
+
+  it('las instrucciones prohíben volver a pedir lo que el estado ya trae', () => {
+    const instructions = String(createVoiceAgent(new VoiceSessionState('conv-1')).instructions)
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+
+    expect(instructions).toContain('son de una compra anterior y no se vuelven a preguntar');
+    expect(instructions).toContain('si te corrige alguno, pide solo ese');
   });
 });

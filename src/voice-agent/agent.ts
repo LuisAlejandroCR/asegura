@@ -4,7 +4,7 @@
 import { voice, type llm } from '@livekit/agents';
 import { QuotingService } from '../modules/quoting/quoting.service';
 import { ProductCatalog } from '../modules/quoting/product-catalog.service';
-import { ToolDeps } from '../modules/agent/tools';
+import { ToolDeps, TIPOS_DOCUMENTO_ETIQUETAS } from '../modules/agent/tools';
 import { ConversationContext } from '../modules/agent/types';
 import { VoiceSessionState } from './session-state';
 import { construirUrlDeRetorno } from './url-retorno';
@@ -66,11 +66,16 @@ Vida y los planes de medicina prepagada para mascotas exigen preguntas de salud:
 guárdalas con "preguntas_aseguramiento" antes del resumen. Si "emitir_poliza" dice que
 faltan, es que ese paso no se hizo.
 
-Para cerrar la venta: cuando diga que quiere el seguro, pide el documento preguntando cuál
-es — cédula de ciudadanía, cédula de extranjería o PEP — y pásalo en "documentType"; cuando
-lo tengas, el nombre; después el correo — uno por turno, guardando cada uno con
-"capturar_datos". Si la herramienta dice que un dato no es válido, vuelve a pedir ESE dato. Después léele un resumen
-corto (producto, precio y sus datos) y pide confirmación. Solo entonces llama "emitir_poliza",
+Para cerrar la venta: si el estado de la venta ya trae sus datos, son de una compra anterior
+y NO se vuelven a preguntar. Léeselos con el producto y el precio en un solo resumen y
+pregúntale si sigue todo correcto; si te corrige alguno, pide solo ESE y guárdalo con
+"capturar_datos".
+
+Lo que falte sí se pide, uno por turno: primero el documento, preguntando cuál es — cédula de
+ciudadanía, cédula de extranjería o PEP — y pásalo en "documentType"; cuando lo tengas, el
+nombre; después el correo, guardando cada uno con "capturar_datos". Si la herramienta dice que
+un dato no es válido, vuelve a pedir ESE dato. Después léele un resumen corto (producto, precio
+y sus datos) y pide confirmación. Solo entonces llama "emitir_poliza",
 y después "generar_link_pago". El botón de pago le aparece en pantalla: nunca leas una URL en voz
 alta ni le digas que se lo dejaste en el chat.
 
@@ -83,6 +88,20 @@ herramientas, usa "escalar_a_humano" con el motivo. No insistas ni improvises un
 
 Las herramientas mandan sobre ti: si una responde que no puede, dile a la persona lo que
 falta en tus palabras, no inventes un resultado.`;
+
+// Cómo se le leen de vuelta a la persona: el tipo de documento en palabras, porque la voz lee
+// "CC" como dos letras sueltas. Sin tipo archivado se dice "documento" y la línea de faltantes
+// se encarga de preguntarlo — nombrarlo mal es lo que acaba impreso en la póliza.
+function datosQueYaTienes(context: ConversationContext): string[] {
+  const datos: string[] = [];
+  if (context.cedula) {
+    const tipo = context.documentType ? TIPOS_DOCUMENTO_ETIQUETAS[context.documentType] : 'documento';
+    datos.push(`${tipo} ${context.cedula}`);
+  }
+  if (context.nombre) datos.push(`a nombre de ${context.nombre}`);
+  if (context.email) datos.push(`correo ${context.email}`);
+  return datos;
+}
 
 // Los esquemas de las once herramientas son ~1.000 de los ~1.075 tokens fijos de cada
 // petición, y se reenvían en cada turno contra un techo de 8.000 por minuto. Exponer solo las
@@ -109,9 +128,29 @@ export function fichaDeVenta(context: ConversationContext): string {
     lineas.push('El link de pago ya existe y le aparece en pantalla. No generes otro.');
   }
 
-  const faltan = ['cédula', 'nombre', 'correo'].filter((dato, i) =>
-    [context.cedula, context.nombre, context.email][i] === undefined);
-  if (cotizacion && faltan.length) {
+  // Con producto elegido pero sin snapshot —una llamada que sigue lo que dejó el chat— no
+  // salía ninguna de las dos líneas de abajo, que son justo las del cierre.
+  const enVenta = !!cotizacion || !!context.quoteProductId || !!context.selectedProductIds?.length;
+
+  // Quien ya compró vuelve con cédula, nombre y correo en la fila, y el modelo no la ve: sin
+  // esto los pedía otra vez uno por uno, el interrogatorio que el chat sí se salta.
+  const conocidos = datosQueYaTienes(context);
+  if (enVenta && conocidos.length) {
+    lineas.push(`Datos que YA tienes de esta persona: ${conocidos.join('; ')}. No se los ` +
+      'preguntes de nuevo: léeselos para que confirme, y si te corrige alguno pide solo ESE.');
+  }
+
+  const faltan = [
+    context.cedula === undefined ? 'la cédula' : undefined,
+    // Un número sin tipo se imprime en la póliza como cédula de ciudadanía sin que nadie lo
+    // haya dicho — la suposición de la Sesión 131, que vuelve por la puerta de atrás cuando la
+    // fila trae una cédula vieja archivada sin tipo.
+    context.cedula !== undefined && context.documentType === undefined
+      ? 'de qué documento es ese número (ciudadanía, extranjería o PEP)' : undefined,
+    context.nombre === undefined ? 'el nombre' : undefined,
+    context.email === undefined ? 'el correo' : undefined,
+  ].filter((dato): dato is string => dato !== undefined);
+  if (enVenta && faltan.length) {
     lineas.push(`Falta por capturar: ${faltan.join(', ')}. Pide uno por turno.`);
   }
 
