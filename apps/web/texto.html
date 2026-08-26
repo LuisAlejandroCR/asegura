@@ -5,21 +5,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0f1114" media="(prefers-color-scheme: dark)">
+<!-- Sin media query a propósito: con dos etiquetas el navegador seguiría contestando al
+     sistema, no a lo que la persona eligió. tema.js le pone el fondo ya resuelto. -->
+<meta name="theme-color" content="#faf6f0">
 <title>Asegura — Escríbenos</title>
 <!-- Esta página no sabe ni le importa por dónde llegó la persona: WhatsApp, Telegram o un
      navegador cualquiera. El SDK de Telegram NO se pide aquí — telegram.js lo descarga solo
      si la vista se abrió de verdad como Mini App, para no cobrarle a la mayoría un script
      externo por una función que no van a ver. -->
+<script>
+// El módulo va al final y es diferido: para entonces la pantalla ya se pintó clara, y quien
+// eligió oscuro vería un fogonazo blanco en cada carga. Esto corre antes que nada.
+try{var t=localStorage.getItem('asegura-tema');if(t==='dark'||t==='light')document.documentElement.dataset.tema=t}catch(e){}
+</script>
 <style>
-  /* ── Paleta en dos capas ───────────────────────────────────
-     La marca —amarillo, azul, y la tinta que va ENCIMA de ellos— es constante: es la misma
-     de voz.html y pdf.service.ts, y no puede cambiar con el tema de nadie. Las superficies y
-     el texto sí: salen de los themeParams de Telegram cuando la página se abre como Mini
-     App, del esquema del sistema cuando se abre desde WhatsApp o un navegador, y del gris
-     Colsubsidio como último respaldo. Todo campo de themeParams es opcional, así que ninguno
-     puede caer en transparent ni en un hex que solo se lea en un tema. */
+  /* ── Paleta cálida, en dos capas ───────────────────────────
+     La marca —amarillo, azul, y la tinta que va ENCIMA de ellos— es constante: es la misma de
+     voz.html y pdf.service.ts, y no puede cambiar con el tema de nadie. Las superficies y el
+     texto sí: crema y grises cálidos en vez del blanco clínico, porque una pantalla que cobra
+     $26.000 al mes no debería sentirse como un formulario del banco.
+
+     Quién decide, de mayor a menor: lo que la persona eligió con el botón ([data-tema], el
+     último bloque de aquí y sin una sola referencia a --tg-theme-*, para que gane siempre) →
+     los themeParams de Telegram → el esquema del sistema. Todo campo de themeParams es
+     opcional, así que ninguno puede caer en transparent ni en un hex de un solo tema. */
   :root{
     --amarillo:#ffd000;
     --amarillo-hondo:#e6b800;
@@ -28,19 +37,21 @@
     --negro:#000;   /* tinta SOBRE amarillo — nunca sigue el tema */
     --blanco:#fff;  /* tinta SOBRE azul — nunca sigue el tema */
 
-    --fondo:var(--tg-theme-secondary-bg-color,#fafafa);
-    --carta:var(--tg-theme-section-bg-color,var(--tg-theme-bg-color,#fff));
-    --campo:var(--tg-theme-bg-color,#fff);
-    --tinta:var(--tg-theme-text-color,#000);
-    --gris:var(--tg-theme-hint-color,#575756);
-    --gris-claro:var(--tg-theme-section-separator-color,#f2f2f2);
+    --fondo:var(--tg-theme-secondary-bg-color,#faf6f0);
+    --carta:var(--tg-theme-section-bg-color,var(--tg-theme-bg-color,#fffcf7));
+    --campo:var(--tg-theme-bg-color,#fffcf7);
+    --tinta:var(--tg-theme-text-color,#2a2521);
+    --gris:var(--tg-theme-hint-color,#6f6259);
+    --gris-claro:var(--tg-theme-section-separator-color,#ece2d6);
     --azul-tinta:var(--tg-theme-accent-text-color,var(--tg-theme-link-color,var(--azul)));
     --azul-velo:rgba(0,103,177,.06);
     --azul-velo-fuerte:rgba(0,103,177,.12);
     --azul-borde:rgba(0,103,177,.35);
+    --velo-hover:rgba(60,40,20,.06);
+    --rojo:var(--tg-theme-destructive-text-color,#c0392b);
     --velo-fondo:.5;
-    --sombra-suave:0 2px 10px rgba(0,40,70,.05);
-    --sombra-carta:0 6px 26px rgba(0,40,70,.10),0 1px 3px rgba(0,40,70,.06);
+    --sombra-suave:0 2px 10px rgba(90,60,25,.07);
+    --sombra-carta:0 6px 26px rgba(90,60,25,.12),0 1px 3px rgba(90,60,25,.07);
 
     /* Dos insets distintos: el del aparato esquiva la muesca y la barra de inicio; el de
        contenido esquiva el encabezado que dibuja Telegram. Fuera de Telegram ambos valen 0
@@ -51,41 +62,78 @@
     --seguro-der:var(--tg-safe-area-inset-right,0px);
   }
 
-  /* Modo oscuro. Solo decide lo que los themeParams no cubren: cuando Telegram manda su
-     paleta, los var(--tg-theme-*) de arriba ya ganaron y esto ni se nota. El data-esquema lo
-     pone telegram.js, porque alguien puede tener Telegram en oscuro sobre un sistema en
-     claro — y al revés. */
+  /* Oscuro automático: el sistema, mientras nadie haya elegido a mano. */
   @media (prefers-color-scheme:dark){
-    :root:not([data-esquema="light"]){
-      --fondo:var(--tg-theme-secondary-bg-color,#0f1114);
-      --carta:var(--tg-theme-section-bg-color,var(--tg-theme-bg-color,#1a1d21));
-      --campo:var(--tg-theme-bg-color,#1a1d21);
-      --tinta:var(--tg-theme-text-color,#f2f3f5);
-      --gris:var(--tg-theme-hint-color,#9aa3ad);
-      --gris-claro:var(--tg-theme-section-separator-color,#2b3036);
+    :root:not([data-esquema="light"]):not([data-tema="light"]){
+      --fondo:var(--tg-theme-secondary-bg-color,#15120f);
+      --carta:var(--tg-theme-section-bg-color,var(--tg-theme-bg-color,#211c17));
+      --campo:var(--tg-theme-bg-color,#211c17);
+      --tinta:var(--tg-theme-text-color,#f4eee5);
+      --gris:var(--tg-theme-hint-color,#a89b8d);
+      --gris-claro:var(--tg-theme-section-separator-color,#332c24);
       --azul-tinta:var(--tg-theme-accent-text-color,var(--tg-theme-link-color,#5cb2ea));
       --azul-velo:rgba(92,178,234,.10);
       --azul-velo-fuerte:rgba(92,178,234,.18);
       --azul-borde:rgba(92,178,234,.38);
-      --velo-fondo:.3;
-      --sombra-suave:0 2px 10px rgba(0,0,0,.45);
-      --sombra-carta:0 8px 28px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4);
+      --velo-hover:rgba(255,245,230,.07);
+      --rojo:#ff6b5e;
+      --velo-fondo:.34;
+      --sombra-suave:0 2px 10px rgba(0,0,0,.5);
+      --sombra-carta:0 8px 28px rgba(0,0,0,.55),0 1px 3px rgba(0,0,0,.4);
     }
   }
-  :root[data-esquema="dark"]{
-      --fondo:var(--tg-theme-secondary-bg-color,#0f1114);
-      --carta:var(--tg-theme-section-bg-color,var(--tg-theme-bg-color,#1a1d21));
-      --campo:var(--tg-theme-bg-color,#1a1d21);
-      --tinta:var(--tg-theme-text-color,#f2f3f5);
-      --gris:var(--tg-theme-hint-color,#9aa3ad);
-      --gris-claro:var(--tg-theme-section-separator-color,#2b3036);
+  /* Oscuro porque lo dice Telegram. */
+  :root[data-esquema="dark"]:not([data-tema="light"]){
+      --fondo:var(--tg-theme-secondary-bg-color,#15120f);
+      --carta:var(--tg-theme-section-bg-color,var(--tg-theme-bg-color,#211c17));
+      --campo:var(--tg-theme-bg-color,#211c17);
+      --tinta:var(--tg-theme-text-color,#f4eee5);
+      --gris:var(--tg-theme-hint-color,#a89b8d);
+      --gris-claro:var(--tg-theme-section-separator-color,#332c24);
       --azul-tinta:var(--tg-theme-accent-text-color,var(--tg-theme-link-color,#5cb2ea));
       --azul-velo:rgba(92,178,234,.10);
       --azul-velo-fuerte:rgba(92,178,234,.18);
       --azul-borde:rgba(92,178,234,.38);
-      --velo-fondo:.3;
-      --sombra-suave:0 2px 10px rgba(0,0,0,.45);
-      --sombra-carta:0 8px 28px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4);
+      --velo-hover:rgba(255,245,230,.07);
+      --rojo:#ff6b5e;
+      --velo-fondo:.34;
+      --sombra-suave:0 2px 10px rgba(0,0,0,.5);
+      --sombra-carta:0 8px 28px rgba(0,0,0,.55),0 1px 3px rgba(0,0,0,.4);
+  }
+  /* Y lo que eligió la persona, que manda sobre las dos cosas anteriores. */
+  :root[data-tema="light"]{
+      --fondo:#faf6f0;
+      --carta:#fffcf7;
+      --campo:#fffcf7;
+      --tinta:#2a2521;
+      --gris:#6f6259;
+      --gris-claro:#ece2d6;
+      --azul-tinta:#0067b1;
+      --azul-velo:rgba(0,103,177,.06);
+      --azul-velo-fuerte:rgba(0,103,177,.12);
+      --azul-borde:rgba(0,103,177,.35);
+      --velo-hover:rgba(60,40,20,.06);
+      --rojo:#c0392b;
+      --velo-fondo:.5;
+      --sombra-suave:0 2px 10px rgba(90,60,25,.07);
+      --sombra-carta:0 6px 26px rgba(90,60,25,.12),0 1px 3px rgba(90,60,25,.07);
+  }
+  :root[data-tema="dark"]{
+      --fondo:#15120f;
+      --carta:#211c17;
+      --campo:#211c17;
+      --tinta:#f4eee5;
+      --gris:#a89b8d;
+      --gris-claro:#332c24;
+      --azul-tinta:#5cb2ea;
+      --azul-velo:rgba(92,178,234,.10);
+      --azul-velo-fuerte:rgba(92,178,234,.18);
+      --azul-borde:rgba(92,178,234,.38);
+      --velo-hover:rgba(255,245,230,.07);
+      --rojo:#ff6b5e;
+      --velo-fondo:.34;
+      --sombra-suave:0 2px 10px rgba(0,0,0,.5);
+      --sombra-carta:0 8px 28px rgba(0,0,0,.55),0 1px 3px rgba(0,0,0,.4);
   }
 
   *{box-sizing:border-box;margin:0;padding:0}
@@ -204,6 +252,14 @@
     stroke-linecap:round;stroke-linejoin:round}
   .avatar.oculto{visibility:hidden}
 
+  /* Anillo mientras piensa: el avatar deja de ser un sello y pasa a estar haciendo algo. */
+  .avatar.pensando::after{
+    content:"";position:absolute;inset:-4px;border-radius:12px;
+    border:2px solid var(--azul-tinta);
+    animation:pensar 1.5s ease-out infinite;
+  }
+  .avatar{position:relative}
+
   .burbuja{
     max-width:calc(100% - 34px);
     min-width:0;
@@ -263,6 +319,7 @@
   .escribiendo span:nth-child(2){animation-delay:.15s}
   .escribiendo span:nth-child(3){animation-delay:.3s}
   @keyframes pulso{0%,60%,100%{opacity:.25;transform:scale(1)}30%{opacity:.9;transform:scale(1.3)}}
+  @keyframes pensar{0%{opacity:.5;transform:scale(1)}70%,100%{opacity:0;transform:scale(1.4)}}
 
   /* ── Tarjeta de cotización ─────────────────────────────────
      El momento de recompensa del recorrido: la carta se reparte, las coberturas se
@@ -376,6 +433,9 @@
     border-top:2px solid var(--gris-claro);
   }
   .precio.total dt{font-weight:800;color:var(--tinta);font-size:13.5px}
+  .precio.total dd{transform-origin:right center}
+  .precio.total.rematado dd{animation:aterrizar .44s cubic-bezier(.2,.9,.3,1.5)}
+  @keyframes aterrizar{0%{transform:scale(1)}40%{transform:scale(1.085)}100%{transform:scale(1)}}
 
   .linea-detalle{
     font-size:12.5px;color:var(--gris);opacity:.85;margin:6px 0 0;
@@ -427,6 +487,24 @@
     box-shadow:0 4px 14px rgba(0,103,177,.16);transform:translateY(-2px);
   }
   .chip:active{transform:scale(.93)}
+
+  /* Elegir una ficha es el gesto que más se repite en todo el recorrido, así que es el que
+     más rinde: la elegida se llena de azul y da un salto, las otras se sueltan, y solo
+     entonces sale el mensaje. Antes las cinco desaparecían de golpe, sin acusar el toque. */
+  .chip.elegida{
+    background:linear-gradient(145deg,var(--azul),var(--azul-hondo));
+    border-color:transparent;
+    color:var(--blanco);
+    box-shadow:0 8px 22px rgba(0,103,177,.4);
+    animation:elegir .34s cubic-bezier(.2,.9,.3,1.5) both;
+  }
+  @keyframes elegir{
+    0%{transform:scale(1)}
+    45%{transform:scale(1.13)}
+    100%{transform:scale(1)}
+  }
+  #chips.decidido .chip:not(.elegida){animation:soltar .24s ease both}
+  @keyframes soltar{to{opacity:0;transform:scale(.86) translateY(8px)}}
 
   /* ── Pie ──────────────────────────────────────────────────── */
   footer{
@@ -513,7 +591,8 @@
     transition:transform .12s cubic-bezier(.2,.9,.3,1.4),opacity .15s ease,box-shadow .15s ease;
   }
   #btn-enviar:active{transform:scale(.9)}
-  #btn-enviar:disabled{opacity:.38;cursor:default;box-shadow:none}
+  /* Vacío se encoge; con texto entra de golpe. Es la única señal de "ya puedes mandarlo". */
+  #btn-enviar:disabled{opacity:.34;cursor:default;box-shadow:none;transform:scale(.84)}
   #btn-enviar svg{width:19px;height:19px}
 
   .selfie-caja{max-width:560px;margin:0 auto;text-align:center}
@@ -651,14 +730,14 @@
     margin-top:2px;padding:4px 2px;
     border:none;background:none;cursor:pointer;
     font-family:inherit;font-size:11.5px;font-weight:700;
-    color:var(--tg-theme-destructive-text-color,#c0392b);
+    color:var(--rojo);
   }
   .reintento svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.6;
     stroke-linecap:round;stroke-linejoin:round}
 
   /* Mismo hueco del aviso de etapa, en rojo y más lento: fuera de Telegram no hay showAlert
      del cliente que dibujar, y window.alert congela el hilo y delata el marco. */
-  #avisoEtapa.alerta{background:var(--tg-theme-destructive-text-color,#c0392b)}
+  #avisoEtapa.alerta{background:var(--rojo)}
   #avisoEtapa.alerta b{color:var(--blanco)}
   #avisoEtapa.alerta.visible{animation-duration:4.6s}
 
@@ -666,13 +745,13 @@
      gana en especificidad y devuelve el rail al tema. */
   /* Solo el nodo pendiente: .hecho y .actual llevan su relleno de marca, y un id los
      ganaba a los dos — el rail se quedaba sin decir por dónde va. */
-  #progress .ap-nodo.pendiente{background:var(--carta)}
-  #progress .ap-label b{color:var(--azul-tinta)}
 
   @media (prefers-reduced-motion:reduce){
     #fondo{display:none}
     .burbuja,.tarjeta-cotizacion,.tarjeta-cotizacion li,.chip,.medalla,#barraPago.visible,
-    #avisoEtapa.visible{animation:none!important}
+    #avisoEtapa.visible,.chip.elegida,#chips.decidido .chip:not(.elegida),
+    .precio.total.rematado dd{animation:none!important}
+    .avatar.pensando::after{display:none}
     .tarjeta-cotizacion::after,.btn-pagar::after,.medalla::before{display:none}
     .confeti{display:none}
     #avisoEtapa.visible{transform:translate(-50%,0)}
@@ -744,6 +823,7 @@
 <script type="module">
 import { renderProgress, injectProgressStyles } from './progress-bar.js';
 import { apiFetch } from './api-base.js';
+import { montarBotonTema, refrescarBotonTema } from './tema.js';
 import {
   enMiniApp, arrancar, usuario, botonPrincipal, botonAtras, haptico, alerta,
   cerrarTeclado, confirmarCierre, cerrar,
@@ -772,10 +852,14 @@ const selfieInput = document.getElementById('selfieInput');
 
 injectProgressStyles();
 
+// El botón de tema. La elección de la persona manda sobre Telegram y sobre el sistema, así
+// que también hay que refrescar el icono cuando Telegram cambia de tema por debajo.
+montarBotonTema({ alTocar: () => haptico.impacto('light') });
+
 // Fuera de una Mini App —WhatsApp, un navegador, o el navegador in-app de Telegram, que es
 // como llega el enlace hoy— esto no descarga nada y contesta false enseguida. La pantalla ya
 // está pintada y no espera por ello.
-arrancar({ alEstabilizar: () => bajar() }).then((esMiniApp) => {
+arrancar({ alEstabilizar: () => bajar(), alCambiarTema: refrescarBotonTema }).then((esMiniApp) => {
   if (!esMiniApp) return;
   document.body.classList.add('mini');
   // initDataUnsafe solo decora. Quién puede ver esta sesión lo decide el token de la URL,
@@ -872,7 +956,7 @@ function showTyping() {
   escribiendoEl = document.createElement('div');
   escribiendoEl.className = 'fila fila-agente';
   escribiendoEl.innerHTML =
-    `<div class="avatar${ultimoRol === 'agent' ? ' oculto' : ''}">${ESCUDO_SVG}</div>` +
+    `<div class="avatar pensando${ultimoRol === 'agent' ? ' oculto' : ''}">${ESCUDO_SVG}</div>` +
     '<div class="escribiendo"><span></span><span></span><span></span></div>';
   chat.appendChild(escribiendoEl);
   bajar();
@@ -895,6 +979,7 @@ function contarHasta(el, valor) {
       requestAnimationFrame(paso);
     } else {
       el.textContent = pesos(valor);
+      el.closest('.precio.total')?.classList.add('rematado');
     }
   };
   requestAnimationFrame(paso);
@@ -1015,6 +1100,7 @@ function iconoPara(texto) {
 
 function renderChips(choices) {
   chipsEl.replaceChildren();
+  chipsEl.classList.remove('decidido');
   (choices ?? []).forEach((choice, i) => {
     const btn = document.createElement('button');
     btn.className = 'chip';
@@ -1022,7 +1108,14 @@ function renderChips(choices) {
     const ico = iconoPara(choice);
     btn.innerHTML = (ico ? `<span class="ico" aria-hidden="true">${ico}</span>` : '') +
       `<span>${escapeHtml(choice)}</span>`;
-    btn.addEventListener('click', () => sendMessage(choice));
+    // El envío espera a que se vea la elección. Un toque mientras tanto no cuenta dos veces.
+    btn.addEventListener('click', () => {
+      if (chipsEl.classList.contains('decidido')) return;
+      btn.classList.add('elegida');
+      chipsEl.classList.add('decidido');
+      haptico.impacto('light');
+      setTimeout(() => sendMessage(choice), sinMovimiento ? 0 : 200);
+    });
     chipsEl.appendChild(btn);
   });
 }
@@ -1222,6 +1315,7 @@ async function sendMessage(text) {
   const fila = addBubble('user', text);
   textoEl.value = '';
   textoEl.style.height = 'auto';
+  chipsEl.classList.remove('decidido');
   chipsEl.replaceChildren();
   showTyping();
   btnEnviar.disabled = true;
@@ -1240,7 +1334,7 @@ async function sendMessage(text) {
     console.error('No se pudo enviar el mensaje:', err);
     marcarFallida(fila, text);
   } finally {
-    btnEnviar.disabled = false;
+    refrescarEnviar();
     // Ni con la cámara abierta ni con el pago en pantalla: devolver el foco al campo
     // levantaría el teclado encima de la acción que sigue.
     if (!filaTexto.hidden && !pagoPendiente) textoEl.focus();
@@ -1278,10 +1372,16 @@ textoEl.addEventListener('keydown', (e) => {
     sendMessage(textoEl.value);
   }
 });
+function refrescarEnviar() {
+  btnEnviar.disabled = !textoEl.value.trim();
+}
+
 textoEl.addEventListener('input', () => {
   textoEl.style.height = 'auto';
   textoEl.style.height = Math.min(textoEl.scrollHeight, 120) + 'px';
+  refrescarEnviar();
 });
+refrescarEnviar();
 
 // Nunca se sube la imagen — solo se leen sus dimensiones (mismo contrato que
 // NormalizedMessage.photo de Telegram: metadata, nunca los bytes de la foto).

@@ -34,12 +34,15 @@ export function renderProgress(el, { step, totalSteps, label }) {
   el.setAttribute('aria-valuemax', String(total));
   el.setAttribute('aria-valuetext', `${label} — etapa ${actual} de ${total}`);
 
+  // Sin números. Un "2 de 6" en pantalla es el idioma de un formulario por pasos, y la barra
+  // ya contesta "¿cuánto falta?" sin pedirle a nadie que cuente. La cifra exacta sigue estando
+  // donde de verdad hace falta: en el aria-valuetext de arriba, para quien lee con voz.
   const nodos = Array.from({ length: total }, (_, i) => {
     const n = i + 1;
     const estado = n < actual ? 'hecho' : n === actual ? 'actual' : 'pendiente';
     const marca = n < actual
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>'
-      : String(n);
+      : '';
     return `<li class="ap-nodo ${estado}${avanzo && n === actual ? ' ap-subio' : ''}">${marca}</li>`;
   }).join('');
 
@@ -48,7 +51,7 @@ export function renderProgress(el, { step, totalSteps, label }) {
       <div class="ap-track"><div class="ap-fill" style="width:${pct}%"></div></div>
       <ol class="ap-nodos">${nodos}</ol>
     </div>
-    <p class="ap-label"><b>Etapa ${actual} de ${total}</b> · ${label}</p>
+    <p class="ap-label">${label}</p>
   `;
 
   el.dataset.step = String(actual);
@@ -71,16 +74,18 @@ export function injectProgressStyles() {
       transition:width .55s cubic-bezier(.32,.72,0,1)}
     .ap-nodos{position:relative;display:flex;justify-content:space-between;
       align-items:center;height:100%;list-style:none;margin:0;padding:0}
+    /* La caja mide 22px en los tres estados —el track se alinea a su centro— y lo que cambia
+       es la escala. Un punto pendiente de 12px reales descuadraría los extremos del riel. */
     .ap-nodo{display:flex;align-items:center;justify-content:center;
       width:22px;height:22px;border-radius:50%;flex:none;
-      font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;
-      background:var(--blanco,#fff);border:2px solid var(--gris-claro,#f2f2f2);
-      color:var(--gris,#575756);transition:transform .3s cubic-bezier(.2,.9,.3,1.4),
+      background:var(--carta,#fffcf7);border:2px solid var(--gris-claro,#ece2d6);
+      color:var(--gris,#6f6259);transform:scale(.58);
+      transition:transform .34s cubic-bezier(.2,.9,.3,1.4),
       background .3s ease,border-color .3s ease,color .3s ease}
     .ap-nodo svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:4;
       stroke-linecap:round;stroke-linejoin:round}
     .ap-nodo.hecho{background:var(--amarillo,#ffd000);border-color:var(--amarillo,#ffd000);
-      color:var(--negro,#000)}
+      color:var(--negro,#000);transform:scale(1)}
     .ap-nodo.actual{background:var(--azul,#0067b1);border-color:var(--azul,#0067b1);
       color:var(--blanco,#fff);transform:scale(1.18);
       box-shadow:0 0 0 4px rgba(0,103,177,.16)}
@@ -90,10 +95,10 @@ export function injectProgressStyles() {
       animation:ap-latido 2.2s ease-out infinite}
     @keyframes ap-latido{0%{opacity:.55;transform:scale(1)}70%,100%{opacity:0;transform:scale(2)}}
     .ap-nodo.ap-subio{animation:ap-pop .5s cubic-bezier(.2,.9,.3,1.5)}
-    @keyframes ap-pop{0%{transform:scale(1)}45%{transform:scale(1.75)}100%{transform:scale(1.18)}}
-    .ap-label{margin-top:7px;font-size:11.5px;font-weight:600;color:var(--gris,#575756);
-      text-align:center;letter-spacing:.01em}
-    .ap-label b{color:var(--azul,#0067b1);font-weight:800}
+    @keyframes ap-pop{0%{transform:scale(.58)}45%{transform:scale(1.75)}100%{transform:scale(1.18)}}
+    /* El nombre de la etapa, no su número: "Cotización", no "Etapa 3 de 6". */
+    .ap-label{margin-top:8px;font-size:11px;font-weight:800;color:var(--azul-tinta,#0067b1);
+      text-align:center;letter-spacing:.1em;text-transform:uppercase}
     @media (prefers-reduced-motion:reduce){
       .ap-fill{transition:none}
       .ap-nodo{transition:none}

@@ -6,16 +6,73 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Asegura — Habla con tu asesor</title>
+<!-- Sin media query a propósito: con dos etiquetas el navegador seguiría contestando al
+     sistema, no a lo que la persona eligió. tema.js le pone el fondo ya resuelto. -->
+<meta name="theme-color" content="#faf6f0">
+<script>
+// El módulo va al final y es diferido: para entonces la pantalla ya se pintó clara, y quien
+// eligió oscuro vería un fogonazo blanco en cada carga. Esto corre antes que nada.
+try{var t=localStorage.getItem('asegura-tema');if(t==='dark'||t==='light')document.documentElement.dataset.tema=t}catch(e){}
+</script>
 <style>
-  /* Paleta oficial (misma que usa pdf.service.ts para la póliza real) */
+  /* ── Paleta cálida, en dos capas (idéntica a texto.html) ───
+     La marca —amarillo, azul, y la tinta que va ENCIMA de ellos— es la de pdf.service.ts y no
+     cambia con el tema de nadie. Las superficies y el texto sí: crema y grises cálidos, y
+     oscuro si el sistema lo pide o si la persona lo elige con el botón. La elección explícita
+     ([data-tema]) va last y manda sobre todo lo demás. */
   :root{
     --amarillo:#ffd000;
     --azul:#0067b1;
-    --gris:#575756;
-    --gris-claro:#f2f2f2;
-    --negro:#000;
-    --blanco:#fff;
-    --fondo:#fafafa;
+    --azul-hondo:#004b80;
+    --negro:#000;   /* tinta SOBRE amarillo — nunca sigue el tema */
+    --blanco:#fff;  /* tinta SOBRE azul — nunca sigue el tema */
+
+    --fondo:#faf6f0;
+    --carta:#fffcf7;
+    --campo:#fffcf7;
+    --tinta:#2a2521;
+    --gris:#6f6259;
+    --gris-claro:#ece2d6;
+    --azul-tinta:#0067b1;
+    --azul-velo:rgba(0,103,177,.06);
+    --azul-velo-fuerte:rgba(0,103,177,.12);
+    --azul-borde:rgba(0,103,177,.35);
+    --velo-hover:rgba(60,40,20,.06);
+    --rojo:#c0392b;
+    --sombra-suave:0 2px 10px rgba(90,60,25,.07);
+  }
+
+  @media (prefers-color-scheme:dark){
+    :root:not([data-tema="light"]){
+      --fondo:#15120f;
+      --carta:#211c17;
+      --campo:#211c17;
+      --tinta:#f4eee5;
+      --gris:#a89b8d;
+      --gris-claro:#332c24;
+      --azul-tinta:#5cb2ea;
+      --azul-velo:rgba(92,178,234,.10);
+      --azul-velo-fuerte:rgba(92,178,234,.18);
+      --azul-borde:rgba(92,178,234,.38);
+      --velo-hover:rgba(255,245,230,.07);
+      --rojo:#ff6b5e;
+      --sombra-suave:0 2px 10px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-tema="dark"]{
+      --fondo:#15120f;
+      --carta:#211c17;
+      --campo:#211c17;
+      --tinta:#f4eee5;
+      --gris:#a89b8d;
+      --gris-claro:#332c24;
+      --azul-tinta:#5cb2ea;
+      --azul-velo:rgba(92,178,234,.10);
+      --azul-velo-fuerte:rgba(92,178,234,.18);
+      --azul-borde:rgba(92,178,234,.38);
+      --velo-hover:rgba(255,245,230,.07);
+      --rojo:#ff6b5e;
+      --sombra-suave:0 2px 10px rgba(0,0,0,.5);
   }
 
   *{box-sizing:border-box;margin:0;padding:0}
@@ -40,7 +97,7 @@
   h1{
     font-size:clamp(24px,6vw,32px);
     font-weight:700;
-    color:var(--azul);
+    color:var(--azul-tinta);
     letter-spacing:-.02em;
     display:flex;
     align-items:baseline;
@@ -152,13 +209,13 @@
     min-height:56px;
   }
 
-  .btn:hover,.btn:focus-visible{background:rgba(0,0,0,.055)}
-  .btn:focus-visible{outline:3px solid var(--azul);outline-offset:2px}
+  .btn:hover,.btn:focus-visible{background:var(--velo-hover)}
+  .btn:focus-visible{outline:3px solid var(--azul-tinta);outline-offset:2px}
 
-  .btn[aria-pressed="true"]{background:rgba(0,103,177,.12);color:var(--azul)}
+  .btn[aria-pressed="true"]{background:var(--azul-velo-fuerte);color:var(--azul-tinta)}
 
-  #btn-terminar{color:#c0392b}
-  #btn-terminar:hover,#btn-terminar:focus-visible{background:rgba(192,57,43,.09)}
+  #btn-terminar{color:var(--rojo)}
+  #btn-terminar:hover,#btn-terminar:focus-visible{background:var(--velo-hover)}
 
   .icono{width:20px;height:20px;flex:none}
 
@@ -206,7 +263,7 @@
   #resumen[open] .hoja{animation:subir .28s cubic-bezier(.32,.72,0,1)}
 
   .hoja{
-    background:var(--blanco);
+    background:var(--carta);
     border-radius:20px 20px 0 0;
     padding:14px 20px max(20px,env(safe-area-inset-bottom));
     text-align:left;
@@ -215,22 +272,22 @@
     overflow-y:auto;             /* pantallas chicas: la hoja scrollea, no se corta */
   }
 
-  .asa{width:38px;height:4px;border-radius:2px;background:rgba(0,0,0,.15);margin:0 auto 18px}
+  .asa{width:38px;height:4px;border-radius:2px;background:var(--gris-claro);margin:0 auto 18px}
 
-  .hoja h2{font-size:19px;font-weight:700;color:var(--azul);letter-spacing:-.01em}
+  .hoja h2{font-size:19px;font-weight:700;color:var(--azul-tinta);letter-spacing:-.01em}
 
   .aseguradora{font-size:13px;color:var(--gris);opacity:.75;margin-top:2px}
 
   /* "Por qué este seguro" = criterio #1 del reto por escrito. */
   .razon{
-    background:rgba(0,103,177,.07);
-    border-left:3px solid var(--azul);
+    background:var(--azul-velo);
+    border-left:3px solid var(--azul-tinta);
     border-radius:0 8px 8px 0;
     padding:10px 12px;
     margin:14px 0;
     font-size:14px;
     line-height:1.5;
-    color:var(--negro);
+    color:var(--tinta);
   }
 
   .coberturas{list-style:none;margin:0 0 16px}
@@ -242,7 +299,7 @@
     font-size:14.5px;
     line-height:1.45;
     padding:5px 0;
-    color:var(--negro);
+    color:var(--tinta);
   }
 
   .coberturas li::before{
@@ -265,7 +322,7 @@
   }
 
   .precio dt{font-size:14px;color:var(--gris)}
-  .precio dd{font-size:26px;font-weight:800;color:var(--negro);letter-spacing:-.02em}
+  .precio dd{font-size:26px;font-weight:800;color:var(--tinta);letter-spacing:-.02em}
   .precio dd span{font-size:14px;font-weight:600;color:var(--gris)}
 
   .acciones{display:flex;flex-direction:column;gap:8px}
@@ -293,16 +350,16 @@
     border:none;
     border-radius:12px;
     background:transparent;
-    color:var(--azul);
+    color:var(--azul-tinta);
     font-family:inherit;
     font-size:15.5px;
     font-weight:600;
     cursor:pointer;
   }
 
-  .btn-duda:hover,.btn-duda:focus-visible{background:rgba(0,103,177,.08)}
+  .btn-duda:hover,.btn-duda:focus-visible{background:var(--azul-velo)}
 
-  .btn-pagar:focus-visible,.btn-duda:focus-visible{outline:3px solid var(--azul);outline-offset:2px}
+  .btn-pagar:focus-visible,.btn-duda:focus-visible{outline:3px solid var(--azul-tinta);outline-offset:2px}
 
   .letra-chica{font-size:12px;color:var(--gris);opacity:.7;margin-top:12px;line-height:1.45}
 
@@ -343,9 +400,9 @@
     100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(var(--rot))}
   }
 
-  #postCheckout h2{font-size:20px;color:var(--negro);font-weight:700}
+  #postCheckout h2{font-size:20px;color:var(--tinta);font-weight:700}
   #postCheckout p{font-size:14px;color:var(--gris);max-width:300px;line-height:1.5}
-  #cuentaAtras{font-variant-numeric:tabular-nums;font-weight:700;color:var(--azul)}
+  #cuentaAtras{font-variant-numeric:tabular-nums;font-weight:700;color:var(--azul-tinta)}
 
   .btn-volver{
     min-height:50px;
@@ -448,6 +505,7 @@ import { renderProgress, injectProgressStyles } from './progress-bar.js';
 // api-base.js normalizes VITE_API_URL (adds the scheme, strips the trailing slash); without
 // the env var it falls back to same-origin, which on Vercel is a guaranteed 404.
 import { apiFetch } from './api-base.js';
+import { montarBotonTema } from './tema.js';
 
 // Linked from the chat, this identifies the voice session with the real Telegram/WhatsApp
 // conversation. The voice worker (a separate Node process, no NestJS DI) doesn't consume it
@@ -472,6 +530,10 @@ const webToken = new URLSearchParams(location.search).get('token');
   const btnVolver = document.getElementById('btnVolver');
 
   injectProgressStyles();
+
+  // Mismo botón y misma preferencia guardada que texto.html: quien elige oscuro aquí lo
+  // encuentra oscuro allá.
+  montarBotonTema();
 
   // If the session token already carries a pending or confirmed payment on load, that screen
   // is shown instead of the orb. Without a token the bar stays static and the orb behaves as
