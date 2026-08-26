@@ -26,6 +26,11 @@ function petCountForProduct(
   return context.petCount;
 }
 
+// Los 30 minutos que el canal de texto siempre mandó. Vive aquí para que los dos motores
+// cobren con el mismo vencimiento: la ruta de tools creaba links eternos —`expires_at: null`
+// en la API de Wompi— y esa diferencia fue lo que delató de qué motor salió una transacción.
+export const EXPIRACION_LINK_MINUTOS = 30;
+
 export function generarLinkPagoLogic(
   deps: Pick<ToolDeps, 'payments' | 'catalog'>,
   context: ConversationContext,
@@ -79,6 +84,7 @@ export function generarLinkPagoLogic(
       policyId: args.policyId,
       productName,
       amountCOP,
+      expiresInMinutes: EXPIRACION_LINK_MINUTOS,
       // Without it Wompi's receipt is a dead end: paid, rejected or out of funds, the browser
       // has nowhere to go back to. The state machine has always sent one; this path did not.
       ...(args.redirectUrl && { redirectUrl: args.redirectUrl }),

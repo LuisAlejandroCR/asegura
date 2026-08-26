@@ -154,7 +154,13 @@ export class ToolRouterService {
     },
   ];
 
-  constructor(private readonly deps: ToolDeps) {}
+  // urlDeRetorno: a donde Wompi devuelve el navegador al terminar el checkout. Opcional para
+  // que los tests construyan el router con un solo argumento; sin ella el link de pago queda
+  // sin vuelta, que es justo el callejon sin salida que se arreglo en la maquina de estados.
+  constructor(
+    private readonly deps: ToolDeps,
+    private readonly urlDeRetorno?: (conversationId: string) => string | undefined,
+  ) {}
 
   async handle(
     nlp: INlpProvider,
@@ -294,7 +300,10 @@ export class ToolRouterService {
         return { result, context: result.ok ? { ...ctx, policyId: result.policyId } : ctx };
       }
       case 'generar_link_pago': {
-        const result = await generarLinkPagoLogic(this.deps, ctx, { policyId: ctx.policyId ?? '' });
+        const result = await generarLinkPagoLogic(this.deps, ctx, {
+          policyId: ctx.policyId ?? '',
+          redirectUrl: this.urlDeRetorno?.(conversationId),
+        });
         return { result, context: result.ok ? { ...ctx, checkoutUrl: result.checkoutUrl } : ctx };
       }
       default:

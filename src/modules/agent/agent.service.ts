@@ -35,6 +35,8 @@ import { AffiliateSignals, InsuranceProduct, InsuranceScore, IProductRepository 
 import { ProductCatalog } from '../quoting/product-catalog.service';
 import { computeTotalPremium } from '../quoting/pricing';
 import { matchBreed } from './breed-matcher';
+import { urlDeRetorno, motivoSinUrlDeRetorno } from './web-return-url';
+import { EXPIRACION_LINK_MINUTOS } from './tools';
 
 // The AseguraWeb reply shape — the same branches handleMessage dispatches, serialized
 // instead of pushed through an IChannelAdapter. `quote` matches cotizar-tool.ts's
@@ -1613,7 +1615,8 @@ export class AgentService {
 
   // Single source for the payment link's expiry — it was two separate literal 30s, one in the
   // API call and one in the message text, free to drift apart.
-  private static readonly PAYMENT_LINK_EXPIRY_MINUTES = 30;
+  // Un solo número para los dos motores: la ruta de tools creaba links sin vencimiento.
+  private static readonly PAYMENT_LINK_EXPIRY_MINUTES = EXPIRACION_LINK_MINUTOS;
 
   // Below this, a "photo" is more likely an icon or sticker than a camera photo. Not face
   // detection, just a sanity floor.
@@ -2167,13 +2170,13 @@ export class AgentService {
     // siempre: esa página ya sabe devolver a quien llegó desde el chat, con su propia cuenta
     // atrás hacia WhatsApp o Telegram. Verificado en una transacción real que salió sin él.
     const webAppUrl = this.config.get<string>('WEB_APP_URL');
-    const modalidadDeVuelta = context.webModality ?? 'texto';
-    const redirectUrl = webAppUrl
-      ? (() => {
-          const token = this.webSessionTokens.sign({ conversationId: convId });
-          return token ? `${webAppUrl.replace(/\/$/, '')}/${modalidadDeVuelta}.html?token=${token}` : undefined;
-        })()
-      : undefined;
+    const token = this.webSessionTokens.sign({ conversationId: convId });
+    const redirectUrl = urlDeRetorno(webAppUrl, token, context.webModality ?? 'texto');
+    // Que falte se dice por su nombre. Un link sin vuelta se veía idéntico a uno con vuelta
+    // hasta que alguien pagaba y se quedaba mirando el recibo de Wompi.
+    if (!redirectUrl) {
+      this.logger.warn(motivoSinUrlDeRetorno(webAppUrl, token, convId) ?? 'sin URL de retorno para Wompi');
+    }
 
     try {
       const { checkoutUrl, paymentLinkId } = await this.wompi.createPaymentLink({

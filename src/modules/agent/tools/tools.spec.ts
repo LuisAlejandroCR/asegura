@@ -5,7 +5,7 @@ import { ProductCatalog } from '../../quoting/product-catalog.service';
 import { QuotingService } from '../../quoting/quoting.service';
 import {
   NOT_AUTHORIZED, cotizarLogic, validarDatosLogic, consultarAfiliadoLogic,
-  emitirPolizaLogic, generarLinkPagoLogic, registrarAseguramientoLogic, requiresUnderwriting,
+  emitirPolizaLogic, generarLinkPagoLogic, EXPIRACION_LINK_MINUTOS, registrarAseguramientoLogic, requiresUnderwriting,
   detectarTipoDocumento, seleccionarProductoLogic, detectarFueraDeCatalogo,
   registrarMascotasLogic, esProductoDeMascotas, registrarLeadLogic,
   tipoDocumentoDeclarado, TIPOS_DOCUMENTO, TIPOS_DOCUMENTO_OFRECIDOS,
@@ -131,6 +131,23 @@ describe('generarLinkPagoLogic', () => {
 
     expect(result).toEqual({ ok: true, checkoutUrl: 'https://checkout.wompi.co/l/ya-existe' });
     expect(createPaymentLink).not.toHaveBeenCalled();
+  });
+
+  // Comprobado contra la API de Wompi: el link de una transacción real salió con
+  // `expires_at: null` y `redirect_url: null`. El primer nulo delató de qué motor venía —la
+  // máquina de estados siempre mandó vencimiento— y el segundo dejaba el recibo sin salida.
+  it('manda vencimiento y URL de retorno, como el canal de texto', async () => {
+    const createPaymentLink = jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.wompi.co/l/x' });
+
+    await generarLinkPagoLogic(conPago(createPaymentLink), elegido, {
+      policyId: 'pol-1',
+      redirectUrl: 'https://asegura.example/voz.html?token=t',
+    });
+
+    expect(createPaymentLink).toHaveBeenCalledWith(expect.objectContaining({
+      expiresInMinutes: EXPIRACION_LINK_MINUTOS,
+      redirectUrl: 'https://asegura.example/voz.html?token=t',
+    }));
   });
 
   it('prices the link from the catalog, never from an argument', async () => {

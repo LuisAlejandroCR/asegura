@@ -2,6 +2,7 @@
 // modules it orchestrates.
 
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ChannelModule } from '../channel/channel.module';
 import { MetaWebhookController } from '../channel/meta-webhook.controller';
 import { NlpModule } from '../nlp/nlp.module';
@@ -16,6 +17,7 @@ import { WebSessionTokenService } from './web-session-token.service';
 import { WebLinkController } from './web-link.controller';
 import { WebLinkCodeService } from './web-link-code.service';
 import { ToolRouterService } from './tool-router.service';
+import { urlDeRetorno } from './web-return-url';
 import { QuotingService } from '../quoting/quoting.service';
 import { ProductCatalog } from '../quoting/product-catalog.service';
 import { AffiliateLookupService } from '../quoting/affiliate-lookup.service';
@@ -35,14 +37,25 @@ import { WompiService } from '../payments/wompi.service';
     // plain object so the voice worker, which has no DI, can build the same one.
     {
       provide: ToolRouterService,
-      inject: [QuotingService, AffiliateLookupService, PolicyService, WompiService, 'IProductRepository'],
+      inject: [
+        QuotingService, AffiliateLookupService, PolicyService, WompiService, 'IProductRepository',
+        ConfigService, WebSessionTokenService,
+      ],
       useFactory: (
         quoting: QuotingService,
         affiliates: AffiliateLookupService,
         policies: PolicyService,
         payments: WompiService,
         catalog: ProductCatalog,
-      ) => new ToolRouterService({ quoting, affiliates, policies, payments, catalog }),
+        config: ConfigService,
+        tokens: WebSessionTokenService,
+      ) => new ToolRouterService(
+        { quoting, affiliates, policies, payments, catalog },
+        // Sin esto el router creaba links de pago sin `redirect_url` y la persona se quedaba
+        // en el recibo de Wompi: la máquina de estados siempre lo mandó, esta ruta nunca.
+        (conversationId: string) =>
+          urlDeRetorno(config.get<string>('WEB_APP_URL'), tokens.sign({ conversationId }), 'texto'),
+      ),
     },
   ],
   exports: [AgentService],

@@ -13,7 +13,16 @@ export interface ToolDeps {
   catalog?: { getProduct(id: string): { requiresUnderwriting?: boolean; name: string } | undefined };
   payments?: {
     isEnabled: boolean;
-    createPaymentLink(params: { policyId: string; productName: string; amountCOP: number }): Promise<{ checkoutUrl: string }>;
+    // `redirectUrl` y `expiresInMinutes` faltaban en este contrato, así que el canal de voz los
+    // mandaba por un spread que TypeScript no revisaba: un link de pago sin vuelta y sin
+    // vencimiento pasaba la compilación igual que uno completo.
+    createPaymentLink(params: {
+      policyId: string;
+      productName: string;
+      amountCOP: number;
+      expiresInMinutes?: number;
+      redirectUrl?: string;
+    }): Promise<{ checkoutUrl: string }>;
   };
 }
 
