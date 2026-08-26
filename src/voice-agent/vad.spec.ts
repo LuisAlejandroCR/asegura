@@ -3,7 +3,7 @@
 // end-of-turn executor this install excludes. Both shipped once and only showed on a live call.
 import type { JobProcess } from '@livekit/agents';
 import { VAD, initializeLogger, llm, voice } from '@livekit/agents';
-import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, turnHandlingCon, checkLlmAccess, checkTtsAccess, describeDisconnect, describeRequiredEnv, describeSessionError, describirProveedores, hayRespaldoElevenLabs, modeloElevenLabs, normalizarBaseUrl, opcionesDeEntrada, usaCancelacionDeVoces, usaElevenLabs, usaGroqLlm } from './main';
+import agent, { MAX_ITEMS_HISTORIAL, TURN_HANDLING, turnHandlingCon, checkLlmAccess, checkTtsAccess, describeDisconnect, describeRequiredEnv, describirEnvRecomendado, describeSessionError, describirProveedores, hayRespaldoElevenLabs, modeloElevenLabs, normalizarBaseUrl, opcionesDeEntrada, usaCancelacionDeVoces, usaElevenLabs, usaGroqLlm } from './main';
 
 // AgentSession logs from its field initializers; outside cli.runApp nothing has set the logger up.
 beforeAll(() => initializeLogger({ pretty: false, level: 'silent' }));
@@ -409,5 +409,42 @@ describe('base URL del proveedor', () => {
   it('nombra la pasarela y Groq cuando son los que están puestos', () => {
     expect(describirProveedores({})).toContain('pasarela');
     expect(describirProveedores({ VOICE_LLM: 'groq' })).toContain('Groq');
+  });
+});
+
+// Medio segundo de ruido —una silla, alguien pasando— bastaba para callar al agente a mitad de
+// frase, y de ahí salía el "se pierde y se inventa el resto". El detector adaptativo de LiveKit
+// no es una opción aquí: exige un STT en streaming con transcripción alineada y Groq Whisper es
+// por lotes, así que el único juez es el VAD y hay que subirle el listón.
+describe('interrumpir al agente cuesta más que un ruido', () => {
+  it('exige un segundo de voz, no los 500 ms de fábrica', () => {
+    expect(turnHandlingCon({}).interruption.minDuration).toBe(1000);
+  });
+
+  it('se ajusta en vivo por variable, con piso y techo', () => {
+    expect(turnHandlingCon({ VOICE_INTERRUPTION_MIN_MS: '1500' }).interruption.minDuration).toBe(1500);
+    expect(turnHandlingCon({ VOICE_INTERRUPTION_MIN_MS: '99999' }).interruption.minDuration).toBe(2000);
+    expect(turnHandlingCon({ VOICE_INTERRUPTION_MIN_MS: 'mil' }).interruption.minDuration).toBe(1000);
+  });
+
+  // Si tras el corte no llega transcripción, retoma la frase en vez de dar el turno por cerrado.
+  it('retoma la frase cuando la interrupción resultó ser ruido', () => {
+    expect(turnHandlingCon({}).interruption.resumeFalseInterruption).toBe(true);
+    expect(turnHandlingCon({}).interruption.falseInterruptionTimeout).toBe(2000);
+  });
+});
+
+// WEB_APP_URL y JWT_SECRET no impiden arrancar, pero sin ellas el checkout de Wompi no vuelve.
+// Las variables de Railway son por servicio y este worker es un servicio aparte del backend.
+describe('describirEnvRecomendado', () => {
+  it('nombra las que faltan y para qué eran', () => {
+    const reporte = describirEnvRecomendado({});
+    expect(reporte).toContain('WEB_APP_URL');
+    expect(reporte).toContain('JWT_SECRET');
+    expect(reporte).toContain('Wompi');
+  });
+
+  it('no dice nada cuando están las dos', () => {
+    expect(describirEnvRecomendado({ WEB_APP_URL: 'https://x.example', JWT_SECRET: 's' })).toBeUndefined();
   });
 });

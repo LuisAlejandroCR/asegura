@@ -112,6 +112,22 @@ export function describeRequiredEnv(env: NodeJS.ProcessEnv = process.env): {
   return { ok: names.every((name) => !!env[name]), report: lines.join('\n') };
 }
 
+// No impiden arrancar —una llamada sin vuelta de Wompi sigue siendo una llamada— pero su
+// ausencia no se nota hasta que alguien paga y se queda mirando el recibo. Las variables de
+// Railway son por servicio y este worker es un servicio aparte del backend: estar puestas allá
+// no las pone aquí. Verificado contra la API de Wompi: `redirect_url: null` en un link creado
+// por esta ruta.
+const RECOMENDADAS: Record<string, string> = {
+  WEB_APP_URL: 'sin ella, el checkout de Wompi termina en su recibo y no vuelve a AseguraWeb',
+  JWT_SECRET: 'sin él no se firma el token de vuelta, así que Wompi tampoco recibe redirect_url',
+};
+
+export function describirEnvRecomendado(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const faltantes = Object.keys(RECOMENDADAS).filter((name) => !env[name]);
+  if (!faltantes.length) return undefined;
+  return faltantes.map((name) => `  ${name}: MISSING — ${RECOMENDADAS[name]}`).join('\n');
+}
+
 type VoiceProcessData = { vad?: VAD };
 
 // The retry loop logs the provider error as a structured field the container log drops, so a
@@ -167,16 +183,52 @@ export const ENDPOINTING_MIN_MS = 900;
 const ENDPOINTING_MIN_PISO = 300;
 const ENDPOINTING_MIN_TECHO = 3000;
 
+// `minDuration` viene en 500 ms: en una llamada por altavoz, medio segundo es una silla que se
+// mueve o alguien pasando, y con eso el agente se callaba a mitad de frase. Un segundo obliga a
+// hablar de verdad para interrumpirlo. Es la única palanca que queda: el detector adaptativo de
+// LiveKit —el que sabe distinguir un "ajá" de una objeción— exige un STT en streaming con
+// transcripción alineada, y Groq Whisper es por lotes, así que se desactiva solo.
+// El prompt inicial de Whisper: no es una instrucción, es vocabulario esperado, y sesga el
+// decodificador hacia estas palabras. "Exequial", "Colsubsidio" y los nombres de aseguradora no
+// salen en un modelo general, y "arroba" y "punto" son la mitad de un correo dictado. Se queda
+// corto a propósito: un prompt largo, Whisper lo escupe dentro de la transcripción.
+// `prompt` sí existe en las opciones del STT y `withGroq` lo reenvía con un spread, pero su
+// firma no lo declara. Se ensancha el tipo en vez de construir el STT a mano: hacerlo a mano
+// perdería el `useRealtime: false` que withGroq pone, o sea cambiar el transporte por una palabra.
+type OpcionesStt = Parameters<typeof openai.STT.withGroq>[0] & { prompt?: string };
+
+const VOCABULARIO =
+  'Colsubsidio, Asegura, seguro exequial, accidentes personales, asistencias médicas, ' +
+  'medicina prepagada para mascotas, MetLife, Chubb, Pan American Life, GEA, Grupo Recordar, ' +
+  'BMI, VetPlus, Wompi, póliza, prima mensual, cédula de ciudadanía, cédula de extranjería, ' +
+  'PEP, arroba, punto.';
+
+export const INTERRUPCION_MIN_MS = 1000;
+const INTERRUPCION_MIN_PISO = 300;
+const INTERRUPCION_MIN_TECHO = 2000;
+
+function msDeEnv(valor: string | undefined, porDefecto: number, piso: number, techo: number): number {
+  const pedido = Number(valor);
+  if (!valor || !Number.isFinite(pedido)) return porDefecto;
+  return Math.min(Math.max(pedido, piso), techo);
+}
+
 export function turnHandlingCon(env: NodeJS.ProcessEnv = process.env) {
-  const pedido = Number(env.VOICE_ENDPOINTING_MIN_MS);
-  const minDelay = Number.isFinite(pedido) && env.VOICE_ENDPOINTING_MIN_MS
-    ? Math.min(Math.max(pedido, ENDPOINTING_MIN_PISO), ENDPOINTING_MIN_TECHO)
-    : ENDPOINTING_MIN_MS;
+  const minDelay = msDeEnv(env.VOICE_ENDPOINTING_MIN_MS, ENDPOINTING_MIN_MS, ENDPOINTING_MIN_PISO, ENDPOINTING_MIN_TECHO);
+  const minDuration = msDeEnv(env.VOICE_INTERRUPTION_MIN_MS, INTERRUPCION_MIN_MS, INTERRUPCION_MIN_PISO, INTERRUPCION_MIN_TECHO);
 
   return {
     turnDetection: 'vad',
     preemptiveGeneration: { enabled: false },
-    interruption: { minWords: 2 },
+    interruption: {
+      minWords: 2,
+      minDuration,
+      // Si tras cortarlo no llega ninguna transcripción, retoma la frase en vez de dar el turno
+      // por cerrado. Es el default de la librería, escrito aquí porque es justo lo que evita que
+      // un ruido deje al modelo completando de memoria una frase que nunca terminó.
+      falseInterruptionTimeout: 2000,
+      resumeFalseInterruption: true,
+    },
     endpointing: { minDelay },
   } as const;
 }
@@ -284,7 +336,8 @@ async function runSession(ctx: JobContext<VoiceProcessData>): Promise<void> {
         model: 'whisper-large-v3-turbo',
         apiKey: requireEnv('LLM_API_KEY'),
         language: 'es',
-      }),
+        prompt: VOCABULARIO,
+      } as OpcionesStt),
       llm: construirLlm(),
       tts: construirTts(),
     });
@@ -457,6 +510,9 @@ async function startWorker(): Promise<void> {
     fs.writeSync(2, `voice-agent llm check: ${modelo.detail}\n`);
     if (modelo.fatal) process.exit(1);
   }
+
+  const recomendadas = describirEnvRecomendado();
+  if (recomendadas) fs.writeSync(2, `voice-agent env recomendado:\n${recomendadas}\n`);
 
   fs.writeSync(1, `voice-agent ${describirProveedores()}
 `);
