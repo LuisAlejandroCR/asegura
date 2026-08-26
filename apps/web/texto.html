@@ -5,21 +5,88 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1114" media="(prefers-color-scheme: dark)">
 <title>Asegura — Escríbenos</title>
+<!-- Va antes que cualquier otro script: es lo que crea window.Telegram.WebApp, y lo que
+     corra antes ve una app que todavía no está. Si no carga —WhatsApp, navegador normal,
+     telegram.org bloqueado— todo lo de telegram.js queda en no-op y la página funciona
+     igual: por ahí entra la mayoría. -->
+<script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <style>
-  /* Paleta oficial — idéntica a voz.html y pdf.service.ts */
+  /* ── Paleta en dos capas ───────────────────────────────────
+     La marca —amarillo, azul, y la tinta que va ENCIMA de ellos— es constante: es la misma
+     de voz.html y pdf.service.ts, y no puede cambiar con el tema de nadie. Las superficies y
+     el texto sí: salen de los themeParams de Telegram cuando la página se abre como Mini
+     App, del esquema del sistema cuando se abre desde WhatsApp o un navegador, y del gris
+     Colsubsidio como último respaldo. Todo campo de themeParams es opcional, así que ninguno
+     puede caer en transparent ni en un hex que solo se lea en un tema. */
   :root{
     --amarillo:#ffd000;
     --amarillo-hondo:#e6b800;
     --azul:#0067b1;
     --azul-hondo:#004b80;
-    --gris:#575756;
-    --gris-claro:#f2f2f2;
-    --negro:#000;
-    --blanco:#fff;
-    --fondo:#fafafa;
+    --negro:#000;   /* tinta SOBRE amarillo — nunca sigue el tema */
+    --blanco:#fff;  /* tinta SOBRE azul — nunca sigue el tema */
+
+    --fondo:var(--tg-theme-secondary-bg-color,#fafafa);
+    --carta:var(--tg-theme-section-bg-color,var(--tg-theme-bg-color,#fff));
+    --campo:var(--tg-theme-bg-color,#fff);
+    --tinta:var(--tg-theme-text-color,#000);
+    --gris:var(--tg-theme-hint-color,#575756);
+    --gris-claro:var(--tg-theme-section-separator-color,#f2f2f2);
+    --azul-tinta:var(--tg-theme-accent-text-color,var(--tg-theme-link-color,var(--azul)));
+    --azul-velo:rgba(0,103,177,.06);
+    --azul-velo-fuerte:rgba(0,103,177,.12);
+    --azul-borde:rgba(0,103,177,.35);
+    --velo-fondo:.5;
+    --sombra-suave:0 2px 10px rgba(0,40,70,.05);
     --sombra-carta:0 6px 26px rgba(0,40,70,.10),0 1px 3px rgba(0,40,70,.06);
+
+    /* Dos insets distintos: el del aparato esquiva la muesca y la barra de inicio; el de
+       contenido esquiva el encabezado que dibuja Telegram. Fuera de Telegram ambos valen 0
+       y manda env(). */
+    --seguro-arriba:calc(var(--tg-safe-area-inset-top,0px) + var(--tg-content-safe-area-inset-top,0px));
+    --seguro-abajo:calc(var(--tg-safe-area-inset-bottom,0px) + var(--tg-content-safe-area-inset-bottom,0px));
+    --seguro-izq:var(--tg-safe-area-inset-left,0px);
+    --seguro-der:var(--tg-safe-area-inset-right,0px);
+  }
+
+  /* Modo oscuro. Solo decide lo que los themeParams no cubren: cuando Telegram manda su
+     paleta, los var(--tg-theme-*) de arriba ya ganaron y esto ni se nota. El data-esquema lo
+     pone telegram.js, porque alguien puede tener Telegram en oscuro sobre un sistema en
+     claro — y al revés. */
+  @media (prefers-color-scheme:dark){
+    :root:not([data-esquema="light"]){
+      --fondo:var(--tg-theme-secondary-bg-color,#0f1114);
+      --carta:var(--tg-theme-section-bg-color,var(--tg-theme-bg-color,#1a1d21));
+      --campo:var(--tg-theme-bg-color,#1a1d21);
+      --tinta:var(--tg-theme-text-color,#f2f3f5);
+      --gris:var(--tg-theme-hint-color,#9aa3ad);
+      --gris-claro:var(--tg-theme-section-separator-color,#2b3036);
+      --azul-tinta:var(--tg-theme-accent-text-color,var(--tg-theme-link-color,#5cb2ea));
+      --azul-velo:rgba(92,178,234,.10);
+      --azul-velo-fuerte:rgba(92,178,234,.18);
+      --azul-borde:rgba(92,178,234,.38);
+      --velo-fondo:.3;
+      --sombra-suave:0 2px 10px rgba(0,0,0,.45);
+      --sombra-carta:0 8px 28px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-esquema="dark"]{
+      --fondo:var(--tg-theme-secondary-bg-color,#0f1114);
+      --carta:var(--tg-theme-section-bg-color,var(--tg-theme-bg-color,#1a1d21));
+      --campo:var(--tg-theme-bg-color,#1a1d21);
+      --tinta:var(--tg-theme-text-color,#f2f3f5);
+      --gris:var(--tg-theme-hint-color,#9aa3ad);
+      --gris-claro:var(--tg-theme-section-separator-color,#2b3036);
+      --azul-tinta:var(--tg-theme-accent-text-color,var(--tg-theme-link-color,#5cb2ea));
+      --azul-velo:rgba(92,178,234,.10);
+      --azul-velo-fuerte:rgba(92,178,234,.18);
+      --azul-borde:rgba(92,178,234,.38);
+      --velo-fondo:.3;
+      --sombra-suave:0 2px 10px rgba(0,0,0,.45);
+      --sombra-carta:0 8px 28px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4);
   }
 
   *{box-sizing:border-box;margin:0;padding:0}
@@ -43,7 +110,7 @@
      toque nada. Se apaga entero con prefers-reduced-motion. */
   #fondo{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
   #fondo i{
-    position:absolute;display:block;border-radius:50%;filter:blur(60px);opacity:.5;
+    position:absolute;display:block;border-radius:50%;filter:blur(60px);opacity:var(--velo-fondo,.5);
   }
   #fondo i:nth-child(1){
     width:60vmax;height:60vmax;left:-22vmax;top:-26vmax;
@@ -62,9 +129,10 @@
 
   /* ── Encabezado + rail de etapas ──────────────────────────── */
   header{
-    padding:max(12px,env(safe-area-inset-top)) 16px 10px;
+    padding:max(12px,var(--seguro-arriba),env(safe-area-inset-top,0px)) 16px 10px;
     flex:none;
-    background:rgba(255,255,255,.86);
+    background:var(--carta);
+    background:color-mix(in srgb,var(--carta) 86%,transparent);
     backdrop-filter:blur(14px);
     -webkit-backdrop-filter:blur(14px);
     border-bottom:1px solid var(--gris-claro);
@@ -81,7 +149,7 @@
   .escudo svg{width:14px;height:14px;fill:none;stroke:var(--amarillo);stroke-width:2.4;
     stroke-linecap:round;stroke-linejoin:round}
 
-  h1{font-size:19px;font-weight:800;color:var(--azul);letter-spacing:-.025em;line-height:1}
+  h1{font-size:19px;font-weight:800;color:var(--azul-tinta);letter-spacing:-.025em;line-height:1}
   .sub{font-size:11.5px;color:var(--gris);opacity:.72;text-align:center;margin-top:3px}
 
   /* ── Aviso de etapa superada ───────────────────────────────
@@ -160,11 +228,11 @@
   }
 
   .burbuja.agente{
-    background:var(--blanco);
-    color:var(--negro);
+    background:var(--carta);
+    color:var(--tinta);
     border:1px solid var(--gris-claro);
     border-bottom-left-radius:6px;
-    box-shadow:0 2px 10px rgba(0,40,70,.05);
+    box-shadow:var(--sombra-suave);
   }
 
   .burbuja.usuario{
@@ -175,7 +243,7 @@
   }
 
   .burbuja a{color:inherit;text-decoration:underline}
-  .burbuja.agente a{color:var(--azul)}
+  .burbuja.agente a{color:var(--azul-tinta)}
   .burbuja strong{font-weight:700}
   .burbuja em{font-style:normal;opacity:.68;font-size:.9em}
 
@@ -183,14 +251,14 @@
     display:flex;
     gap:4px;
     padding:13px 16px;
-    background:var(--blanco);
+    background:var(--carta);
     border:1px solid var(--gris-claro);
     border-radius:17px;
     border-bottom-left-radius:6px;
-    box-shadow:0 2px 10px rgba(0,40,70,.05);
+    box-shadow:var(--sombra-suave);
   }
   .escribiendo span{
-    width:6px;height:6px;border-radius:50%;background:var(--azul);opacity:.4;
+    width:6px;height:6px;border-radius:50%;background:var(--azul-tinta);opacity:.4;
     animation:pulso 1.1s ease-in-out infinite;
   }
   .escribiendo span:nth-child(2){animation-delay:.15s}
@@ -203,7 +271,7 @@
      revela, con ritmo, exactamente lo que el backend mandó. */
   .tarjeta-cotizacion{
     width:100%;
-    background:var(--blanco);
+    background:var(--carta);
     border:1px solid var(--gris-claro);
     border-radius:20px;
     padding:0 0 16px;
@@ -240,29 +308,29 @@
   .bloque{padding:14px 18px 0}
 
   .titulo-fila{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
-  .tarjeta-cotizacion h2{font-size:17.5px;font-weight:800;color:var(--azul);letter-spacing:-.018em;line-height:1.25}
+  .tarjeta-cotizacion h2{font-size:17.5px;font-weight:800;color:var(--azul-tinta);letter-spacing:-.018em;line-height:1.25}
   .tarjeta-cotizacion .aseguradora{font-size:12.5px;color:var(--gris);opacity:.75;margin-top:2px}
 
   /* Insignia de cantidad — el "2x" del carrito de Telegram. Hace obvio que el subtotal ya
      viene multiplicado, que es justo la ambigüedad que produjo el bug del total. */
   .insignia-cant{
     flex:none;padding:4px 10px;border-radius:999px;
-    background:rgba(0,103,177,.1);color:var(--azul);
+    background:var(--azul-velo-fuerte);color:var(--azul-tinta);
     font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;
   }
 
   .porque{
     margin:12px 0 4px;
-    background:rgba(0,103,177,.06);
-    border-left:3px solid var(--azul);
+    background:var(--azul-velo);
+    border-left:3px solid var(--azul-tinta);
     border-radius:0 10px 10px 0;
     padding:10px 12px;
   }
   .porque b{
     display:block;font-size:10.5px;font-weight:800;letter-spacing:.07em;
-    text-transform:uppercase;color:var(--azul);margin-bottom:4px;
+    text-transform:uppercase;color:var(--azul-tinta);margin-bottom:4px;
   }
-  .porque span{font-size:13.5px;line-height:1.45;color:var(--negro)}
+  .porque span{font-size:13.5px;line-height:1.45;color:var(--tinta)}
 
   .rotulo-cob{
     margin:14px 0 6px;font-size:10.5px;font-weight:800;letter-spacing:.07em;
@@ -272,7 +340,7 @@
   .tarjeta-cotizacion ul{list-style:none;margin:0}
   .tarjeta-cotizacion li{
     display:flex;align-items:flex-start;gap:9px;
-    font-size:14px;line-height:1.4;padding:4px 0;color:var(--negro);
+    font-size:14px;line-height:1.4;padding:4px 0;color:var(--tinta);
     animation:desbloquear .42s cubic-bezier(.2,.9,.3,1.25) both;
     animation-delay:calc(var(--i) * 85ms + 340ms);
   }
@@ -295,7 +363,7 @@
     padding-top:12px;
   }
   .precio dt{font-size:13px;color:var(--gris);font-weight:600}
-  .precio dd{font-size:26px;font-weight:800;color:var(--negro);letter-spacing:-.03em;
+  .precio dd{font-size:26px;font-weight:800;color:var(--tinta);letter-spacing:-.03em;
     font-variant-numeric:tabular-nums}
   .precio dd span{font-size:13px;font-weight:600;color:var(--gris)}
 
@@ -308,7 +376,7 @@
     margin:14px 18px 0;padding-top:14px;
     border-top:2px solid var(--gris-claro);
   }
-  .precio.total dt{font-weight:800;color:var(--negro);font-size:13.5px}
+  .precio.total dt{font-weight:800;color:var(--tinta);font-size:13.5px}
 
   .linea-detalle{
     font-size:12.5px;color:var(--gris);opacity:.85;margin:6px 0 0;
@@ -334,9 +402,9 @@
 
   .chip{
     display:flex;align-items:center;gap:7px;
-    border:1.5px solid rgba(0,103,177,.35);
-    background:var(--blanco);
-    color:var(--azul);
+    border:1.5px solid var(--azul-borde);
+    background:var(--carta);
+    color:var(--azul-tinta);
     font-family:inherit;
     font-size:14px;
     font-weight:700;
@@ -344,7 +412,7 @@
     min-height:44px;
     border-radius:14px;
     cursor:pointer;
-    box-shadow:0 2px 8px rgba(0,40,70,.06);
+    box-shadow:var(--sombra-suave);
     transition:transform .12s cubic-bezier(.2,.9,.3,1.4),background .16s ease,
       border-color .16s ease,box-shadow .16s ease;
     animation:entrarFicha .34s cubic-bezier(.2,.9,.3,1.2) both;
@@ -356,7 +424,7 @@
   }
   .chip .ico{font-size:16px;line-height:1}
   .chip:hover,.chip:focus-visible{
-    background:rgba(0,103,177,.06);border-color:var(--azul);
+    background:var(--azul-velo);border-color:var(--azul-tinta);
     box-shadow:0 4px 14px rgba(0,103,177,.16);transform:translateY(-2px);
   }
   .chip:active{transform:scale(.93)}
@@ -364,8 +432,9 @@
   /* ── Pie ──────────────────────────────────────────────────── */
   footer{
     flex:none;
-    padding:10px 14px max(10px,env(safe-area-inset-bottom));
-    background:rgba(255,255,255,.9);
+    padding:10px 14px max(10px,var(--seguro-abajo),env(safe-area-inset-bottom,0px));
+    background:var(--carta);
+    background:color-mix(in srgb,var(--carta) 90%,transparent);
     backdrop-filter:blur(14px);
     -webkit-backdrop-filter:blur(14px);
     border-top:1px solid var(--gris-claro);
@@ -395,6 +464,10 @@
   .btn-pagar strong{font-size:17px;font-variant-numeric:tabular-nums;white-space:nowrap}
   .btn-pagar:hover,.btn-pagar:focus-visible{box-shadow:0 8px 26px rgba(255,208,0,.55)}
   .btn-pagar:active{transform:scale(.975)}
+  /* Mismo papel que showProgress() del botón de Telegram: el segundo toque sería un
+     segundo cobro. */
+  .btn-pagar:disabled{opacity:.6;cursor:default;box-shadow:none}
+  .btn-pagar:disabled::after{display:none}
   /* Brillo lento y continuo: dice "esta es LA acción", sin urgencia falsa ni cuenta atrás. */
   .btn-pagar::after{
     content:"";position:absolute;inset:0;pointer-events:none;
@@ -420,13 +493,13 @@
     border-radius:24px;
     font-family:inherit;
     font-size:15px;
-    color:var(--negro);
-    background:var(--blanco);
+    color:var(--tinta);
+    background:var(--campo);
     resize:none;
     outline:none;
     transition:border-color .16s ease,box-shadow .16s ease;
   }
-  #texto:focus{border-color:var(--azul);box-shadow:0 0 0 4px rgba(0,103,177,.12)}
+  #texto:focus{border-color:var(--azul-tinta);box-shadow:0 0 0 4px var(--azul-velo-fuerte)}
 
   #btn-enviar{
     flex:none;
@@ -449,16 +522,16 @@
   .selfie-caja label{
     display:flex;flex-direction:column;align-items:center;gap:9px;
     padding:20px;
-    border:2px dashed var(--azul);
+    border:2px dashed var(--azul-tinta);
     border-radius:18px;
-    background:rgba(0,103,177,.045);
+    background:var(--azul-velo);
     cursor:pointer;
     transition:background .16s ease,transform .12s ease;
   }
-  .selfie-caja label:hover{background:rgba(0,103,177,.09)}
+  .selfie-caja label:hover{background:var(--azul-velo-fuerte)}
   .selfie-caja label:active{transform:scale(.985)}
-  .selfie-caja svg{width:30px;height:30px;color:var(--azul)}
-  .selfie-caja span{font-size:14px;font-weight:700;color:var(--azul)}
+  .selfie-caja svg{width:30px;height:30px;color:var(--azul-tinta)}
+  .selfie-caja span{font-size:14px;font-weight:700;color:var(--azul-tinta)}
   .selfie-caja input{display:none}
   .selfie-caja p{margin-top:9px;font-size:11.5px;color:var(--gris);opacity:.7}
 
@@ -474,7 +547,7 @@
     text-align:center;
   }
   #errorScreen.activo,#postCheckout.activo{display:flex}
-  #errorScreen h2{font-size:19px;color:var(--azul);font-weight:700}
+  #errorScreen h2{font-size:19px;color:var(--azul-tinta);font-weight:700}
   #errorScreen p{font-size:14.5px;color:var(--gris);max-width:320px;line-height:1.5}
 
   /* Medalla final — el cierre del recorrido. Un sello, no un checkbox. */
@@ -519,9 +592,9 @@
     100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(var(--rot)) scale(.6)}
   }
 
-  #postCheckout h2{font-size:21px;color:var(--negro);font-weight:800;letter-spacing:-.02em}
+  #postCheckout h2{font-size:21px;color:var(--tinta);font-weight:800;letter-spacing:-.02em}
   #postCheckout p{font-size:14px;color:var(--gris);max-width:310px;line-height:1.5}
-  #cuentaAtras{font-variant-numeric:tabular-nums;font-weight:800;color:var(--azul)}
+  #cuentaAtras{font-variant-numeric:tabular-nums;font-weight:800;color:var(--azul-tinta)}
 
   .btn-volver{
     min-height:52px;padding:0 26px;
@@ -535,6 +608,67 @@
   }
   .btn-volver:active{transform:scale(.97)}
   .btn-volver:disabled{opacity:.55;box-shadow:none;cursor:default}
+
+  /* ── Ajustes de Mini App ───────────────────────────────────
+     Solo aplican cuando telegram.js confirmó que la página corre DENTRO de Telegram. Fuera
+     —WhatsApp, navegador normal— nada de esto existe y la pantalla queda igual que hoy. */
+
+  /* viewportHeight se actualiza mientras se arrastra la hoja y no alcanza a seguir el dedo:
+     el pie se despegaría. La estable es la única que sirve para maquetar. */
+  body.mini{height:var(--tg-viewport-stable-height,100dvh)}
+
+  /* Telegram dibuja su propio encabezado justo encima, con el nombre de la app y el botón de
+     cerrar. La marca a tamaño completo dejaba dos títulos pegados. */
+  body.mini header{padding-top:max(8px,var(--seguro-arriba))}
+  body.mini h1{font-size:17px}
+
+  /* La barra de pago propia se apaga: el botón de abajo lo pinta el cliente, en el sitio y
+     con el estilo exactos de cada plataforma. Solo se apaga si el cliente confirmó que lo
+     mostró — si no, la persona se quedaría sin ninguna forma de pagar. */
+  body.mini.con-boton #barraPago.visible{display:none}
+
+  /* Insets laterales: solo aparecen en horizontal sobre un aparato con muesca. En vertical
+     valen 0 y estas dos reglas no cambian nada. */
+  main,#chips,footer{
+    padding-left:calc(14px + var(--seguro-izq));
+    padding-right:calc(14px + var(--seguro-der));
+  }
+  header{
+    padding-left:calc(16px + var(--seguro-izq));
+    padding-right:calc(16px + var(--seguro-der));
+  }
+
+  /* ── Mensaje que no salió ──────────────────────────────────
+     Antes un fallo de red se contaba con una burbuja del agente que el agente nunca dijo y
+     el servidor nunca guardó. La marca va sobre el mensaje de la persona —que es el que no
+     llegó— y se reintenta tocándolo, como en cualquier app de chat. */
+  .fila.fallida{flex-wrap:wrap;justify-content:flex-end}
+  /* Se apaga con filter, no con opacity: `aparecer` termina en opacity:1 y su fill-mode
+     `both` lo mantiene fijado, así que una regla de opacidad aquí nunca llegaría a verse. */
+  .fila.fallida .burbuja.usuario{filter:grayscale(.9);box-shadow:none}
+  .reintento{
+    flex-basis:100%;
+    display:flex;align-items:center;justify-content:flex-end;gap:5px;
+    margin-top:2px;padding:4px 2px;
+    border:none;background:none;cursor:pointer;
+    font-family:inherit;font-size:11.5px;font-weight:700;
+    color:var(--tg-theme-destructive-text-color,#c0392b);
+  }
+  .reintento svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.6;
+    stroke-linecap:round;stroke-linejoin:round}
+
+  /* Mismo hueco del aviso de etapa, en rojo y más lento: fuera de Telegram no hay showAlert
+     del cliente que dibujar, y window.alert congela el hilo y delata el marco. */
+  #avisoEtapa.alerta{background:var(--tg-theme-destructive-text-color,#c0392b)}
+  #avisoEtapa.alerta b{color:var(--blanco)}
+  #avisoEtapa.alerta.visible{animation-duration:4.6s}
+
+  /* progress-bar.js inyecta su hoja después de esta, con la paleta clara por defecto; el id
+     gana en especificidad y devuelve el rail al tema. */
+  /* Solo el nodo pendiente: .hecho y .actual llevan su relleno de marca, y un id los
+     ganaba a los dos — el rail se quedaba sin decir por dónde va. */
+  #progress .ap-nodo.pendiente{background:var(--carta)}
+  #progress .ap-label b{color:var(--azul-tinta)}
 
   @media (prefers-reduced-motion:reduce){
     #fondo{display:none}
@@ -559,7 +693,7 @@
       </span>
       <h1>Asegura</h1>
     </div>
-    <p class="sub">Tu asesor de seguros · Colsubsidio</p>
+    <p class="sub" id="sub">Tu asesor de seguros · Colsubsidio</p>
     <div id="progress" class="ap-progress" aria-label="Progreso de la solicitud"></div>
   </header>
 
@@ -609,14 +743,19 @@
   </footer>
 
 <script type="module">
-import { renderProgress, injectProgressStyles, tick } from './progress-bar.js';
+import { renderProgress, injectProgressStyles } from './progress-bar.js';
 import { apiFetch } from './api-base.js';
+import {
+  enMiniApp, arrancar, usuario, botonPrincipal, botonAtras, haptico, alerta,
+  cerrarTeclado, confirmarCierre, cerrar,
+} from './telegram.js';
 
 const token = new URLSearchParams(location.search).get('token');
 
 const chat = document.getElementById('chat');
 const chipsEl = document.getElementById('chips');
 const progressEl = document.getElementById('progress');
+const subEl = document.getElementById('sub');
 const avisoEtapa = document.getElementById('avisoEtapa');
 const errorScreen = document.getElementById('errorScreen');
 const postCheckout = document.getElementById('postCheckout');
@@ -633,6 +772,16 @@ const btnEnviar = document.getElementById('btn-enviar');
 const selfieInput = document.getElementById('selfieInput');
 
 injectProgressStyles();
+
+// ready() esconde el marcador de carga de Telegram en cuanto esta pantalla está pintada, no
+// cuando aterriza el último recurso. Devuelve false fuera de Telegram, que es lo normal aquí.
+if (arrancar({ alEstabilizar: () => bajar() })) {
+  document.body.classList.add('mini');
+  // initDataUnsafe solo decora. Quién puede ver esta sesión lo decide el token de la URL,
+  // validado en el servidor: un nombre pintado desde el cliente no autoriza nada.
+  const persona = usuario();
+  if (persona?.first_name) subEl.textContent = `Hola, ${persona.first_name} 👋 · Colsubsidio`;
+}
 
 const sinMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const dormir = (ms) => new Promise((r) => setTimeout(r, sinMovimiento ? 0 : ms));
@@ -693,6 +842,7 @@ function addBubble(role, text) {
   chat.appendChild(fila);
   ultimoRol = esAgente ? 'agent' : 'user';
   bajar();
+  return fila;
 }
 
 // Los mensajes del agente entran uno por uno, con el indicador de escritura entre ellos —
@@ -705,7 +855,6 @@ async function revelarBurbujas(texts) {
       hideTyping();
     }
     addBubble('agent', texts[i]);
-    tick(8);
     if (i < texts.length - 1) await dormir(110);
   }
 }
@@ -788,22 +937,41 @@ function addQuoteCard(quotes, total) {
 
   const cifra = card.querySelector('.cifra');
   const arranque = sinMovimiento ? 0 : 420;
-  setTimeout(() => { contarHasta(cifra, total); tick([8, 30, 8]); }, arranque);
+  setTimeout(() => { contarHasta(cifra, total); haptico.impacto('rigid'); }, arranque);
 }
 
-// Barra fija con el total ADENTRO del botón (patrón "PAY $8.47" de Telegram Web Apps): la
-// cifra viaja con la acción, así nadie confirma un pago sin ver cuánto es.
+// El total viaja ADENTRO de la acción: nadie confirma un pago sin ver la cifra. Dentro de
+// Telegram eso es el botón de abajo que dibuja el propio cliente —mismo sitio y mismo gesto
+// en iOS, Android y escritorio—; fuera, la barra fija de siempre. Dibujar la nuestra encima
+// de la suya sería la señal más clara de "sitio web dentro de un marco".
+let pagoPendiente = false;
 function mostrarBarraPago(checkoutUrl) {
+  pagoPendiente = true;
+  cerrarTeclado(); // el siguiente paso es un botón, no seguir escribiendo
+  // Una compra a medias que se cierra de un manotazo es una póliza que nadie emite.
+  confirmarCierre(true);
+
+  const irAPagar = () => {
+    haptico.impacto('medium');
+    botonPrincipal.progreso(); // deshabilita: el segundo toque sería un segundo cobro
+    location.href = checkoutUrl;
+  };
+
+  if (botonPrincipal.mostrar(
+    totalConocido ? `Activar mi protección · ${pesos(totalConocido)}/mes` : 'Pagar con Wompi',
+    irAPagar,
+  )) {
+    document.body.classList.add('con-boton');
+    return;
+  }
+
   barraPago.replaceChildren();
   const btn = document.createElement('button');
   btn.className = 'btn-pagar';
   btn.innerHTML = totalConocido
     ? `<span>Activar mi protección</span><strong>${pesos(totalConocido)}/mes</strong>`
     : '<span>Pagar de forma segura con Wompi</span>';
-  btn.addEventListener('click', () => {
-    tick([14, 26, 14]);
-    location.href = checkoutUrl;
-  });
+  btn.addEventListener('click', () => { btn.disabled = true; irAPagar(); });
   barraPago.appendChild(btn);
   barraPago.classList.add('visible');
 }
@@ -828,7 +996,12 @@ const ICONOS = [
   [/^no\b|cancelar|despu[eé]s/i, '✋'],
 ];
 
+// El backend ya manda el emoji DENTRO de la etiqueta (F01_CHOICES), así que añadirle otro
+// dejaba "❤️❤️ Mi familia" en la primera pantalla del recorrido.
+const YA_TIENE_ICONO = /^\p{Extended_Pictographic}/u;
+
 function iconoPara(texto) {
+  if (YA_TIENE_ICONO.test(texto)) return null;
   for (const [re, ico] of ICONOS) if (re.test(texto)) return ico;
   return null;
 }
@@ -842,7 +1015,7 @@ function renderChips(choices) {
     const ico = iconoPara(choice);
     btn.innerHTML = (ico ? `<span class="ico" aria-hidden="true">${ico}</span>` : '') +
       `<span>${escapeHtml(choice)}</span>`;
-    btn.addEventListener('click', () => { tick(14); sendMessage(choice); });
+    btn.addEventListener('click', () => sendMessage(choice));
     chipsEl.appendChild(btn);
   });
 }
@@ -851,16 +1024,22 @@ function setExpectedInput(kind) {
   const isSelfie = kind === 'selfie';
   filaTexto.hidden = isSelfie;
   filaSelfie.hidden = !isSelfie;
+  if (isSelfie) cerrarTeclado();
 }
 
 let avisoTimer = null;
-function anunciarEtapa(label) {
-  avisoEtapa.innerHTML = `<b>✓ Etapa superada</b> · ${escapeHtml(label)}`;
+function avisar(html, { error = false, ms = 2400 } = {}) {
+  avisoEtapa.innerHTML = html;
+  avisoEtapa.classList.toggle('alerta', error);
   avisoEtapa.classList.remove('visible');
-  void avisoEtapa.offsetWidth; // reinicia la animación si dos etapas caen seguidas
+  void avisoEtapa.offsetWidth; // reinicia la animación si dos avisos caen seguidos
   avisoEtapa.classList.add('visible');
   clearTimeout(avisoTimer);
-  avisoTimer = setTimeout(() => avisoEtapa.classList.remove('visible'), 2400);
+  avisoTimer = setTimeout(() => avisoEtapa.classList.remove('visible'), ms);
+}
+
+function anunciarEtapa(label) {
+  avisar(`<b>✓ Etapa superada</b> · ${escapeHtml(label)}`);
 }
 
 // Sin argumentos = el link en sí no sirve (401). Con argumentos = otra cosa falló y el
@@ -872,6 +1051,10 @@ function showError(titulo, texto) {
   chat.style.display = 'none';
   chipsEl.style.display = 'none';
   footer.style.display = 'none';
+  haptico.aviso('error');
+  botonPrincipal.ocultar();
+  confirmarCierre(false);
+  botonAtras.mostrar(cerrar); // pantalla que no es la raíz: el atrás del cliente la cierra
 }
 
 // Post-checkout: never trusts the redirect itself, only that the real state advanced to
@@ -882,6 +1065,7 @@ function showPostCheckout(snapshot) {
   chipsEl.style.display = 'none';
   footer.style.display = 'none';
   postCheckout.classList.add('activo');
+  botonPrincipal.ocultar(); // la acción de pago ya pasó
 
   const done = snapshot.state === 'policy_issued' || snapshot.state === 'completed';
   if (done) {
@@ -889,8 +1073,16 @@ function showPostCheckout(snapshot) {
     postTitulo.textContent = '¡Listo! Ya quedaste asegurado 🎉';
     postTexto.textContent = 'Tu póliza en PDF ya está en camino a tu chat.';
     burstConfetti();
-    tick([18, 50, 18, 50, 30]);
-    if (snapshot.returnUrl) {
+    haptico.aviso('success');
+    pagoPendiente = false;
+    confirmarCierre(false); // ya no hay nada a medias que proteger
+    if (enMiniApp) {
+      // Aquí "volver" es cerrar la Mini App: el chat está justo detrás. La cuenta atrás y el
+      // botón propio son para WhatsApp, que sí necesita una redirección de vuelta.
+      botonPrincipal.mostrar('Volver al chat', cerrar);
+      botonAtras.mostrar(cerrar);
+      btnVolver.hidden = true;
+    } else if (snapshot.returnUrl) {
       startCountdown(snapshot.returnUrl);
     } else {
       btnVolver.hidden = false;
@@ -989,9 +1181,24 @@ async function applyReply(reply) {
   }
 }
 
+// El mensaje de la persona se queda marcado como no enviado, con reintento a un toque. Un
+// aviso que se desvanece dejaría en la transcripción un mensaje que PARECE haber salido.
+function marcarFallida(fila, texto) {
+  haptico.aviso('error');
+  fila.classList.add('fallida');
+  const btn = document.createElement('button');
+  btn.className = 'reintento';
+  btn.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="1 4 1 10 7 10"/>' +
+    '<path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>No se envió · Reintentar';
+  btn.addEventListener('click', () => { fila.remove(); sendMessage(texto); });
+  fila.appendChild(btn);
+  bajar();
+}
+
 async function sendMessage(text) {
   if (!text.trim()) return;
-  addBubble('user', text);
+  const fila = addBubble('user', text);
   textoEl.value = '';
   textoEl.style.height = 'auto';
   chipsEl.replaceChildren();
@@ -1010,10 +1217,12 @@ async function sendMessage(text) {
   } catch (err) {
     hideTyping();
     console.error('No se pudo enviar el mensaje:', err);
-    addBubble('agent', 'No pude enviar tu mensaje. Revisa tu conexión e intenta de nuevo.');
+    marcarFallida(fila, text);
   } finally {
     btnEnviar.disabled = false;
-    textoEl.focus();
+    // Ni con la cámara abierta ni con el pago en pantalla: devolver el foco al campo
+    // levantaría el teclado encima de la acción que sigue.
+    if (!filaTexto.hidden && !pagoPendiente) textoEl.focus();
   }
 }
 
@@ -1032,11 +1241,16 @@ async function sendSelfie(width, height) {
   } catch (err) {
     hideTyping();
     console.error('No se pudo enviar la selfie:', err);
-    addBubble('agent', 'No pude procesar tu foto. Intenta de nuevo.');
+    haptico.aviso('error');
+    // La foto nunca se vuelve una burbuja, así que no hay nada que marcar. Si el cliente
+    // puede dibujar su propio diálogo, ese es el aviso; si no, el hueco del aviso de etapa.
+    // window.alert queda descartado: congela el hilo y delata el marco.
+    const mensaje = 'No pude procesar tu foto. Intenta de nuevo.';
+    if (!(await alerta(mensaje))) avisar(`<b>⚠</b> ${escapeHtml(mensaje)}`, { error: true, ms: 4600 });
   }
 }
 
-btnEnviar.addEventListener('click', () => { tick(12); sendMessage(textoEl.value); });
+btnEnviar.addEventListener('click', () => sendMessage(textoEl.value));
 textoEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -1057,7 +1271,7 @@ selfieInput.addEventListener('change', () => {
   const url = URL.createObjectURL(file);
   img.onload = () => {
     URL.revokeObjectURL(url);
-    tick(14);
+    haptico.impacto('light');
     sendSelfie(img.naturalWidth, img.naturalHeight);
   };
   img.src = url;

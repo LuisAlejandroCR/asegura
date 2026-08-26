@@ -6,7 +6,14 @@ const sinMovimiento = () =>
   window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
 // Short haptic tick. Shared so both pages feel the same; silently absent on desktop.
+// Inside a Telegram Mini App the client's own engine is the one that feels native — and on
+// iOS navigator.vibrate does nothing at all, so it is the only haptic that lands there.
 export function tick(patron = 12) {
+  const tg = window.Telegram?.WebApp;
+  if (tg?.platform && tg.platform !== 'unknown' && tg.isVersionAtLeast?.('6.1')) {
+    tg.HapticFeedback.impactOccurred(Array.isArray(patron) ? 'medium' : 'light');
+    return;
+  }
   if (sinMovimiento()) return;
   try { navigator.vibrate?.(patron); } catch { /* unsupported: no-op */ }
 }
