@@ -8,11 +8,10 @@
 <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f1114" media="(prefers-color-scheme: dark)">
 <title>Asegura — Escríbenos</title>
-<!-- Va antes que cualquier otro script: es lo que crea window.Telegram.WebApp, y lo que
-     corra antes ve una app que todavía no está. Si no carga —WhatsApp, navegador normal,
-     telegram.org bloqueado— todo lo de telegram.js queda en no-op y la página funciona
-     igual: por ahí entra la mayoría. -->
-<script src="https://telegram.org/js/telegram-web-app.js?63"></script>
+<!-- Esta página no sabe ni le importa por dónde llegó la persona: WhatsApp, Telegram o un
+     navegador cualquiera. El SDK de Telegram NO se pide aquí — telegram.js lo descarga solo
+     si la vista se abrió de verdad como Mini App, para no cobrarle a la mayoría un script
+     externo por una función que no van a ver. -->
 <style>
   /* ── Paleta en dos capas ───────────────────────────────────
      La marca —amarillo, azul, y la tinta que va ENCIMA de ellos— es constante: es la misma
@@ -714,7 +713,7 @@
     <span class="sello" id="postSello" hidden>Póliza activa</span>
     <h2 id="postTitulo">Confirmando tu pago…</h2>
     <p id="postTexto">Esto puede tardar unos segundos. En cuanto se confirme, tu póliza llega al chat.</p>
-    <button class="btn-volver" id="btnVolver" hidden>Volver a WhatsApp</button>
+    <button class="btn-volver" id="btnVolver" hidden>Volver al chat</button>
   </div>
 
   <footer id="footer">
@@ -773,15 +772,23 @@ const selfieInput = document.getElementById('selfieInput');
 
 injectProgressStyles();
 
-// ready() esconde el marcador de carga de Telegram en cuanto esta pantalla está pintada, no
-// cuando aterriza el último recurso. Devuelve false fuera de Telegram, que es lo normal aquí.
-if (arrancar({ alEstabilizar: () => bajar() })) {
+// Fuera de una Mini App —WhatsApp, un navegador, o el navegador in-app de Telegram, que es
+// como llega el enlace hoy— esto no descarga nada y contesta false enseguida. La pantalla ya
+// está pintada y no espera por ello.
+arrancar({ alEstabilizar: () => bajar() }).then((esMiniApp) => {
+  if (!esMiniApp) return;
   document.body.classList.add('mini');
   // initDataUnsafe solo decora. Quién puede ver esta sesión lo decide el token de la URL,
   // validado en el servidor: un nombre pintado desde el cliente no autoriza nada.
   const persona = usuario();
   if (persona?.first_name) subEl.textContent = `Hola, ${persona.first_name} 👋 · Colsubsidio`;
-}
+});
+
+// El canal lo dice el backend, la página no lo adivina: `chatUrl` ya viene resuelto para los
+// dos —wa.me para WhatsApp, t.me/<bot> para Telegram— y `returnUrl` solo existe en WhatsApp,
+// que es el único donde la persona salió de verdad de la app.
+let canal = null;
+let urlChat = null;
 
 const sinMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const dormir = (ms) => new Promise((r) => setTimeout(r, sinMovimiento ? 0 : ms));
@@ -1061,6 +1068,10 @@ function showError(titulo, texto) {
 // POLICY_ISSUED/COMPLETED. Wompi redirects when the process ENDS, not when it is approved.
 let pollTimer = null;
 function showPostCheckout(snapshot) {
+  // Solo el snapshot del GET trae canal y chatUrl; una WebReply de un turno normal no. Se
+  // recuerdan en cuanto aparecen para que la pantalla de cierre los tenga por cualquier vía.
+  canal = snapshot.channel ?? canal;
+  urlChat = snapshot.chatUrl ?? urlChat;
   chat.style.display = 'none';
   chipsEl.style.display = 'none';
   footer.style.display = 'none';
@@ -1076,14 +1087,22 @@ function showPostCheckout(snapshot) {
     haptico.aviso('success');
     pagoPendiente = false;
     confirmarCierre(false); // ya no hay nada a medias que proteger
-    if (enMiniApp) {
-      // Aquí "volver" es cerrar la Mini App: el chat está justo detrás. La cuenta atrás y el
-      // botón propio son para WhatsApp, que sí necesita una redirección de vuelta.
+    // Tres formas de volver a la conversación, una por canal, y ninguna deja una pestaña
+    // muerta: cerrar la Mini App, la cuenta atrás de WhatsApp, o el enlace al chat.
+    if (enMiniApp()) {
+      // Aquí "volver" es cerrar: el chat está justo detrás de esta vista.
       botonPrincipal.mostrar('Volver al chat', cerrar);
       botonAtras.mostrar(cerrar);
       btnVolver.hidden = true;
     } else if (snapshot.returnUrl) {
       startCountdown(snapshot.returnUrl);
+    } else if (urlChat) {
+      // Telegram en su navegador in-app: el enlace t.me lo devuelve al chat. Sin cuenta atrás
+      // —de aquí no salió de la app, así que arrastrarlo a la fuerza sobraría.
+      btnVolver.hidden = false;
+      btnVolver.textContent = 'Volver al chat';
+      btnVolver.disabled = false;
+      btnVolver.onclick = () => { location.href = urlChat; };
     } else {
       btnVolver.hidden = false;
       btnVolver.textContent = 'Ya puedes cerrar esta pestaña';
@@ -1130,7 +1149,9 @@ function burstConfetti() {
   }
 }
 
-// WhatsApp only (plan-17 §12) — Telegram's in-app browser IS the chat, no redirect needed.
+// WhatsApp only, because `returnUrl` only exists there (web-session.controller.ts): it is the
+// one channel the person actually left. Telegram gets a plain "Volver al chat" link instead,
+// and a Mini App just closes.
 function startCountdown(url) {
   let n = 3;
   postTexto.innerHTML = `Te llevamos de vuelta a WhatsApp en <span id="cuentaAtras">${n}</span>…`;
@@ -1287,6 +1308,8 @@ selfieInput.addEventListener('change', () => {
     if (!res.ok) throw new Error(`web-session respondió ${res.status}`);
     const snapshot = await res.json();
 
+    canal = snapshot.channel ?? null;
+    urlChat = snapshot.chatUrl ?? null;
     renderProgress(progressEl, snapshot.progress);
 
     const paymentish = snapshot.state === 'payment' || snapshot.state === 'policy_issued' || snapshot.state === 'completed';
